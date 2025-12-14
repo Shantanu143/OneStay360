@@ -1,0 +1,34 @@
+{
+  "project_info": {
+    "project_number": "153465579640",
+    "firebase_url": "https://onestay360-1-default-rtdb.firebaseio.com",
+    "project_id": "onestay360-1",
+    "storage_bucket": "onestay360-1.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:153465579640:android:9ce7f365df1ef55178258d",
+        "android_client_info": {
+          "package_name": "com.onestay360.tenant"
+        }
+      },
+      "oauth_client": [
+        {
+          "client_id": "153465579640-611phmlq5pur2lsaa9jf39v3aq6f1jp4.apps.googleusercontent.com",
+          "client_type": 1,
+          "android_info": {
+            "package_name": "com.onestay360.tenant",
+            "certificate_hash": "1258f116a9533bff37712abe8a683e9ca642d7bf"
+          }
+        }
+      ],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBZybBUaOqsYR82hRkow0peS49p4_0lBSI"
+        }
+      ]
+    }
+  ],
+  "configuration_version": "1"
+}

@@ -1,0 +1,10 @@
+// lib/data/repositories/property_repository_abstract.dart
+/*import 'package:onestay360/data/models/business/property/property_model.dart';
+
+abstract class PropertyRepository {
+  Future<void> addProperty(Property property);
+  Future<List<Property>> getPropertiesByBusiness(String businessId);
+  Future<Property> getPropertyById(String propertyId);
+  Future<void> updateProperty(Property property);
+  Future<void> deleteProperty(String propertyId);
+}*/

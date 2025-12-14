@@ -1,0 +1,46 @@
+name: business
+description: "A new Flutter project."
+publish_to: 'none'
+
+version: 1.0.0+1
+
+environment:
+  sdk: ^3.8.1
+
+dependencies:
+  flutter:
+    sdk: flutter
+
+  models:
+    path: ../../packages/models
+  firebase_services:
+    path: ../../packages/firebase_services
+  common_ui:
+    path: ../../packages/common_ui
+
+  cached_network_image: ^3.3.0
+  qr_flutter: ^4.1.0
+  mobile_scanner: ^5.2.3
+  qr_code_tools: ^0.2.0
+  cupertino_icons: ^1.0.8
+  firebase_core: ^3.15.1
+  lottie: ^2.7.0
+  google_sign_in: ^6.3.0
+  firebase_app_check: ^0.3.2+10
+  url_launcher: ^6.3.1
+  firebase_auth: ^5.4.0
+  cloud_firestore: ^5.6.1
+  cloud_functions: ^5.6.2
+  provider: ^6.1.2
+  firebase_storage: ^12.4.10
+  image_picker: ^0.8.7+3
+  path_provider: ^2.0.15
+  path: ^1.8.3
+
+dev_dependencies:
+  flutter_test:
+    sdk: flutter
+  flutter_lints: ^5.0.0
+
+flutter:
+  uses-material-design: true

@@ -1,0 +1,146 @@
+import 'package:flutter/material.dart';
+import 'package:flutter/foundation.dart';
+import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:provider/provider.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+
+import 'firebase_options.dart';
+
+import 'package:firebase_services/services/auth_service.dart';
+import 'package:firebase_services/services/firestore_service.dart';
+import 'package:firebase_services/repositories/property_repository.dart';
+import 'package:firebase_services/services/image_service.dart';
+import 'package:firebase_services/services/id_generation_service.dart';
+
+import '../presentation/views/splash/splash_screen.dart';
+import '../presentation/views/auth/auth_wrapper.dart';
+import '../data/providers/tenant_state_provider.dart';
+import '../presentation/view_models/explore_viewmodel.dart';
+
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  try {
+    await Firebase.initializeApp(
+      options: DefaultFirebaseOptions.currentPlatform,
+    );
+    debugPrint('Firebase initialized');
+
+    // ----------------------------
+    // APP CHECK INITIALIZATION
+    // ----------------------------
+    try {
+      if (kDebugMode) {
+        // Debug provider for local/dev testing (tenant app)
+        await FirebaseAppCheck.instance.activate(
+          androidProvider: AndroidProvider.debug,
+          appleProvider: AppleProvider.debug,
+        );
+        debugPrint('✅ App Check initialized with DEBUG providers (tenant app)');
+
+        // Force token fetch and print full token (DEBUG ONLY)
+        try {
+          final token = await FirebaseAppCheck.instance.getToken(true);
+          if (token != null) {
+            debugPrint('🔐 App Check DEBUG token (tenant): $token');
+            debugPrint('⚠️ Save this token to Firebase Console → App Check → Debug tokens for the tenant app.');
+          } else {
+            debugPrint('⚠️ App Check DEBUG token returned null (tenant).');
+          }
+        } catch (e) {
+          debugPrint('⚠️ Error fetching App Check debug token (tenant): $e');
+        }
+      } else {
+        // Production providers
+        await FirebaseAppCheck.instance.activate(
+          androidProvider: AndroidProvider.playIntegrity,
+          appleProvider: AppleProvider.deviceCheck,
+          webProvider: ReCaptchaV3Provider('6LfGFa8rAAAAADg7OAND4vCCo6vBZYygMwFB-eLh'),
+        );
+        debugPrint('✅ App Check initialized (Production providers) for tenant app');
+      }
+    } catch (appCheckErr) {
+      debugPrint('App Check error (tenant): $appCheckErr');
+    }
+
+    // ----------------------------
+    // COUNTER INITIALIZATION
+    // ----------------------------
+    try {
+      final idService = IdGenerationService();
+      await idService.initializeCounters();
+      debugPrint('ID counters initialized');
+    } catch (e) {
+      debugPrint('ID counter init deferred: $e');
+    }
+
+  } catch (e) {
+    debugPrint('Firebase init error: $e');
+  }
+
+  runApp(const MyApp());
+}
+
+class MyApp extends StatelessWidget {
+  const MyApp({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return MultiProvider(
+      providers: [
+        // CORE SERVICES
+        Provider<AuthService>(create: (_) => AuthService()),
+        Provider<IdGenerationService>(create: (_) => IdGenerationService()),
+        Provider<FirestoreService>(create: (_) => FirestoreService()),
+        Provider<ImageService>(create: (_) => ImageService()),
+
+        // STATE PROVIDER
+        ChangeNotifierProvider<TenantStateProvider>(
+          create: (_) => TenantStateProvider(),
+        ),
+
+        // REPOSITORIES
+        Provider<PropertyRepository>(
+          create: (context) => FirebasePropertyRepository(
+            firestore: FirebaseFirestore.instance,
+            idService: context.read<IdGenerationService>(),
+          ),
+        ),
+
+        // VIEW MODELS
+        ChangeNotifierProvider<ExploreViewModel>(
+          create: (context) => ExploreViewModel(
+            propertyRepository: context.read<PropertyRepository>(),
+          ),
+        ),
+      ],
+      child: MaterialApp(
+        title: 'OneStay360 - Tenant',
+        debugShowCheckedModeBanner: false,
+        theme: _buildTheme(),
+        home: const SplashScreen(),
+        routes: {
+          '/authWrapper': (_) => const AuthWrapper(),
+        },
+        builder: (context, child) {
+          return GestureDetector(
+            onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+            child: child,
+          );
+        },
+      ),
+    );
+  }
+
+  ThemeData _buildTheme() {
+    return ThemeData(
+      useMaterial3: true,
+      colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
+      textTheme: const TextTheme(
+        bodyLarge: TextStyle(fontSize: 16),
+        titleLarge: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
+      ),
+    );
+  }
+}

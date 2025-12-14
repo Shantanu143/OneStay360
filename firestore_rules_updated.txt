@@ -1,0 +1,173 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ───────────────────────────────
+    // COMMON HELPERS
+    // ───────────────────────────────
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    function userDoc() {
+      return isAuth()
+        ? get(/databases/$(database)/documents/users/$(request.auth.uid))
+        : null;
+    }
+
+    function userBusinessId() {
+      return userDoc() != null ? userDoc().data.businessId : null;
+    }
+
+    function userTenantId() {
+      return userDoc() != null ? userDoc().data.tenantId : null;
+    }
+
+    function userHasProperty(propertyId) {
+      return userDoc() != null &&
+             userDoc().data.propertyId == propertyId;
+    }
+
+    function isBusinessOwner(businessId) {
+      return isAuth() && (userBusinessId() == businessId || request.auth.uid == businessId);
+    }
+
+    // ───────────────────────────────
+    // USERS
+    // ───────────────────────────────
+    match /users/{uid} {
+      allow read: if isAuth();
+      allow write: if isAuth() && request.auth.uid == uid;
+    }
+
+    // ───────────────────────────────
+    // GLOBAL TENANTS (tenants/{tenantId})
+    // ───────────────────────────────
+    match /tenants/{tenantId} {
+
+      // Anyone authenticated can read (tenant apps need this)
+      allow read: if isAuth();
+
+      // Tenant themself OR business owner may update
+      allow write: if isAuth() && (
+        userTenantId() == tenantId ||
+        userBusinessId() == request.resource.data.businessId ||
+        userBusinessId() == resource.data.businessId
+      );
+
+      // ---- Tenant Documents ----
+      match /documents/{documentId} {
+        allow read, write: if isAuth() &&
+          (userTenantId() == tenantId || userBusinessId() == resource.data.businessId);
+      }
+
+      // ---- Tenant Notifications ----
+      match /notifications/{notificationId} {
+        // Allow all authenticated users to read for now
+        allow read: if request.auth != null;
+
+        // Tenant can update (mark read)
+        allow update: if request.auth != null;
+
+        // Business can create notifications
+        allow create: if request.auth != null;
+
+        // No delete
+        allow delete: if false;
+      }
+    }
+
+    // ───────────────────────────────
+    // BUSINESS ROOT
+    // ───────────────────────────────
+    match /businesses/{businessId} {
+
+      allow read: if true; // business listings are public
+
+      allow create, update, delete:
+        if isAuth() && userBusinessId() == businessId;
+
+      // ---- Properties ----
+      match /properties/{propertyId} {
+        allow read: if true;
+
+        allow create, update, delete:
+          if isAuth() &&
+             userBusinessId() == businessId &&
+             request.resource.data.businessId == businessId;
+
+        // ---- Rooms ----
+        match /rooms/{roomId} {
+
+          allow read: if isAuth() &&
+            (userBusinessId() == businessId || userHasProperty(propertyId));
+
+          allow create, update, delete:
+            if isAuth() && userBusinessId() == businessId;
+
+          // ---- Beds ----
+          match /beds/{bedId} {
+            allow read: if isAuth() &&
+              (userBusinessId() == businessId || userHasProperty(propertyId));
+
+            allow create, update, delete: if isAuth() && (
+              userBusinessId() == businessId ||
+              request.resource.data.tenantId == userTenantId()
+            );
+          }
+        }
+      }
+
+      // ---- Business Tenants ----
+      match /tenants/{tenantId} {
+        allow read: if isAuth();
+
+        allow create, update, delete:
+          if isAuth() && (
+            userBusinessId() == businessId ||
+            userTenantId() == tenantId
+          );
+      }
+
+      // ---- Payment Methods ----
+      match /paymentMethods/{methodId} {
+        allow read: if isBusinessOwner(businessId);
+
+        allow create, update, delete: if isBusinessOwner(businessId);
+      }
+    }
+
+    // ───────────────────────────────
+    // PROPERTIES_BY_CITY
+    // ───────────────────────────────
+    match /properties_by_city/{city}/properties/{propertyId} {
+      allow read: if true;
+
+      allow create, update, delete:
+        if isAuth() && userBusinessId() == request.resource.data.businessId;
+    }
+
+    // ───────────────────────────────
+    // COUNTERS
+    // ───────────────────────────────
+    match /counters/{counterId} {
+      allow read, write: if isAuth();
+    }
+
+    // ───────────────────────────────
+    // TENANT INVITATIONS
+    // ───────────────────────────────
+    match /tenant_invitations/{invitationId} {
+      allow read: if isAuth();
+
+      allow create:
+        if isAuth() &&
+           request.resource.data.businessId == userBusinessId();
+
+      allow update, delete:
+        if isAuth() &&
+           resource.data.businessId == userBusinessId();
+    }
+  }
+}

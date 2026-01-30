@@ -9,6 +9,7 @@ export 'business/property/property_room_model.dart';
 export 'business/property/property_rules_model.dart';
 export 'business/property/property_totals_model.dart';
 export 'business/property/meal_enum.dart';
+export 'business/business_notification_model.dart';
 
 // Tenant Models
 export 'tenant/tenant_model.dart';

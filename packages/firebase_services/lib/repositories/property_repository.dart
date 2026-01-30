@@ -1,6 +1,7 @@
 import 'package:flutter/foundation.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:models/business/property/property_model.dart';
 import 'package:firebase_services/services/id_generation_service.dart';
 
@@ -21,6 +22,30 @@ abstract class PropertyRepository {
   Future<void> deleteProperty(String propertyId);
   Future<List<Property>> getFeaturedProperties(String city);
   Future<String?> getCurrentUserBusinessId(); // ADDED THIS METHOD
+  Future<Map<String, dynamic>> createActivationOrder({
+    required String businessId,
+    required String propertyId,
+    required String purpose,
+    String? promoCode,
+    int? clientFinalAmount,
+    String? invoiceId,
+  });
+  Future<Map<String, dynamic>> confirmActivationPayment({
+    required String orderId,
+    required String paymentId,
+    required String razorpaySignature,
+  });
+  Future<Map<String, dynamic>> createCheckoutQuote({
+    required String businessId,
+    required String propertyId,
+    required String purpose,
+    String? promoCode,
+    String? invoiceId,
+  });
+  Future<String?> getUnpaidInvoiceId({
+    required String businessId,
+    required String propertyId,
+  });
 }
 
 class FirebasePropertyRepository implements PropertyRepository {
@@ -42,6 +67,7 @@ class FirebasePropertyRepository implements PropertyRepository {
   }
 
   // Helper method to get current user's business ID
+  // NOTE: Removed auth.uid fallback. Business access must come ONLY from membership.
   Future<String?> _getCurrentUserBusinessId() async {
     final user = _auth.currentUser;
     if (user == null) return null;
@@ -50,7 +76,7 @@ class FirebasePropertyRepository implements PropertyRepository {
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
       final businessId = userDoc.data()?['businessId'] as String?;
       debugPrint('🔍 User Business ID from Firestore: $businessId');
-      return businessId ?? user.uid; // Fallback to user ID if no businessId
+      return businessId; // No fallback - must have valid businessId from membership
     } catch (e) {
       debugPrint('❌ Error getting business ID: $e');
       return null;
@@ -61,6 +87,89 @@ class FirebasePropertyRepository implements PropertyRepository {
   @override
   Future<String?> getCurrentUserBusinessId() async {
     return await _getCurrentUserBusinessId();
+  }
+
+  // Step 1: create Razorpay order for activation (no writes done server-side)
+  @override
+  Future<Map<String, dynamic>> createActivationOrder({
+    required String businessId,
+    required String propertyId,
+    required String purpose,
+    String? promoCode,
+    int? clientFinalAmount,
+    String? invoiceId,
+  }) async {
+    final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
+    final callable = functions.httpsCallable('createActivationOrder');
+    final result = await callable.call({
+      'businessId': businessId,
+      'propertyId': propertyId,
+      'purpose': purpose,
+      'promoCode': promoCode,
+      'clientFinalAmount': clientFinalAmount,
+      'invoiceId': invoiceId,
+    });
+    final data = result.data;
+    if (data is Map<String, dynamic>) return data;
+    throw Exception('Unexpected order response');
+  }
+
+  // Step 2: confirm payment and activate after Razorpay checkout success
+  @override
+  Future<Map<String, dynamic>> confirmActivationPayment({
+    required String orderId,
+    required String paymentId,
+    required String razorpaySignature,
+  }) async {
+    final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
+    final callable = functions.httpsCallable('confirmActivationPayment');
+    final result = await callable.call({
+      'orderId': orderId,
+      'paymentId': paymentId,
+      'razorpaySignature': razorpaySignature,
+    });
+    final data = result.data;
+    if (data is Map<String, dynamic>) return data;
+    throw Exception('Unexpected confirmation response');
+  }
+
+  @override
+  Future<Map<String, dynamic>> createCheckoutQuote({
+    required String businessId,
+    required String propertyId,
+    required String purpose,
+    String? promoCode,
+    String? invoiceId,
+  }) async {
+    final functions = FirebaseFunctions.instanceFor(region: 'us-central1');
+    final callable = functions.httpsCallable('createCheckoutQuote');
+    final result = await callable.call({
+      'businessId': businessId,
+      'propertyId': propertyId,
+      'purpose': purpose,
+      'promoCode': promoCode,
+      'invoiceId': invoiceId,
+    });
+    final data = result.data;
+    if (data is Map<String, dynamic>) return data;
+    throw Exception('Unexpected quote response');
+  }
+
+  @override
+  Future<String?> getUnpaidInvoiceId({
+    required String businessId,
+    required String propertyId,
+  }) async {
+    final snap = await _firestore
+        .collection('billing_invoices')
+        .where('businessId', isEqualTo: businessId)
+        .where('propertyId', isEqualTo: propertyId)
+        .where('status', whereIn: ['issued', 'due', 'grace', 'past_due'])
+        .orderBy('dueDate')
+        .limit(1)
+        .get();
+    if (snap.docs.isEmpty) return null;
+    return snap.docs.first.id;
   }
 
   // Helper method to safely convert DocumentSnapshot to Property
@@ -120,6 +229,20 @@ class FirebasePropertyRepository implements PropertyRepository {
       ..['createdAt'] = FieldValue.serverTimestamp()
       ..['updatedAt'] = FieldValue.serverTimestamp();
 
+    // Remove deprecated coupon fields to avoid billing-side usage
+    propertyData.remove('couponCode');
+    propertyData.remove('couponDiscountPercent');
+
+    // Enforce creation defaults (billing fields are server-owned; do not send from client)
+    propertyData['status'] = 'draft';
+    propertyData['activeBedCount'] = 0;
+    propertyData['billedBedCount'] = 0;
+    propertyData.remove('billingStatus');
+    propertyData.remove('billingStartDate');
+    propertyData.remove('nextBillingDate');
+    propertyData.remove('lastPaymentId');
+    propertyData.remove('pricePerBed');
+
     // Validate the property data
     if (propertyData['name'] == null || propertyData['name'].toString().isEmpty) {
       throw ArgumentError('Property name cannot be empty');
@@ -135,6 +258,25 @@ class FirebasePropertyRepository implements PropertyRepository {
       // Remove rooms array from the top-level doc (we'll store rooms as subcollection)
       final rooms = property.rooms;
       propertyData.remove('rooms');
+
+      // Compute totalBeds from rooms (sum of sharingType, default 1)
+      int totalBeds = 0;
+      for (final room in rooms) {
+        final sharingType = room.sharingType ?? 1;
+        totalBeds += sharingType > 0 ? sharingType : 0;
+      }
+
+      // Single source of truth for totalBeds
+      propertyData['totalBeds'] = totalBeds;
+
+      // Derive totals.beds (UI only) from totalBeds
+      final totals = Map<String, dynamic>.from(propertyData['totals'] ?? {});
+      totals['beds'] = totalBeds;
+      // Set availableBeds equal to totalBeds on creation (no occupants yet)
+      if (totals['availableBeds'] == null) {
+        totals['availableBeds'] = totalBeds;
+      }
+      propertyData['totals'] = totals;
 
       // 1. First write property documents (business and city) immediately
       final businessPropRef = _firestore
@@ -168,7 +310,11 @@ class FirebasePropertyRepository implements PropertyRepository {
           for (int i = 1; i <= sharingType; i++) {
             final bedId = i.toString();
             final bedRef = roomRef.collection('beds').doc(bedId);
-            final bedData = {'bedNumber': bedId, 'isOccupied': false};
+            final bedData = {
+              'bedNumber': bedId,
+              'isOccupied': false,
+              'isActive': false,
+            };
             b.set(bedRef, bedData);
           }
         });
@@ -344,7 +490,22 @@ class FirebasePropertyRepository implements PropertyRepository {
     }
 
     try {
-      // Try to get from any city collection
+      // Prefer direct business-scoped document first to satisfy security rules
+      final businessId = await _getCurrentUserBusinessId();
+      if (businessId != null && businessId.isNotEmpty) {
+        final businessDoc = await _firestore
+            .collection('businesses')
+            .doc(businessId)
+            .collection('properties')
+            .doc(propertyId)
+            .get();
+
+        if (businessDoc.exists) {
+          return _documentToProperty(businessDoc);
+        }
+      }
+
+      // Fallback to city index if business doc not found
       final cities = ['Pune', 'Mumbai', 'Bangalore', 'Delhi', 'Chennai', 'Kolkata'];
 
       for (final city in cities) {
@@ -364,27 +525,7 @@ class FirebasePropertyRepository implements PropertyRepository {
         }
       }
 
-      // Fallback to business subcollection
-      QuerySnapshot querySnapshot;
-      if (propertyId.contains('/')) {
-        querySnapshot = await _firestore
-            .collectionGroup('properties')
-            .where(FieldPath.documentId, isEqualTo: propertyId)
-            .limit(1)
-            .get();
-      } else {
-        querySnapshot = await _firestore
-            .collectionGroup('properties')
-            .where('id', isEqualTo: propertyId)
-            .limit(1)
-            .get();
-      }
-
-      if (querySnapshot.docs.isEmpty) {
-        throw Exception('Property not found: $propertyId');
-      }
-
-      return _documentToProperty(querySnapshot.docs.first);
+      throw Exception('Property not found: $propertyId');
     } catch (e) {
       debugPrint('❌ Error getting property: $e');
       rethrow;

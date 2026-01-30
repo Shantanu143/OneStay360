@@ -4,15 +4,21 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:firebase_services/services/firestore_service.dart';
+import 'package:provider/provider.dart';
+import 'package:firebase_services/services/ensure_user_document_service.dart';
+import '../../../data/providers/business_state_provider.dart';
 import '../home_screen.dart';
 
 class PhoneLoginScreen extends StatefulWidget {
   final String userType;
+  final String? initialPhone;
+  final bool returnToCaller;
 
   const PhoneLoginScreen({
     super.key,
     required this.userType,
+    this.initialPhone,
+    this.returnToCaller = false,
   });
 
   @override
@@ -53,6 +59,15 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen>
     );
 
     _animationController.forward();
+
+    // Prefill phone number if provided (invite flow)
+    final initial = widget.initialPhone;
+    if (initial != null && initial.isNotEmpty) {
+      _phoneController.text = initial;
+      _phoneController.selection = TextSelection.fromPosition(
+        TextPosition(offset: _phoneController.text.length),
+      );
+    }
   }
 
   @override
@@ -93,15 +108,25 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen>
 
   // Send OTP to the user's phone number using Firebase
   void _sendOtp() async {
-    // Add country code if not present. Assuming +91 for India as an example.
-    final String phoneNumber = _phoneController.text.startsWith('+')
-        ? _phoneController.text
-        : '+91${_phoneController.text}';
-
-    if (phoneNumber.length < 13) {
-      _showSnackbar('Please enter a valid 10-digit phone number.', color: Colors.red);
-      return;
+    // India only: accept 10-digit local or +91xxxxxxxxxx
+    String raw = _phoneController.text.trim();
+    if (raw.startsWith('+')) {
+      if (!raw.startsWith('+91') || raw.length != 13) {
+        _showSnackbar('Use +91 followed by 10 digits (e.g. +919876543210)', color: Colors.red);
+        return;
+      }
+    } else {
+      // If user entered 10 digits, prepend +91
+        if (raw.length != 10 || !RegExp(r'^\d{10}$').hasMatch(raw)) {
+        // fallback simple digit check
+      }
+      if (raw.length != 10 || !RegExp(r'^\d{10}$').hasMatch(raw)) {
+        _showSnackbar('Enter 10-digit Indian mobile number', color: Colors.red);
+        return;
+      }
+      raw = '+91$raw';
     }
+    final String phoneNumber = raw;
 
     setState(() {
       _isLoading = true;
@@ -117,8 +142,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen>
 
           if (user != null) {
             _showSnackbar('Phone number verified successfully!', color: Colors.green);
-            await FirestoreService().initializeUser(user, widget.userType);
-            _navigatePostAuth();
+            await _postSignIn(user);
           }
         } on FirebaseAuthException catch (e) {
           _showSnackbar(e.message ?? 'Auto-verification failed.', color: Colors.red);
@@ -129,6 +153,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen>
         }
       },
       verificationFailed: (FirebaseAuthException e) {
+        debugPrint('[PhoneLogin] verificationFailed: code=${e.code}, message=${e.message}');
         if (mounted) {
           setState(() => _isLoading = false);
           _showSnackbar(e.message ?? 'Failed to send OTP.', color: Colors.red);
@@ -182,8 +207,7 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen>
 
       if (user != null) {
         _showSnackbar('Signed in successfully!', color: Colors.green);
-        await FirestoreService().initializeUser(user, widget.userType);
-        _navigatePostAuth();
+        await _postSignIn(user);
       }
     } on FirebaseAuthException catch (e) {
       _showSnackbar(e.message ?? 'Invalid OTP. Please try again.', color: Colors.red);
@@ -194,12 +218,19 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen>
     }
   }
 
-  void _navigatePostAuth() async {
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final existingData = await FirestoreService().getUserData(user.uid);
-      final businessId = existingData?['businessId'] as String? ?? user.uid;
-      if (!mounted) return;
+  Future<void> _postSignIn(User user) async {
+    // Ensure user document exists and load business state to align with email/Google flows
+    await EnsureUserDocumentService().ensureUserDocumentExists(user);
+
+    if (!mounted) return;
+    final businessState = context.read<BusinessStateProvider>();
+    await businessState.loadUserData();
+
+    final businessId = businessState.businessId ?? user.uid;
+    if (!mounted) return;
+    if (widget.returnToCaller) {
+      Navigator.of(context).pop(true);
+    } else {
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(

@@ -1,0 +1,519 @@
+rules_version = '2';
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    // ───────────────────────────────
+    // HELPERS
+    // ───────────────────────────────
+
+    function isAuth() {
+      return request.auth != null;
+    }
+
+    // SAFE: used ONLY after bootstrap
+    function isBusinessMember(businessId) {
+      return isAuth()
+        && (businessId is string)
+        && exists(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid)).data.status == "active";
+    }
+
+    // SAFE: used ONLY after bootstrap
+    function isBusinessOwner(businessId) {
+      return isAuth()
+        && (businessId is string)
+        && exists(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid)).data.status == "active"
+        && get(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid)).data.role == "owner";
+    }
+
+    function isBusinessManager(businessId) {
+      return isAuth()
+        && (businessId is string)
+        && exists(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid)).data.status == "active"
+        && get(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid)).data.role == "manager";
+    }
+
+    function isBusinessStaff(businessId) {
+      return isAuth()
+        && (businessId is string)
+        && exists(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid)).data.status == "active"
+        && get(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid)).data.role == "staff";
+    }
+
+    // Active membership with property access doc (any role)
+    function hasPropertyAccessDoc(businessId, propertyId) {
+      return isAuth()
+        && (businessId is string)
+        && (propertyId is string)
+        && exists(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid))
+        && get(/databases/$(database)/documents/businesses/$(businessId)/members/$(request.auth.uid)).data.status == "active"
+        && exists(/databases/$(database)/documents/businesses/$(businessId)/properties/$(propertyId)/access/$(request.auth.uid));
+    }
+
+    // Manager or staff access to a specific property (requires active membership)
+    function hasPropertyAccess(businessId, propertyId) {
+      return hasPropertyAccessDoc(businessId, propertyId)
+        && get(/databases/$(database)/documents/businesses/$(businessId)/properties/$(propertyId)/access/$(request.auth.uid)).data.role in ["manager", "staff"];
+    }
+
+    function isPropertyManager(businessId, propertyId) {
+      return hasPropertyAccess(businessId, propertyId)
+        && get(/databases/$(database)/documents/businesses/$(businessId)/properties/$(propertyId)/access/$(request.auth.uid)).data.role == "manager";
+    }
+
+    function isPropertyStaff(businessId, propertyId) {
+      return hasPropertyAccess(businessId, propertyId)
+        && get(/databases/$(database)/documents/businesses/$(businessId)/properties/$(propertyId)/access/$(request.auth.uid)).data.role == "staff";
+    }
+
+    // BOOTSTRAP helper (NO reads, NO exists, SAFE in batch)
+    function isBootstrapOwner() {
+      return isAuth()
+        && request.resource.data.ownerUid == request.auth.uid;
+    }
+
+    // Property is usable for billing-sensitive flows
+    function isPropertyActiveAndPaid(businessId, propertyId) {
+      let path = /databases/$(database)/documents/businesses/$(businessId)/properties/$(propertyId);
+      return (businessId is string)
+        && (propertyId is string)
+        && exists(path)
+        && get(path).data.status == "active"
+        && get(path).data.billingStatus == "paid";
+    }
+
+    function isTenantSelfData(data) {
+      return isAuth()
+        && data.userId is string
+        && data.userId == request.auth.uid;
+    }
+
+    function tenantDocData(tenantId) {
+      return get(/databases/$(database)/documents/tenants/$(tenantId)).data;
+    }
+
+    function tenantDocOwnedByCaller(tenantId) {
+      let data = tenantDocData(tenantId);
+      return isAuth()
+        && data.userId is string
+        && data.userId == request.auth.uid;
+    }
+
+    function tenantBusinessOwnerAllowed(tenantId) {
+      let data = tenantDocData(tenantId);
+      return data.businessId is string && isBusinessOwner(data.businessId);
+    }
+
+    // ───────────────────────────────
+    // USERS
+    // ───────────────────────────────
+    match /users/{uid} {
+      allow read, write: if isAuth() && request.auth.uid == uid;
+
+      // Device tokens for push notifications
+      match /deviceTokens/{tokenId} {
+        allow read, write: if isAuth() && request.auth.uid == uid;
+      }
+    }
+
+    // ───────────────────────────────
+    // BUSINESSES
+    // ───────────────────────────────
+    match /businesses/{businessId} {
+
+      // READ: only after membership exists
+      allow read: if isBusinessMember(businessId);
+
+      // CREATE (BOOTSTRAP)
+      // IMPORTANT:
+      // - No isBusinessOwner()
+      // - No exists() on members
+      // - Safe in atomic batch
+      allow create: if isBootstrapOwner()
+        && !exists(/databases/$(database)/documents/businesses/$(businessId));
+
+      // UPDATE / DELETE: only after bootstrap
+      allow update, delete: if isBusinessOwner(businessId);
+
+      // ───────────────────────────────
+      // MEMBERS
+      // ───────────────────────────────
+      match /members/{uid} {
+
+        // Member can read own membership
+        allow read: if isAuth() && request.auth.uid == uid;
+
+        // Owner can read all memberships (post-bootstrap)
+        allow read: if isBusinessOwner(businessId);
+
+        // CREATE
+        // TWO VALID CASES:
+        // 1) BOOTSTRAP: user creates OWN owner membership (atomic batch safe)
+        // 2) NORMAL: owner adds other members (post-bootstrap)
+        allow create: if (
+          isAuth()
+          && request.auth.uid == uid
+          && request.resource.data.role == "owner"
+          && request.resource.data.status == "active"
+        ) || isBusinessOwner(businessId);
+
+        // UPDATE: owners can edit anything; members can edit limited profile fields
+        allow update: if isBusinessOwner(businessId)
+          || (
+            isAuth()
+            && request.auth.uid == uid
+            && request.resource != null
+            && request.resource.data != null
+            && request.resource.data.diff(resource.data).changedKeys().hasOnly([
+              'name', 'displayName', 'email', 'phone', 'phoneNumber', 'avatarUrl', 'photoUrl', 'updatedAt', 'updatedBy'
+            ])
+            && request.resource.data.updatedBy == request.auth.uid
+          );
+
+        // DELETE: owner only
+        allow delete: if isBusinessOwner(businessId);
+      }
+
+      // ───────────────────────────────
+      // PROPERTIES
+      // ───────────────────────────────
+      match /properties/{propertyId} {
+          // Business members can always read
+          allow read: if isBusinessMember(businessId);
+          
+          // Tenants can read active properties (for browsing/viewing details)
+          allow read: if isAuth()
+            && resource.data.status == "active"
+            && resource.data.billingStatus == "paid";
+          
+          // Owners can create/update/delete, but clients cannot set or mutate billing, plan snapshots, or platform-owned pricing fields
+        allow create: if isBusinessOwner(businessId)
+            && !(['billingStatus', 'billingStartDate', 'nextBillingDate', 'lastPaymentId', 'pricePerBed', 'plan']
+            .hasAny(request.resource.data.keys()));
+
+        allow update: if isBusinessOwner(businessId)
+          && request.resource.data.status != "active"
+          && request.resource.data.billingStatus != "paid"
+            && !(['billingStatus', 'billingStartDate', 'nextBillingDate', 'lastPaymentId', 'pricePerBed', 'plan']
+            .hasAny(request.resource.data.diff(resource.data).changedKeys()));
+
+        allow delete: if isBusinessOwner(businessId);
+
+        match /rooms/{roomId} {
+          allow read: if isBusinessMember(businessId)
+            || (isAuth() && isPropertyActiveAndPaid(businessId, propertyId));
+          allow create, update, delete: if isBusinessOwner(businessId);
+
+          match /beds/{bedId} {
+            allow read: if isBusinessMember(businessId)
+              || (isAuth() && isPropertyActiveAndPaid(businessId, propertyId));
+            allow create: if isBusinessOwner(businessId)
+              && request.resource.data.createdBy == request.auth.uid;
+            allow delete: if isBusinessOwner(businessId);
+            allow update: if (
+              isBusinessOwner(businessId)
+                || (
+                  (isPropertyManager(businessId, propertyId) || isPropertyStaff(businessId, propertyId))
+                  && request.resource != null
+                  && request.resource.data != null
+                  && request.resource.data.keys().hasOnly([
+                    'isOccupied', 'occupied', 'tenantId', 'tenantName', 'tenantPhone', 'status', 'notes', 'updatedBy'
+                  ])
+                )
+            )
+              && (
+                (request.resource.data.isActive == true)
+                  ? isPropertyActiveAndPaid(businessId, propertyId)
+                  : true
+              )
+              && request.resource.data.updatedBy == request.auth.uid;
+          }
+        }
+
+        // Property-level access control documents (server-managed)
+        match /access/{uid} {
+          allow read: if isAuth() && request.auth.uid == uid || isBusinessOwner(businessId);
+          allow create, update, delete: if false;
+        }
+      }
+
+      // ───────────────────────────────
+      // TENANTS (BUSINESS SCOPED)
+      // ───────────────────────────────
+      match /tenants/{tenantId} {
+        allow read: if isBusinessMember(businessId);
+        allow create: if (
+          isBusinessOwner(businessId)
+            || (
+              (request.resource.data.propertyId is string)
+              && (
+                isPropertyManager(businessId, request.resource.data.propertyId)
+                || isPropertyStaff(businessId, request.resource.data.propertyId)
+              )
+            )
+        )
+          && (
+            (request.resource.data.propertyId is string)
+              ? isPropertyActiveAndPaid(businessId, request.resource.data.propertyId)
+              : true
+          )
+          && request.resource.data.createdBy == request.auth.uid;
+
+        allow update: if (
+          isBusinessOwner(businessId)
+            || (
+              (request.resource.data.propertyId is string ? request.resource.data.propertyId : resource.data.propertyId) is string
+              && (
+                isPropertyManager(businessId, (request.resource.data.propertyId is string) ? request.resource.data.propertyId : resource.data.propertyId)
+                || isPropertyStaff(businessId, (request.resource.data.propertyId is string) ? request.resource.data.propertyId : resource.data.propertyId)
+              )
+            )
+        )
+          && (
+            ((request.resource.data.propertyId is string) ? request.resource.data.propertyId : resource.data.propertyId) is string
+              ? isPropertyActiveAndPaid(businessId, (request.resource.data.propertyId is string) ? request.resource.data.propertyId : resource.data.propertyId)
+              : true
+          )
+          && request.resource.data.updatedBy == request.auth.uid;
+
+        allow delete: if isBusinessOwner(businessId) && resource.data.updatedBy == request.auth.uid;
+      }
+
+      // AUDIT LOGS (SERVER-OWNED)
+      match /audit_logs/{logId} {
+        allow read: if isBusinessOwner(businessId);
+        allow create, update, delete: if false;
+      }
+
+      // ───────────────────────────────
+      // PAYMENT METHODS
+      // ───────────────────────────────
+      match /paymentMethods/{methodId} {
+        allow read, create, update, delete: if isBusinessOwner(businessId);
+      }
+
+      // ───────────────────────────────
+      // NOTIFICATIONS (BUSINESS SCOPED)
+      // ───────────────────────────────
+      match /notifications/{notificationId} {
+        allow read: if isBusinessMember(businessId);
+        allow update: if isBusinessMember(businessId)
+          && request.resource != null
+          && request.resource.data.diff(resource.data).changedKeys().hasOnly(['read', 'readAt'])
+          && request.resource.data.read is bool;
+        allow create, delete: if false;
+      }
+
+      // Cloud Functions only: business-scoped payment ledgers
+      match /payments_to_onestay360/{paymentId} {
+        allow read: if isBusinessOwner(businessId);
+        allow create, update, delete: if false;
+      }
+    }
+
+    // ───────────────────────────────
+    // PLANS (PLATFORM-OWNED)
+    // ───────────────────────────────
+    // Plans are platform-owned; clients cannot create/update/delete. Admin SDK bypasses rules.
+    match /plans/{planId} {
+      allow read: if isAuth();
+      allow create, update, delete: if false;
+    }
+
+    // ───────────────────────────────
+    // TENANTS (GLOBAL)
+    // ───────────────────────────────
+    match /tenants/{tenantId} {
+
+      allow read: if tenantDocOwnedByCaller(tenantId)
+        || tenantBusinessOwnerAllowed(tenantId);
+
+      allow create: if isTenantSelfData(request.resource.data)
+        || (
+          request.resource.data.businessId is string
+          && isBusinessOwner(request.resource.data.businessId)
+        );
+
+      allow update: if tenantDocOwnedByCaller(tenantId)
+        || tenantBusinessOwnerAllowed(tenantId);
+
+      allow delete: if tenantBusinessOwnerAllowed(tenantId);
+
+      match /documents/{documentId} {
+        allow read, write: if tenantDocOwnedByCaller(tenantId)
+          || tenantBusinessOwnerAllowed(tenantId);
+        allow delete: if false;
+      }
+
+      match /notifications/{notificationId} {
+        allow read: if tenantDocOwnedByCaller(tenantId)
+          || tenantBusinessOwnerAllowed(tenantId);
+        allow update: if tenantDocOwnedByCaller(tenantId);
+        allow create: if tenantBusinessOwnerAllowed(tenantId);
+        allow delete: if false;
+      }
+    }
+
+    // ───────────────────────────────
+    // PROPERTIES BY CITY (PUBLIC INDEX)
+    // ───────────────────────────────
+    match /properties_by_city/{city}/properties/{propertyId} {
+      allow read: if true;
+      allow write: if isAuth()
+        && request.resource != null
+        && request.resource.data != null
+        && request.resource.data.businessId is string
+        && isBusinessOwner(request.resource.data.businessId);
+    }
+
+    // ───────────────────────────────
+    // BUSINESS ACTIVATION PRIVILEGE
+    // ───────────────────────────────
+    match /business_activation/{businessId} {
+      // Owners can read their business privilege
+      allow read: if isAuth() && isBusinessOwner(businessId);
+
+      // Allow a one-time create by owner with strict defaults; no client updates/deletes
+      allow create: if isAuth()
+        && isBusinessOwner(businessId)
+        && !exists(/databases/$(database)/documents/business_activation/$(businessId))
+        && request.resource.data.introActivationAvailable == true
+        && request.resource.data.used == false
+        && request.resource.data.propertyId == null
+        && request.resource.data.paymentId == null;
+
+      allow update, delete: if false;
+    }
+
+    // ───────────────────────────────
+    // BUSINESS INVITATIONS (SERVER-OWNED)
+    // ───────────────────────────────
+    match /business_invitations/{inviteId} {
+      allow read: if true; // public landing needs read-only access
+      allow create, update, delete: if false; // server-owned only
+    }
+
+    // ───────────────────────────────
+    // PLATFORM PAYMENTS (LEDGER)
+    // ───────────────────────────────
+    match /platform_payments/{paymentId} {
+      allow read: if isAuth()
+        && resource.data.businessId is string
+        && isBusinessOwner(resource.data.businessId);
+      allow create, update, delete: if false;
+    }
+
+    // BILLING INVOICES (SERVER ONLY)
+    match /billing_invoices/{invoiceId} {
+      allow read: if isAuth()
+        && resource.data.businessId is string
+        && isBusinessOwner(resource.data.businessId);
+      allow create, update, delete: if false;
+    }
+
+    // PROMO REDEMPTIONS (SERVER ONLY)
+    match /promo_redemptions/{redemptionId} {
+      allow read: if isAuth();
+      allow create, update, delete: if false;
+    }
+
+    // PAYMENT ATTEMPTS (SERVER ONLY)
+    match /payment_attempts/{paymentId} {
+      allow read: if isAuth();
+      allow create, update, delete: if false;
+    }
+
+    // ───────────────────────────────
+    // PAYMENT TRANSACTIONS (IMMUTABLE)
+    // ───────────────────────────────
+    match /payment_transactions/{transactionId} {
+
+      allow read: if isAuth() && (
+        request.auth.uid == resource.data.tenantId
+        || isBusinessOwner(resource.data.businessId)
+      );
+
+      allow create: if isAuth()
+        && isBusinessOwner(request.resource.data.businessId)
+        && request.resource.data.amount > 0
+        && request.resource.data.currency == "INR"
+        && request.resource.data.createdBy == request.auth.uid
+        && request.resource.data.createdAt == request.time;
+
+      allow update, delete: if false;
+    }
+
+    // ───────────────────────────────
+    // REQUESTS
+    // ───────────────────────────────
+    match /requests/{requestId} {
+      // Allow owners to manage, allow members to read their business' requests
+      allow read: if isAuth()
+        && resource.data.businessId is string
+        && (isBusinessOwner(resource.data.businessId) || isBusinessManager(resource.data.businessId));
+
+      // Writes remain owner-only
+      allow create, update, delete: if isAuth()
+        && request.resource.data.businessId is string
+        && isBusinessOwner(request.resource.data.businessId);
+    }
+
+    // ───────────────────────────────
+    // COUNTERS
+    // ───────────────────────────────
+    // Used for generating sequential IDs (business, tenant, property)
+    // SECURITY: Only authenticated users can read/write (service-layer controlled)
+    match /counters/{counterId} {
+      allow read, write: if isAuth();
+    }
+
+    // ───────────────────────────────
+    // TENANT INVITATIONS
+    // ───────────────────────────────
+    match /tenant_invitations/{invitationId} {
+      allow read: if isAuth() && (
+        request.auth.uid == resource.data.tenantId
+        || isBusinessOwner(resource.data.businessId)
+      );
+
+      allow create, update, delete: if isAuth()
+        && isBusinessOwner(request.resource.data.businessId);
+    }
+
+    // ───────────────────────────────
+    // ENROLLMENT REQUESTS
+    // Path: /enrollmentRequests/{requestId}
+    // Tenants submit enrollment requests to properties
+    // ───────────────────────────────
+    match /enrollmentRequests/{requestId} {
+      // Temporarily allow any authenticated business user to read
+      // (tighten once all requests reliably store businessId)
+      allow read: if isAuth();
+
+      // Any authenticated user (tenant) can create an enrollment request
+      allow create: if isAuth()
+        && request.resource.data.tenantId == request.auth.uid
+        && request.resource.data.status == 'pending'
+        && request.resource.data.propertyId is string
+        && request.resource.data.businessId is string
+        && request.resource.data.tenantName is string
+        && request.resource.data.tenantPhone is string
+        && request.resource.data.moveInDate is timestamp;
+
+      // Only the tenant who created it can update (e.g., cancel)
+      // Business members with property access can update status
+      allow update: if isAuth() && (
+        request.auth.uid == resource.data.tenantId
+        || (resource.data.businessId is string
+            && isBusinessMember(resource.data.businessId))
+      );
+
+      // Only the tenant who created it can delete
+      allow delete: if isAuth() && request.auth.uid == resource.data.tenantId;
+    }
+  }
+}

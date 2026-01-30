@@ -148,10 +148,22 @@ class TenantProfileViewModel extends ChangeNotifier {
   Future<void> load() async {
     final user = _auth.currentUser;
     if (user == null) return;
-    
-    final doc = await _firestore.collection('users').doc(user.uid).get();
-    final data = doc.data() ?? {};
-    
+
+    final userDoc = await _firestore.collection('users').doc(user.uid).get();
+    final userData = userDoc.data() ?? {};
+
+    final tenantIdFromUser = userData['tenantId']?.toString();
+    _tenantId = tenantIdFromUser;
+
+    final Map<String, dynamic> data = Map<String, dynamic>.from(userData);
+    if (tenantIdFromUser != null && tenantIdFromUser.isNotEmpty) {
+      final tenantDoc = await _firestore.collection('tenants').doc(tenantIdFromUser).get();
+      final tenantData = tenantDoc.data();
+      if (tenantData != null) {
+        data.addAll(tenantData); // Prefer tenants/{tenantId} fields when present
+      }
+    }
+
     // Overview fields - use fullName if name is not available
     nameController.text = (data['name'] ?? data['fullName'] ?? '').toString();
     mobileNumberController.text = (data['mobileNumber'] ?? data['phone'] ?? '').toString();
@@ -173,16 +185,16 @@ class TenantProfileViewModel extends ChangeNotifier {
 
     // Load date of birth
     final dobTimestamp = data['dateOfBirth'];
-    if (dobTimestamp != null) {
-      selectedDateOfBirth = (dobTimestamp as Timestamp).toDate();
+    if (dobTimestamp is Timestamp) {
+      selectedDateOfBirth = dobTimestamp.toDate();
+    } else if (dobTimestamp is DateTime) {
+      selectedDateOfBirth = dobTimestamp;
+    } else {
+      selectedDateOfBirth = null;
     }
 
     // Load documents
     await _loadDocuments(user.uid);
-    
-    // Load tenantId for QR code
-    final userDoc = await _firestore.collection('users').doc(user.uid).get();
-    _tenantId = userDoc.data()?['tenantId']?.toString();
 
     notifyListeners();
   }
@@ -222,7 +234,7 @@ class TenantProfileViewModel extends ChangeNotifier {
       // Check profile completeness
       final profileComplete = isProfileComplete;
 
-      final updates = {
+      final tenantUpdates = {
         // Overview fields - also update fullName for consistency
         'name': nameController.text.trim(),
         'fullName': nameController.text.trim(), // Keep both for compatibility
@@ -244,6 +256,11 @@ class TenantProfileViewModel extends ChangeNotifier {
         'addressLine1': addressLine1Controller.text.trim(),
         'city': cityController.text.trim(),
         'pincode': pincodeController.text.trim(),
+        'alternatePhone': alternatePhoneController.text.trim(),
+        'emergencyContactName': emergencyContactNameController.text.trim(),
+        'emergencyContactPhone': emergencyContactPhoneController.text.trim(),
+        'officeInstituteName': officeInstituteNameController.text.trim(),
+        'officeInstituteId': officeInstituteIdController.text.trim(),
         
         // Set profile complete flag
         'profileComplete': profileComplete,
@@ -251,14 +268,31 @@ class TenantProfileViewModel extends ChangeNotifier {
         'updatedAt': FieldValue.serverTimestamp(),
       };
 
-      await _firestore.collection('users').doc(user.uid).update(updates);
+      final userDocRef = _firestore.collection('users').doc(user.uid);
+      final existingUserData = await userDocRef.get();
+      final tenantId = existingUserData.data()?['tenantId']?.toString();
 
-      // Mirror fields into tenants collection if tenantId exists
-      final userSnap = await _firestore.collection('users').doc(user.uid).get();
-      final tenantId = userSnap.data()?['tenantId']?.toString();
+      // Keep /users doc minimal (identity + flags only)
+      final userUpdates = {
+        'name': nameController.text.trim(),
+        'fullName': nameController.text.trim(),
+        'mobileNumber': mobileNumberController.text.trim(),
+        'phone': mobileNumberController.text.trim(),
+        'email': user.email ?? '',
+        'userType': 'tenant',
+        if (tenantId != null && tenantId.isNotEmpty) 'tenantId': tenantId,
+        'profileComplete': profileComplete,
+        'updatedAt': FieldValue.serverTimestamp(),
+      };
+
+      await userDocRef.set(userUpdates, SetOptions(merge: true));
+
+      // Mirror detailed fields into tenants collection if tenantId exists
       if (tenantId != null && tenantId.isNotEmpty) {
         await _firestore.collection('tenants').doc(tenantId).set({
-          ...updates,
+          ...tenantUpdates,
+          'userId': user.uid,
+          'tenantId': tenantId,
         }, SetOptions(merge: true));
       }
 

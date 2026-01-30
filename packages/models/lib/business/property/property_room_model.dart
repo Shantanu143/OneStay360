@@ -11,6 +11,7 @@ class PropertyRoom {
   final String? gender; // optional room gender: 'Male' | 'Female' | 'Co-ed' | null
 
   final String status; // available, occupied, maintenance
+  final bool isActive; // billing-active flag
 
   PropertyRoom({
     required this.roomNumber,
@@ -19,6 +20,7 @@ class PropertyRoom {
     this.sharingType, // prefer using this moving forward
     this.hasAC = false,
     this.status = 'available',
+    this.isActive = false,
     this.gender,
   });
 
@@ -43,6 +45,7 @@ class PropertyRoom {
       hasAC: map['hasAC'] as bool? ?? false,
       status: map['status']?.toString() ?? 'available',
       gender: map['gender']?.toString(),
+      isActive: map['isActive'] as bool? ?? false,
     );
   }
 
@@ -66,6 +69,7 @@ class PropertyRoom {
       'hasAC': hasAC,
       'status': status,
       'gender': gender,
+      'isActive': isActive,
     };
   }
 }

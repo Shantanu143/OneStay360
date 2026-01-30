@@ -18,6 +18,10 @@ enum PropertySortOption {
 class BusinessPropertiesViewModel extends ChangeNotifier {
   final PropertyRepository _propertyRepository;
 
+  bool _isDisposed = false;
+  String? _lastBusinessId;
+  final Set<String> _loadedBusinessIds = {};
+
   List<Property> _properties = [];
   bool _isLoading = false;
   String _searchQuery = '';
@@ -112,27 +116,41 @@ class BusinessPropertiesViewModel extends ChangeNotifier {
     return (property.totals.beds - property.totals.availableBeds) / property.totals.beds;
   }
 
-  // Main method to load properties - FIXED
-  Future<void> loadProperties() async {
+  // Main method to load properties with businessId guard
+  // businessId must come from BusinessStateProvider (membership validated)
+  Future<void> loadProperties(String? businessId) async {
+    // UI Guard: Stop loading if no active business membership
+    if (businessId == null || businessId.isEmpty) {
+      _properties = [];
+      _isLoading = false;
+      _error = 'No active business membership';
+      _notifyListenersSafe();
+      return;
+    }
+
+    // Prevent redundant loads for same business while already loading
+    if (_isLoading && _lastBusinessId == businessId) {
+      return;
+    }
+
+    // If already loaded (even empty) without error for the same business, skip
+    if (_lastBusinessId == businessId && _error == null && _loadedBusinessIds.contains(businessId)) {
+      return;
+    }
+
+    _lastBusinessId = businessId;
+
     _isLoading = true;
     _error = null;
-    notifyListeners();
+    _notifyListenersSafe();
 
     try {
-      // Get business ID directly from repository
-      final businessId = await _propertyRepository.getCurrentUserBusinessId();
-
-      if (businessId == null || businessId.isEmpty) {
-        _error = 'No business account found';
-        _properties = [];
-        return;
-      }
-
       debugPrint('🔄 Loading properties for business: $businessId');
 
       _properties = await _propertyRepository.getPropertiesByBusiness(businessId);
 
       debugPrint('✅ Successfully loaded ${_properties.length} properties');
+      _loadedBusinessIds.add(businessId);
 
     } catch (e, stack) {
       debugPrint('❌ Error loading properties: $e');
@@ -141,32 +159,43 @@ class BusinessPropertiesViewModel extends ChangeNotifier {
       _error = 'Failed to load properties: ${e.toString()}';
     } finally {
       _isLoading = false;
-      notifyListeners();
+      _notifyListenersSafe();
     }
   }
 
-  // Refresh method - FIXED
-  Future<void> refreshProperties() async {
-    await loadProperties();
+  // Refresh method with businessId guard
+  Future<void> refreshProperties(String? businessId) async {
+    await loadProperties(businessId);
   }
 
   void updateSearchQuery(String query) {
     _searchQuery = query;
-    notifyListeners();
+    _notifyListenersSafe();
   }
 
   void updateStatusFilter(PropertyStatusFilter filter) {
     _statusFilter = filter;
-    notifyListeners();
+    _notifyListenersSafe();
   }
 
   void updateSortOption(PropertySortOption option) {
     _sortOption = option;
-    notifyListeners();
+    _notifyListenersSafe();
   }
 
   void clearError() {
     _error = null;
+    _notifyListenersSafe();
+  }
+
+  @override
+  void dispose() {
+    _isDisposed = true;
+    super.dispose();
+  }
+
+  void _notifyListenersSafe() {
+    if (_isDisposed) return;
     notifyListeners();
   }
 

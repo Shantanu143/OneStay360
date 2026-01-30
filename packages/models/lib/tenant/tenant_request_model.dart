@@ -37,7 +37,7 @@ class TenantRequest {
     return TenantRequest(
       id: id,
       tenantName: data['tenantName'] ?? '',
-      phone: data['phone'] ?? '',
+      phone: data['phone'] ?? data['tenantPhone'] ?? '',
       email: data['email'],
       status: data['status'] ?? 'pending',
       createdAt: (data['createdAt'] as Timestamp).toDate(),
@@ -52,10 +52,15 @@ class TenantRequest {
     );
   }
 
+  factory TenantRequest.fromMap(Map<String, dynamic> data, String id) {
+    return TenantRequest.fromFirestore(id, data);
+  }
+
   Map<String, dynamic> toMap() {
     return {
       'tenantName': tenantName,
       'phone': phone,
+      'tenantPhone': phone,
       'email': email,
       'status': status,
       'createdAt': Timestamp.fromDate(createdAt),

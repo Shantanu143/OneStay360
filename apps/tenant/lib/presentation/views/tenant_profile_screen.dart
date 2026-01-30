@@ -1225,6 +1225,7 @@ class _EditableRow extends StatelessWidget {
     required this.label,
     required this.controller,
     this.keyboardType,
+    this.maxLines = 1,
   });
 
   @override

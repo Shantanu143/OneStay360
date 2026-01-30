@@ -231,7 +231,7 @@ class _EditPaymentMethodScreenState extends State<EditPaymentMethodScreen> {
         const SizedBox(height: 16),
         // Bank Name Dropdown with Search
         DropdownButtonFormField<String>(
-          value: _bankNameController.text.isEmpty ? null : _bankNameController.text,
+          initialValue: _bankNameController.text.isEmpty ? null : _bankNameController.text,
           decoration: InputDecoration(
             labelText: 'Bank Name',
             hintText: 'Select or search bank',

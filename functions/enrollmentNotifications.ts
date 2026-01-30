@@ -1,0 +1,363 @@
+import * as functions from 'firebase-functions';
+import * as admin from 'firebase-admin';
+
+if (admin.apps.length === 0) {
+  admin.initializeApp();
+}
+
+const db = admin.firestore();
+const messaging = admin.messaging();
+
+/**
+ * Firestore trigger: Send push notification to business owner when new enrollment request is received
+ * Triggers on: /enrollmentRequests/{requestId}
+ * 
+ * The enrollment request contains:
+ * - propertyId: Which property is being requested
+ * - tenantId: Who is requesting
+ * - tenantName: Tenant's name
+ * - tenantPhone: Tenant's phone
+ * - moveInDate: Requested move-in date
+ * - status: 'pending' (initial)
+ */
+export const onEnrollmentRequestCreated = functions.firestore
+  .document('enrollmentRequests/{requestId}')
+  .onCreate(async (snap, context) => {
+    try {
+      const enrollmentRequest = snap.data();
+      const requestId = context.params.requestId;
+
+      // Extract data from enrollment request
+      const propertyId = enrollmentRequest.propertyId as string;
+      const storedBusinessId = enrollmentRequest.businessId as string | undefined;
+      const storedPropertyName = enrollmentRequest.propertyName as string | undefined;
+      const tenantId = enrollmentRequest.tenantId as string;
+      const tenantName = enrollmentRequest.tenantName as string;
+      const tenantPhone = enrollmentRequest.tenantPhone as string;
+      const moveInDate = enrollmentRequest.moveInDate as any;
+
+      if (!propertyId) {
+        throw new Error('Property ID not found in enrollment request');
+      }
+
+      // Prefer stored businessId, otherwise fall back to deriving from propertyId
+      let businessId = storedBusinessId;
+      if (!businessId || businessId.length < 3) {
+        businessId = propertyId.substring(0, 10);
+      }
+
+      if (!businessId || !businessId.startsWith('BUS')) {
+        throw new Error(`Invalid business ID when processing property ${propertyId}`);
+      }
+      
+      console.log(`📍 Processing enrollment for property: ${propertyId}, businessId: ${businessId}`);
+      
+      // For now, use propertyId as display name if we can't fetch property details
+      // This ensures notification is sent even if property fetch fails
+      let propertyName = storedPropertyName || propertyId;
+      
+      // Try to get property name, but don't fail if we can't
+      try {
+        const propertySnap = await db
+          .collection('businesses')
+          .doc(businessId)
+          .collection('properties')
+          .doc(propertyId)
+          .get();
+
+        if (propertySnap.exists) {
+          const propertyData = propertySnap.data() as any;
+          propertyName = propertyData?.name || propertyId;
+          console.log(`✅ Property loaded: ${propertyName}`);
+        } else {
+          console.warn(`⚠️ Property not found, using ID as name: ${propertyId}`);
+        }
+      } catch (error) {
+        console.warn(`⚠️ Could not fetch property details, using ID as name:`, error);
+      }
+
+      // Get business owner's device token
+      const businessSnap = await db.collection('businesses').doc(businessId).get();
+
+      if (!businessSnap.exists) {
+        throw new Error(`Business not found: ${businessId}`);
+      }
+
+      const businessData = businessSnap.data() as any;
+      const ownerUserId = businessData?.ownerUserId || businessData?.ownerUid;
+
+      if (!ownerUserId) {
+        console.warn(
+          `Business ${businessId} does not have ownerUserId or ownerUid set. Notification not sent.`
+        );
+        return;
+      }
+
+      // Get device tokens for the business owner
+      const deviceTokensSnap = await db
+        .collection('users')
+        .doc(ownerUserId)
+        .collection('deviceTokens')
+        .where('active', '==', true)
+        .limit(100)
+        .get();
+
+      if (deviceTokensSnap.empty) {
+        console.log(
+          `No active device tokens found for business owner ${ownerUserId}. ` +
+            `User may not have registered for notifications.`
+        );
+        return;
+      }
+
+      // Format move-in date
+      let moveInDateFormatted = 'Not specified';
+      if (moveInDate) {
+        try {
+          const date = moveInDate.toDate
+            ? moveInDate.toDate()
+            : new Date(moveInDate);
+          moveInDateFormatted = date.toLocaleDateString('en-IN');
+        } catch (e) {
+          console.warn('Could not format move-in date:', e);
+        }
+      }
+
+      // Prepare notification payload
+      const notification = {
+        title: `New Enrollment Request`,
+        body: `${tenantName} is interested in ${propertyName}`,
+      };
+
+      const data = {
+        requestId: requestId,
+        propertyId: propertyId,
+        businessId: businessId,
+        propertyName: propertyName,
+        tenantId: tenantId,
+        tenantName: tenantName,
+        tenantPhone: tenantPhone,
+        moveInDate: moveInDateFormatted,
+        type: 'enrollment_request',
+        notificationTimestamp: new Date().toISOString(),
+      };
+
+      // Send notifications to all device tokens
+      const deviceTokens = deviceTokensSnap.docs.map((doc) => doc.id);
+      const failedTokens: string[] = [];
+
+      const sendPromises = deviceTokens.map(async (token) => {
+        try {
+          await messaging.send({
+            token: token,
+            notification: notification,
+            data: data,
+            android: {
+              priority: 'high',
+              notification: {
+                title: notification.title,
+                body: notification.body,
+                clickAction: 'FLUTTER_NOTIFICATION_CLICK',
+                sound: 'default',
+                channelId: 'enrollment_requests',
+              },
+            },
+            apns: {
+              payload: {
+                aps: {
+                  alert: {
+                    title: notification.title,
+                    body: notification.body,
+                  },
+                  sound: 'default',
+                  badge: 1,
+                },
+              },
+            },
+            webpush: {
+              notification: {
+                title: notification.title,
+                body: notification.body,
+                icon: '/icons/icon-192x192.png',
+                badge: '/icons/badge-72x72.png',
+              },
+              data: data,
+            },
+          });
+
+          console.log(`✅ Notification sent to token: ${token}`);
+        } catch (error) {
+          console.error(`❌ Failed to send to token ${token}:`, error);
+          failedTokens.push(token);
+
+          // If token is invalid, mark it as inactive
+          if (
+            error instanceof Error &&
+            (error.message.includes('registration token is invalid') ||
+              error.message.includes('registration token is not registered'))
+          ) {
+            await db
+              .collection('users')
+              .doc(ownerUserId)
+              .collection('deviceTokens')
+              .doc(token)
+              .update({ active: false, deactivatedAt: new Date() })
+              .catch((e) =>
+                console.warn(`Could not mark token inactive: ${token}`, e)
+              );
+          }
+        }
+      });
+
+      await Promise.all(sendPromises);
+
+      try {
+        await db
+          .collection('businesses')
+          .doc(businessId)
+          .collection('notifications')
+          .add({
+            businessId,
+            title: notification.title,
+            message: notification.body,
+            type: data.type ?? 'enrollment_request',
+            requestId,
+            propertyId,
+            propertyName,
+            tenantId,
+            tenantName,
+            tenantPhone,
+            read: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+            metadata: {
+              moveInDate: moveInDateFormatted,
+            },
+            routing: {
+              target: 'property_requests',
+              requestId,
+              propertyId,
+            },
+          });
+      } catch (error) {
+        console.error('⚠️ Failed to persist business notification document:', error);
+      }
+
+      // Log the notification event
+      await db.collection('enrollmentRequests').doc(requestId).update({
+        notificationsSentAt: new Date(),
+        notificationsSentTo: deviceTokens.length,
+        notificationsFailed: failedTokens.length,
+        lastUpdated: new Date(),
+      });
+
+      console.log(
+        `✅ Enrollment request notification complete for request ${requestId}: ` +
+          `sent to ${deviceTokens.length - failedTokens.length} devices, ` +
+          `${failedTokens.length} failed`
+      );
+    } catch (error) {
+      console.error('❌ Error in onEnrollmentRequestCreated:', error);
+      // Don't throw - we don't want the write to fail if notification fails
+    }
+  });
+
+/**
+ * HTTP function to register/update device token for a user
+ * Call from mobile app when app initializes
+ * 
+ * Request body:
+ * {
+ *   "deviceToken": "firebase-cloud-messaging-token",
+ *   "deviceName": "iPhone 12 Pro", // optional
+ *   "deviceModel": "iOS 15.0" // optional
+ * }
+ */
+export const registerDeviceToken = functions.https.onCall(
+  async (data, context) => {
+    // Verify user is authenticated
+    if (!context.auth) {
+      throw new functions.https.HttpsError(
+        'unauthenticated',
+        'Must be logged in to register device token'
+      );
+    }
+
+    const userId = context.auth.uid;
+    const { deviceToken, deviceName, deviceModel } = data;
+
+    if (!deviceToken || typeof deviceToken !== 'string') {
+      throw new functions.https.HttpsError(
+        'invalid-argument',
+        'deviceToken is required and must be a string'
+      );
+    }
+
+    try {
+      // Register/update device token
+      await db
+        .collection('users')
+        .doc(userId)
+        .collection('deviceTokens')
+        .doc(deviceToken)
+        .set(
+          {
+            token: deviceToken,
+            active: true,
+            registeredAt: admin.firestore.FieldValue.serverTimestamp(),
+            lastSeenAt: admin.firestore.FieldValue.serverTimestamp(),
+            deviceName: deviceName || 'Unknown Device',
+            deviceModel: deviceModel || 'Unknown Model',
+          },
+          { merge: true }
+        );
+
+      console.log(`✅ Device token registered for user ${userId}`);
+
+      return {
+        success: true,
+        message: 'Device token registered successfully',
+      };
+    } catch (error) {
+      console.error('Error registering device token:', error);
+      throw new functions.https.HttpsError(
+        'internal',
+        'Failed to register device token'
+      );
+    }
+  }
+);
+
+/**
+ * Scheduled function to clean up inactive device tokens (daily)
+ * Removes tokens that have been inactive for more than 30 days
+ */
+export const cleanupInactiveDeviceTokens = functions.pubsub
+  .schedule('every day 02:00')
+  .timeZone('Asia/Kolkata')
+  .onRun(async (context) => {
+    try {
+      const thirtyDaysAgo = new Date();
+      thirtyDaysAgo.setDate(thirtyDaysAgo.getDate() - 30);
+
+      const usersSnap = await db.collection('users').get();
+      let totalDeleted = 0;
+
+      for (const userDoc of usersSnap.docs) {
+        const tokensSnap = await userDoc.ref
+          .collection('deviceTokens')
+          .where('lastSeenAt', '<', thirtyDaysAgo)
+          .get();
+
+        for (const tokenDoc of tokensSnap.docs) {
+          await tokenDoc.ref.delete();
+          totalDeleted++;
+        }
+      }
+
+      console.log(`✅ Cleanup complete: Deleted ${totalDeleted} inactive tokens`);
+      return null;
+    } catch (error) {
+      console.error('Error cleaning up inactive tokens:', error);
+      return null;
+    }
+  });

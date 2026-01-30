@@ -7,6 +7,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_services/services/firestore_service.dart';
 import '../home_screen.dart';
+import 'phone_login_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final String userType; // 'tenant' or 'business'
@@ -554,16 +555,14 @@ class _LoginScreenState extends State<LoginScreen>
                               text: 'Continue with Phone',
                               icon: Icons.phone,
                               color: Colors.green.shade600,
-                              onPressed: null, // Phone login is now disabled
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Currently unavailable',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade500,
-                              ),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => PhoneLoginScreen(userType: widget.userType),
+                                  ),
+                                );
+                              },
                             ),
                           ],
                         ),

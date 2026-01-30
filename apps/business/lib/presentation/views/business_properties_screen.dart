@@ -13,6 +13,7 @@ import 'package:models/business/property/property_model.dart';
 import '../view_models/add_property_viewmodel.dart';
 import 'package:firebase_services/services/image_service.dart';
 import 'widgets/business_scaffold.dart';
+import '../../data/providers/business_state_provider.dart';
 
 class BusinessPropertiesScreen extends StatelessWidget {
   const BusinessPropertiesScreen({super.key});
@@ -21,39 +22,51 @@ class BusinessPropertiesScreen extends StatelessWidget {
   Widget build(BuildContext context) {
     final authService = context.read<AuthService>();
     final propertyRepository = context.read<PropertyRepository>();
+    final businessState = context.watch<BusinessStateProvider>();
 
     return ChangeNotifierProvider(
       create: (_) => BusinessPropertiesViewModel(
         propertyRepository: propertyRepository,
-      )..loadProperties(),
-      child: BusinessScaffold(
-        currentTab: BusinessTab.properties,
-        //titleText: 'Properties',
-        floatingActionButton: FloatingActionButton.extended(
-          onPressed: () {
-            _navigateToAddProperty(context);
-          },
-          icon: const Icon(Icons.add),
-          label: const Text('Add Property'),
-        ),
-        body: BusinessPropertiesView(
-          onAddProperty: () {
-            _navigateToAddProperty(context);
-          },
-          onPropertySelected: (Property property) {
-            if (property.id != null) {
-              Navigator.of(context).push(
-                MaterialPageRoute(
-                  builder: (_) => view_screen.ViewPropertyScreen(propertyId: property.id!),
-                ),
-              );
-            } else {
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text('Cannot view property: ID is missing')),
-              );
+      ),
+      child: Consumer<BusinessPropertiesViewModel>(
+        builder: (context, viewModel, _) {
+          // Load properties with businessId guard
+          Future.microtask(() {
+            if (businessState.businessId != null && businessState.businessId!.isNotEmpty) {
+              viewModel.loadProperties(businessState.businessId);
             }
-          },
-        ),
+          });
+
+          return BusinessScaffold(
+            currentTab: BusinessTab.properties,
+            //titleText: 'Properties',
+            floatingActionButton: FloatingActionButton.extended(
+              onPressed: () {
+                _navigateToAddProperty(context);
+              },
+              icon: const Icon(Icons.add),
+              label: const Text('Add Property'),
+            ),
+            body: BusinessPropertiesView(
+              onAddProperty: () {
+                _navigateToAddProperty(context);
+              },
+              onPropertySelected: (Property property) {
+                if (property.id != null) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => view_screen.ViewPropertyScreen(propertyId: property.id!),
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Cannot view property: ID is missing')),
+                  );
+                }
+              },
+            ),
+          );
+        },
       ),
     );
   }
@@ -151,10 +164,11 @@ class _BusinessPropertiesViewState extends State<BusinessPropertiesView> {
   Widget build(BuildContext context) {
     final viewModel = context.watch<BusinessPropertiesViewModel>();
     final authService = context.read<AuthService>();
+    final businessState = context.read<BusinessStateProvider>();
     final filteredProperties = viewModel.filteredProperties;
 
     return RefreshIndicator(
-      onRefresh: () => viewModel.refreshProperties(),
+      onRefresh: () => viewModel.refreshProperties(businessState.businessId),
       child: SingleChildScrollView(
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 100),
@@ -167,7 +181,7 @@ class _BusinessPropertiesViewState extends State<BusinessPropertiesView> {
             if (viewModel.hasError)
               _ErrorState(
                 error: viewModel.error ?? 'Unknown error',
-                onRetry: () => viewModel.refreshProperties(),
+                onRetry: () => viewModel.refreshProperties(businessState.businessId),
               )
             else if (viewModel.isLoading && filteredProperties.isEmpty)
               const Center(child: CircularProgressIndicator())

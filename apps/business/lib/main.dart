@@ -1,7 +1,11 @@
+import 'dart:async';
+
+import 'package:app_links/app_links.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'firebase_options.dart';
@@ -10,13 +14,30 @@ import 'package:firebase_services/services/firestore_service.dart';
 import 'package:firebase_services/repositories/property_repository.dart';
 import 'package:firebase_services/services/image_service.dart';
 import 'package:firebase_services/services/id_generation_service.dart';
+import 'services/device_token_service.dart';
+import 'services/team_invitation_service.dart';
 import '../presentation/views/splash/splash_screen.dart';
 import '../presentation/views/auth/auth_wrapper.dart';
 import '../data/providers/business_state_provider.dart';
+import '../data/providers/business_notifications_provider.dart';
 import '../presentation/view_models/payment_methods_viewmodel.dart';
+import '../presentation/views/invite_landing_screen.dart';
+import '../presentation/views/invite_welcome_screen.dart';
+import '../presentation/views/enrollment_requests_screen.dart';
+
+// Background message handler - must be top-level or static
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  debugPrint('📬 Background message received: ${message.messageId}');
+  debugPrint('Title: ${message.notification?.title}');
+  debugPrint('Body: ${message.notification?.body}');
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
+
+  // Set up background message handler before Firebase initialization
+  FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
   try {
     await Firebase.initializeApp(
@@ -61,14 +82,9 @@ void main() async {
       debugPrint('⚠️ App Check initialization error (business): $e');
     }
 
-    // Initialize ID counters (as before)
-    try {
-      final idService = IdGenerationService();
-      await idService.initializeCounters();
-      debugPrint('✅ ID Generation Service counters initialized successfully (business)');
-    } catch (e) {
-      debugPrint('ℹ️ Counter initialization deferred (business): $e');
-    }
+    // NOTE: Counter initialization removed to avoid Firestore permission deadlock.
+    // Counters are accessed ONLY during CreateBusinessService.createBusiness()
+    // which has proper authorization.
   } catch (e) {
     debugPrint('Firebase initialization error (business): $e');
   }
@@ -81,6 +97,86 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return const _MyAppShell();
+  }
+}
+
+class _MyAppShell extends StatefulWidget {
+  const _MyAppShell();
+
+  @override
+  State<_MyAppShell> createState() => _MyAppShellState();
+}
+
+class _MyAppShellState extends State<_MyAppShell> {
+  final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
+  AppLinks? _appLinks;
+  StreamSubscription<Uri?>? _linkSub;
+  String? _lastInviteId;
+
+  @override
+  void initState() {
+    super.initState();
+    // Set navigator key for device token service
+    DeviceTokenService.navigatorKey = _navKey;
+    _setupAppLinks();
+    _initializeDeviceTokenService();
+  }
+
+  Future<void> _initializeDeviceTokenService() async {
+    try {
+      // Give auth a moment to initialize
+      await Future.delayed(const Duration(milliseconds: 500));
+      await DeviceTokenService().initialize();
+    } catch (e) {
+      debugPrint('Failed to initialize device token service: $e');
+    }
+  }
+
+  Future<void> _setupAppLinks() async {
+    try {
+      _appLinks = AppLinks();
+
+      // Handle the initial link when the app is cold-started from an invite.
+      final initialUri = await _appLinks!.getInitialLink();
+      _handleUri(initialUri);
+
+      // Listen for links while the app is in foreground/background.
+      _linkSub = _appLinks!.uriLinkStream.listen(_handleUri, onError: (err) {
+        debugPrint('Deep link error: $err');
+      });
+    } catch (e) {
+      debugPrint('App links setup failed: $e');
+    }
+  }
+
+  void _handleUri(Uri? uri) {
+    if (uri == null) return;
+    final hostMatch = uri.host == 'app.onestay360.brandedpatil.in';
+    final pathMatch = uri.path.startsWith('/invite');
+    final inviteId = uri.queryParameters['inviteId'];
+
+    if (!hostMatch || !pathMatch || inviteId == null || inviteId.isEmpty) return;
+
+    if (_lastInviteId == inviteId) return; // prevent duplicate routing
+    _lastInviteId = inviteId;
+
+    // Push invite and clear back stack so splash/auth doesn’t override.
+    _navKey.currentState?.pushNamedAndRemoveUntil(
+      '/invite',
+      (route) => false,
+      arguments: {'inviteId': inviteId},
+    );
+  }
+
+  @override
+  void dispose() {
+    _linkSub?.cancel();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         // Core Services
@@ -88,10 +184,19 @@ class MyApp extends StatelessWidget {
         Provider<IdGenerationService>(create: (_) => IdGenerationService()),
         Provider<FirestoreService>(create: (_) => FirestoreService()),
         Provider<ImageService>(create: (_) => ImageService()),
+        Provider<TeamInvitationService>(create: (_) => TeamInvitationService()),
 
         // State Providers
         ChangeNotifierProvider<BusinessStateProvider>(
           create: (_) => BusinessStateProvider(),
+        ),
+        ChangeNotifierProxyProvider<BusinessStateProvider, BusinessNotificationsProvider>(
+          create: (_) => BusinessNotificationsProvider(),
+          update: (_, businessState, notificationsProvider) {
+            final provider = notificationsProvider ?? BusinessNotificationsProvider();
+            provider.updateBusiness(businessState.businessId);
+            return provider;
+          },
         ),
         ChangeNotifierProvider<PaymentMethodsViewModel>(
           create: (_) => PaymentMethodsViewModel(),
@@ -109,9 +214,46 @@ class MyApp extends StatelessWidget {
         title: 'OneStay360 - Business',
         debugShowCheckedModeBanner: false,
         theme: _buildAppTheme(),
+        navigatorKey: _navKey,
         home: const SplashScreen(),
         routes: {
           '/authWrapper': (context) => const AuthWrapper(),
+        },
+        onGenerateRoute: (settings) {
+          if (settings.name == '/enrollment-requests') {
+            final args = settings.arguments as Map<String, dynamic>?;
+            final requestId = args?['requestId'] as String?;
+            final propertyId = args?['propertyId'] as String?;
+            return MaterialPageRoute(
+              builder: (_) => EnrollmentRequestsScreen(
+                initialRequestId: requestId,
+                initialPropertyId: propertyId,
+              ),
+            );
+          }
+          if (settings.name == '/invite') {
+            final args = settings.arguments as Map<String, dynamic>?;
+            final inviteId = args?['inviteId'] as String?;
+            if (inviteId != null) {
+              return MaterialPageRoute(builder: (_) => InviteLandingScreen(inviteId: inviteId));
+            }
+          }
+          if (settings.name == '/welcomeInvite') {
+            final args = settings.arguments as Map<String, dynamic>?;
+            final businessId = args?['businessId'] as String?;
+            final role = args?['role'] as String?;
+            final propertyIds = (args?['propertyIds'] as List?)?.cast<String>() ?? <String>[];
+            if (businessId != null && role != null) {
+              return MaterialPageRoute(
+                builder: (_) => InviteWelcomeScreen(
+                  businessId: businessId,
+                  role: role,
+                  propertyIds: propertyIds,
+                ),
+              );
+            }
+          }
+          return null;
         },
         builder: (context, child) {
           return GestureDetector(

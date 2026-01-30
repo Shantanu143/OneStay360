@@ -11,9 +11,21 @@ import '../business_properties_screen.dart';
 import '../home_screen.dart';
 import '../add_tenant_screen.dart';
 import '../view_property_screen.dart';
+import '../create_business_screen.dart';
+import '../team_screen.dart';
+import '../business_notifications_screen.dart';
 import '../../../data/providers/business_state_provider.dart';
+import '../../../data/providers/business_notifications_provider.dart';
+import '../../../utils/permissions.dart';
 
-enum BusinessTab { dashboard, properties, tenants, reports, profile }
+enum BusinessTab { dashboard, properties, tenants, team, reports, profile }
+
+class _NavItem {
+  final BusinessTab tab;
+  final IconData icon;
+  final String label;
+  const _NavItem(this.tab, this.icon, this.label);
+}
 
 class BusinessScaffold extends StatefulWidget {
   final Widget body;
@@ -47,15 +59,28 @@ class BusinessScaffold extends StatefulWidget {
 
 class _BusinessScaffoldState extends State<BusinessScaffold> {
   StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _requestsCountSub;
-  bool _isInitialized = false;
+  String? _lastBusinessId;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    if (!_isInitialized) {
-      _loadInitialData();
-      _listenPendingRequests();
-      _isInitialized = true;
+    // NOTE: BusinessStateProvider.loadUserData() is already called in login flow
+    // It MUST be called after EnsureUserDocumentService.ensureUserDocumentExists()
+    // Do NOT call it here - that would break the bootstrap order and cause permission-denied errors
+    // 
+    // Listeners are managed via _listenPendingRequests() called from didUpdateWidget and build
+  }
+
+  @override
+  void didUpdateWidget(BusinessScaffold oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    // Manage listener subscription only when businessId changes, not on every build
+    final businessState = Provider.of<BusinessStateProvider>(context, listen: false);
+    final businessId = businessState.businessId;
+    
+    if (_lastBusinessId != businessId) {
+      _lastBusinessId = businessId;
+      _listenPendingRequests(businessId);
     }
   }
 
@@ -65,22 +90,27 @@ class _BusinessScaffoldState extends State<BusinessScaffold> {
     super.dispose();
   }
 
-  Future<void> _loadInitialData() async {
-    final businessState = Provider.of<BusinessStateProvider>(context, listen: false);
-    await businessState.loadUserData();
-  }
+  void _listenPendingRequests(String? businessId) {
+    // Guard: Only listen if businessId is available
+    if (businessId == null || businessId.isEmpty) {
+      _requestsCountSub?.cancel();
+      _requestsCountSub = null;
+      return;
+    }
 
-  void _listenPendingRequests() {
-    final businessId = widget.businessId;
-    if (businessId == null || businessId.isEmpty) return;
-
+    // Cancel previous subscription if any
     _requestsCountSub?.cancel();
+
+    // Start new subscription ONLY when businessId is non-null
     _requestsCountSub = FirebaseFirestore.instance
-        .collectionGroup('requests')
+        .collection('enrollmentRequests')
         .where('businessId', isEqualTo: businessId)
         .where('status', isEqualTo: 'pending')
         .snapshots()
         .listen((snapshot) {
+      // Guard: Ensure we still have context (widget not disposed)
+      if (!mounted) return;
+      
       final businessState = Provider.of<BusinessStateProvider>(context, listen: false);
       businessState.updatePendingRequestsCount(snapshot.size);
     }, onError: (e) {
@@ -88,19 +118,27 @@ class _BusinessScaffoldState extends State<BusinessScaffold> {
     });
   }
 
-  int get _currentIndex {
-    switch (widget.currentTab) {
-      case BusinessTab.dashboard:
-        return 0;
-      case BusinessTab.properties:
-        return 1;
-      case BusinessTab.tenants:
-        return 2;
-      case BusinessTab.reports:
-        return 3;
-      case BusinessTab.profile:
-        return 4;
+  List<_NavItem> _navItemsForRole(String role) {
+    const allItems = [
+      _NavItem(BusinessTab.dashboard, Icons.dashboard_outlined, 'Dashboard'),
+      _NavItem(BusinessTab.properties, Icons.apartment_outlined, 'Properties'),
+      _NavItem(BusinessTab.tenants, Icons.people_outline, 'Tenants'),
+      _NavItem(BusinessTab.team, Icons.group_outlined, 'Team'),
+      _NavItem(BusinessTab.reports, Icons.analytics_outlined, 'Reports'),
+      _NavItem(BusinessTab.profile, Icons.person_outline, 'Profile'),
+    ];
+
+    if (role == 'owner') {
+      return allItems;
     }
+
+    // Managers and staff see a trimmed navigation without Team/Reports.
+    return const [
+      _NavItem(BusinessTab.dashboard, Icons.dashboard_outlined, 'Dashboard'),
+      _NavItem(BusinessTab.properties, Icons.apartment_outlined, 'Properties'),
+      _NavItem(BusinessTab.tenants, Icons.people_outline, 'Tenants'),
+      _NavItem(BusinessTab.profile, Icons.person_outline, 'Profile'),
+    ];
   }
 
   Widget _buildDefaultTitle(BusinessStateProvider businessState) {
@@ -158,23 +196,54 @@ class _BusinessScaffoldState extends State<BusinessScaffold> {
     );
   }
 
-  List<Widget> _buildDefaultActions(BuildContext context, BusinessStateProvider businessState) {
+  List<Widget> _buildDefaultActions(
+      BuildContext context, BusinessStateProvider businessState) {
     debugPrint('🛎️ BUILDING ACTIONS - Notification bell should be VISIBLE');
 
-    // FORCEFULLY create the notification icon with explicit styling
-    final notificationIcon = IconButton(
-      icon: const Icon(
-        Icons.notifications_none,
-        size: 24,
-        color: Colors.black87, // Force black color
-      ),
-      onPressed: () {
-        HapticFeedback.lightImpact();
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Notifications coming soon')),
-        );
-      },
-    );
+    final notificationsProvider =
+        Provider.of<BusinessNotificationsProvider>(context);
+    final unreadCount = notificationsProvider.unreadCount;
+
+    Widget buildNotificationButton() {
+      return Stack(
+        alignment: Alignment.center,
+        children: [
+          IconButton(
+            icon: const Icon(
+              Icons.notifications_none,
+              size: 24,
+              color: Colors.black87,
+            ),
+            onPressed: () {
+              HapticFeedback.lightImpact();
+              _openNotifications(context);
+            },
+          ),
+          if (unreadCount > 0)
+            Positioned(
+              right: 8,
+              top: 8,
+              child: Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.red,
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  unreadCount > 9 ? '9+' : '$unreadCount',
+                  style: const TextStyle(
+                    color: Colors.white,
+                    fontSize: 10,
+                    fontWeight: FontWeight.bold,
+                  ),
+                ),
+              ),
+            ),
+        ],
+      );
+    }
+
+    final Widget notificationIcon = buildNotificationButton();
 
     // Create the inbox icon
     final inboxIcon = Stack(
@@ -252,7 +321,7 @@ class _BusinessScaffoldState extends State<BusinessScaffold> {
 
     try {
       final qs = await FirebaseFirestore.instance
-          .collectionGroup('requests')
+          .collection('enrollmentRequests')
           .where('businessId', isEqualTo: businessId)
           .where('status', isEqualTo: 'pending')
           .orderBy('createdAt', descending: true)
@@ -282,7 +351,7 @@ class _BusinessScaffoldState extends State<BusinessScaffold> {
         MaterialPageRoute(
           builder: (_) => ViewPropertyScreen(
             propertyId: propertyId,
-            initialTabIndex: 4, // Requests tab
+            initialTabIndex: ViewPropertyScreen.requestsTabIndex,
           ),
         ),
       );
@@ -294,6 +363,15 @@ class _BusinessScaffoldState extends State<BusinessScaffold> {
     }
   }
 
+  void _openNotifications(BuildContext context) {
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => const BusinessNotificationsScreen(),
+      ),
+    );
+  }
+
   String _getDefaultTitle(BusinessTab tab) {
     switch (tab) {
       case BusinessTab.dashboard:
@@ -302,6 +380,8 @@ class _BusinessScaffoldState extends State<BusinessScaffold> {
         return 'Properties';
       case BusinessTab.tenants:
         return 'Tenants';
+      case BusinessTab.team:
+        return 'Team';
       case BusinessTab.reports:
         return 'Reports';
       case BusinessTab.profile:
@@ -330,15 +410,15 @@ class _BusinessScaffoldState extends State<BusinessScaffold> {
     return 'default_business_id';
   }
 
-  void _handleNavTap(BuildContext context, int index) async {
+  void _handleNavTap(BuildContext context, BusinessTab targetTab) async {
     HapticFeedback.lightImpact();
 
-    if (index == _currentIndex) return;
+    if (targetTab == widget.currentTab) return;
 
     final actualBusinessId = await _getBusinessId();
 
-    switch (index) {
-      case 0:
+    switch (targetTab) {
+      case BusinessTab.dashboard:
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(
             builder: (_) => BusinessHomeScreen(businessId: actualBusinessId),
@@ -346,24 +426,38 @@ class _BusinessScaffoldState extends State<BusinessScaffold> {
               (route) => false,
         );
         break;
-      case 1:
+      case BusinessTab.properties:
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const BusinessPropertiesScreen()),
               (route) => false,
         );
         break;
-      case 2:
+      case BusinessTab.tenants:
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const AddTenantScreen()),
               (route) => false,
         );
         break;
-      case 3:
+      case BusinessTab.team:
+        final role = Provider.of<BusinessStateProvider>(context, listen: false).role;
+        final perms = BusinessPermissions.fromRole(role);
+        if (!perms.canInviteMembers) {
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Team management is owner-only.')),
+          );
+          return;
+        }
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const TeamScreen()),
+              (route) => false,
+        );
+        break;
+      case BusinessTab.reports:
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Reports coming soon')),
         );
         break;
-      case 4:
+      case BusinessTab.profile:
         Navigator.of(context).pushAndRemoveUntil(
           MaterialPageRoute(builder: (_) => const BusinessProfileScreen()),
               (route) => false,
@@ -376,6 +470,81 @@ class _BusinessScaffoldState extends State<BusinessScaffold> {
   Widget build(BuildContext context) {
     return Consumer<BusinessStateProvider>(
       builder: (context, businessState, child) {
+        // UI Guard: Block all business data loading if no active membership
+        final businessId = businessState.businessId;
+        if (businessId == null || businessId.isEmpty) {
+          return Scaffold(
+            body: Center(
+              child: Padding(
+                padding: const EdgeInsets.all(24.0),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  crossAxisAlignment: CrossAxisAlignment.center,
+                  children: [
+                    Icon(
+                      Icons.business_outlined,
+                      size: 64,
+                      color: Colors.grey.shade400,
+                    ),
+                    const SizedBox(height: 24),
+                    const Text(
+                      'No Active Business',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 20,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                    Text(
+                      'Create or join a business to get started',
+                      textAlign: TextAlign.center,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.grey.shade600,
+                      ),
+                    ),
+                    const SizedBox(height: 32),
+                    ElevatedButton.icon(
+                      onPressed: () {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => const CreateBusinessScreen(),
+                          ),
+                        );
+                      },
+                      icon: const Icon(Icons.add),
+                      label: const Text('Create Business'),
+                      style: ElevatedButton.styleFrom(
+                        backgroundColor: const Color(0xFF0D9488),
+                        foregroundColor: Colors.white,
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 32,
+                          vertical: 14,
+                        ),
+                        shape: RoundedRectangleBorder(
+                          borderRadius: BorderRadius.circular(8),
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+          );
+        }
+
+        if (_lastBusinessId != businessId) {
+          _lastBusinessId = businessId;
+          _listenPendingRequests(businessId);
+        }
+
+        final navItems = _navItemsForRole(businessState.role);
+        final currentIndex = navItems.indexWhere((item) => item.tab == widget.currentTab);
+        final safeIndex = currentIndex >= 0 ? currentIndex : 0;
+
         return Scaffold(
           backgroundColor: Colors.grey.shade50,
           appBar: AppBar(
@@ -397,36 +566,22 @@ class _BusinessScaffoldState extends State<BusinessScaffold> {
           body: widget.body,
           floatingActionButton: widget.floatingActionButton,
           bottomNavigationBar: BottomNavigationBar(
-            currentIndex: _currentIndex,
+            currentIndex: safeIndex,
             backgroundColor: Colors.white,
             selectedItemColor: widget.primaryColor,
             unselectedItemColor: Colors.grey.shade500,
             type: BottomNavigationBarType.fixed,
             selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),
             unselectedLabelStyle: const TextStyle(fontWeight: FontWeight.w500),
-            items: const [
-              BottomNavigationBarItem(
-                icon: Icon(Icons.dashboard_outlined),
-                label: 'Dashboard',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.apartment_outlined),
-                label: 'Properties',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.people_outline),
-                label: 'Tenants',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.analytics_outlined),
-                label: 'Reports',
-              ),
-              BottomNavigationBarItem(
-                icon: Icon(Icons.person_outline),
-                label: 'Profile',
-              ),
-            ],
-            onTap: (index) => _handleNavTap(context, index),
+            items: navItems
+                .map(
+                  (item) => BottomNavigationBarItem(
+                    icon: Icon(item.icon),
+                    label: item.label,
+                  ),
+                )
+                .toList(),
+            onTap: (index) => _handleNavTap(context, navItems[index].tab),
           ),
         );
       },

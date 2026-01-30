@@ -47,15 +47,10 @@ class IdGenerationService {
     int nextNumber = 1;
     if (counterDoc.exists) {
       nextNumber = (counterDoc.data()?['count'] ?? 0) + 1;
-    } else {
-      // Auto-initialize counter if it doesn't exist
-      await _firestore
-          .collection('counters')
-          .doc(counterName)
-          .set({'count': 0});
     }
+    // NOTE: No auto-initialization. Counter is created on first write below.
 
-    // Update counter
+    // Update counter (creates if doesn't exist)
     await _firestore
         .collection('counters')
         .doc(counterName)
@@ -64,19 +59,11 @@ class IdGenerationService {
     return '$prefix${nextNumber.toString().padLeft(7, '0')}';
   }
 
-  // Initialize counters (run once)
+  // DEPRECATED: Removed eager initialization to prevent Firestore permission deadlock.
+  // Counters are now auto-created on first access during authorized operations.
+  @deprecated
   Future<void> initializeCounters() async {
-    try {
-      final counters = ['tenant_counter', 'business_counter'];
-
-      for (final counter in counters) {
-        final doc = await _firestore.collection('counters').doc(counter).get();
-        if (!doc.exists) {
-          await _firestore.collection('counters').doc(counter).set({'count': 0});
-        }
-      }
-    } catch (e) {
-      print('Error initializing counters: $e');
-    }
+    print('⚠️ initializeCounters() is deprecated and does nothing. '
+        'Counters auto-initialize on first write.');
   }
 }

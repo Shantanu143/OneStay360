@@ -14,15 +14,24 @@ class ViewPropertyViewModel extends ChangeNotifier {
   Property? _property;
   bool _isLoading = true;
   String? _error;
+  final bool _isActivating = false;
+  String? _activationError;
+  String? _unpaidInvoiceId;
+  Map<String, dynamic>? _latestQuote;
   List<dynamic> _filteredTenants = [];
   String _searchQuery = '';
   int _currentTabIndex = 0;
+
+  // Payments
+  final List<Map<String, dynamic>> _payments = [];
+  bool _paymentsLoading = false;
+  String? _paymentsError;
 
   // Request-related properties
   final List<TenantRequest> _requests = [];
   bool _requestsLoading = false;
   String? _requestsError;
-  StreamSubscription<QuerySnapshot>? _requestsSubscription;
+  StreamSubscription<QuerySnapshot<Map<String, dynamic>>>? _requestsSubscription;
 
   ViewPropertyViewModel({
     required PropertyRepository propertyRepository,
@@ -37,10 +46,17 @@ class ViewPropertyViewModel extends ChangeNotifier {
   Property? get property => _property;
   bool get isLoading => _isLoading;
   String? get error => _error;
+  bool get isActivating => _isActivating;
+  String? get activationError => _activationError;
+  String? get unpaidInvoiceId => _unpaidInvoiceId;
+  Map<String, dynamic>? get latestQuote => _latestQuote;
   bool get hasError => _error != null;
   List<dynamic> get filteredTenants => _filteredTenants;
   String get searchQuery => _searchQuery;
   int get currentTabIndex => _currentTabIndex;
+  List<Map<String, dynamic>> get payments => _payments;
+  bool get paymentsLoading => _paymentsLoading;
+  String? get paymentsError => _paymentsError;
 
   // Request-related getters
   int get pendingRequestsCount => _requests.where((r) => r.status == 'pending').length;
@@ -123,12 +139,15 @@ class ViewPropertyViewModel extends ChangeNotifier {
 
     _isLoading = true;
     _error = null;
+    _latestQuote = null;
     notifyListeners();
 
     try {
       debugPrint('🔄 Loading property data for: $propertyId');
 
       _property = await _propertyRepository.getPropertyById(propertyId);
+      _unpaidInvoiceId = null;
+        _payments.clear();
 
       // Try to load rooms from subcollection (compatibility helper)
       try {
@@ -164,6 +183,8 @@ class ViewPropertyViewModel extends ChangeNotifier {
       } else {
         debugPrint('✅ Successfully loaded property: ${_property!.name}');
         _updateFilteredTenants();
+        await _loadUnpaidInvoiceIfNeeded();
+        await _loadPaymentHistory();
       }
     } catch (e, stack) {
       debugPrint('❌ Error loading property: $e');
@@ -175,22 +196,86 @@ class ViewPropertyViewModel extends ChangeNotifier {
     }
   }
 
-  // DUMMY DATA: Listen to requests for this property
+  Future<void> _loadUnpaidInvoiceIfNeeded() async {
+    if (_property == null) return;
+    final status = _property!.billingStatus;
+    if (status == 'due' || status == 'grace' || status == 'past_due') {
+      try {
+        _unpaidInvoiceId = await _propertyRepository.getUnpaidInvoiceId(
+          businessId: _property!.businessId,
+          propertyId: _property!.id!,
+        );
+      } catch (_) {
+        _unpaidInvoiceId = null;
+      }
+      notifyListeners();
+    }
+  }
+
+  Future<void> _loadPaymentHistory() async {
+    if (_property == null) return;
+    final businessId = _property!.businessId;
+    final propertyId = _property!.id;
+    if (businessId.isEmpty || propertyId == null) return;
+
+    _paymentsLoading = true;
+    _paymentsError = null;
+    notifyListeners();
+
+    try {
+      final snap = await FirebaseFirestore.instance
+          .collection('businesses')
+          .doc(businessId)
+          .collection('payments_to_onestay360')
+          .where('propertyId', isEqualTo: propertyId)
+          .orderBy('createdAt', descending: true)
+          .limit(20)
+          .get();
+
+      _payments
+        ..clear()
+        ..addAll(snap.docs.map((d) {
+          final data = d.data();
+          data['id'] = d.id;
+          return data;
+        }));
+    } catch (e) {
+      _paymentsError = 'Failed to load payments: $e';
+    } finally {
+      _paymentsLoading = false;
+      notifyListeners();
+    }
+  }
+
+  /// Listen to real enrollment requests for this property
   void listenRequests(String propertyId) {
     if (propertyId.isEmpty) return;
 
     _requestsLoading = true;
+    _requestsError = null;
     notifyListeners();
 
-    // Cancel existing subscription
     _requestsSubscription?.cancel();
 
     try {
-      // Simulate loading delay
-      Future.delayed(const Duration(seconds: 1), () {
-        _generateDummyRequests(propertyId);
+      _requestsSubscription = FirebaseFirestore.instance
+          .collection('enrollmentRequests')
+          .where('propertyId', isEqualTo: propertyId)
+          .orderBy('createdAt', descending: true)
+          .snapshots()
+          .listen((snapshot) {
+        _requests
+          ..clear()
+          ..addAll(snapshot.docs.map(
+            (doc) => TenantRequest.fromMap(doc.data(), doc.id),
+          ));
+
         _requestsLoading = false;
         _requestsError = null;
+        notifyListeners();
+      }, onError: (error) {
+        _requestsLoading = false;
+        _requestsError = 'Failed to load requests: $error';
         notifyListeners();
       });
     } catch (e) {
@@ -198,77 +283,6 @@ class ViewPropertyViewModel extends ChangeNotifier {
       _requestsError = 'Error setting up requests listener: $e';
       notifyListeners();
     }
-  }
-
-  // Generate dummy requests data
-  void _generateDummyRequests(String propertyId) {
-    _requests.clear();
-
-    // Add dummy requests
-    _requests.addAll([
-      TenantRequest(
-        id: 'req_1',
-        tenantName: 'Rahul Sharma',
-        phone: '+91 9876543210',
-        email: 'rahul.sharma@email.com',
-        status: 'pending',
-        createdAt: DateTime.now().subtract(const Duration(hours: 2)),
-        message: 'Hi, I am interested in taking a single occupancy AC room. Please let me know the availability.',
-        preferredMoveIn: DateTime.now().add(const Duration(days: 7)),
-        sharingType: 'Single',
-        hasAC: true,
-        source: 'QR Code',
-        propertyId: propertyId,
-        businessId: _property?.businessId ?? 'business_123',
-      ),
-      TenantRequest(
-        id: 'req_2',
-        tenantName: 'Priya Patel',
-        phone: '+91 8765432109',
-        email: 'priya.patel@email.com',
-        status: 'pending',
-        createdAt: DateTime.now().subtract(const Duration(days: 1)),
-        message: 'Looking for a double sharing room with food facility.',
-        preferredMoveIn: DateTime.now().add(const Duration(days: 3)),
-        sharingType: 'Double',
-        hasAC: false,
-        source: 'Website',
-        propertyId: propertyId,
-        businessId: _property?.businessId ?? 'business_123',
-      ),
-      TenantRequest(
-        id: 'req_3',
-        tenantName: 'Amit Kumar',
-        phone: '+91 7654321098',
-        email: null,
-        status: 'accepted',
-        createdAt: DateTime.now().subtract(const Duration(days: 3)),
-        updatedAt: DateTime.now().subtract(const Duration(days: 2)),
-        message: 'Need triple sharing room for 3 months.',
-        preferredMoveIn: DateTime.now().add(const Duration(days: 1)),
-        sharingType: 'Triple',
-        hasAC: true,
-        source: 'Referral',
-        propertyId: propertyId,
-        businessId: _property?.businessId ?? 'business_123',
-      ),
-      TenantRequest(
-        id: 'req_4',
-        tenantName: 'Neha Gupta',
-        phone: '+91 6543210987',
-        email: 'neha.gupta@email.com',
-        status: 'rejected',
-        createdAt: DateTime.now().subtract(const Duration(days: 5)),
-        updatedAt: DateTime.now().subtract(const Duration(days: 4)),
-        message: 'Interested in single room with attached bathroom.',
-        preferredMoveIn: DateTime.now().add(const Duration(days: 10)),
-        sharingType: 'Single',
-        hasAC: true,
-        source: 'QR Code',
-        propertyId: propertyId,
-        businessId: _property?.businessId ?? 'business_123',
-      ),
-    ]);
   }
 
   // Dispose method to cancel subscriptions
@@ -294,6 +308,32 @@ class ViewPropertyViewModel extends ChangeNotifier {
   // Refresh property data
   Future<void> refreshProperty(String propertyId) async {
     await loadProperty(propertyId);
+  }
+
+  // Step 2: confirm Razorpay payment and activate
+  Future<Map<String, dynamic>?> confirmActivationPayment({
+    required String orderId,
+    required String paymentId,
+    required String razorpaySignature,
+  }) async {
+    if (_property == null || _property!.id == null) {
+      _activationError = 'Property not loaded';
+      notifyListeners();
+      return null;
+    }
+
+    _activationError = null;
+    notifyListeners();
+
+    final result = await _propertyRepository.confirmActivationPayment(
+      orderId: orderId,
+      paymentId: paymentId,
+      razorpaySignature: razorpaySignature,
+    );
+
+    // Refresh property to reflect activation state
+    await loadProperty(_property!.id!);
+    return result;
   }
 
   // Clear error

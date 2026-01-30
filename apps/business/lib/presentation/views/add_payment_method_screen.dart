@@ -475,7 +475,7 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
         ),
         const SizedBox(height: 12),
         DropdownButtonFormField<String>(
-          value: _accountType,
+          initialValue: _accountType,
           decoration: _in('Account type', icon: Icons.category_outlined),
           items: ['Savings', 'Current'].map((t) => DropdownMenuItem(value: t, child: Text(t))).toList(),
           onChanged: (v) {

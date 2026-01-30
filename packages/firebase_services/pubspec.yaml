@@ -10,6 +10,11 @@ environment:
 dependencies:
   flutter:
     sdk: flutter
+  cloud_firestore: ^5.6.0
+  firebase_auth: ^5.7.0
+  cloud_functions: ^5.6.0
+  models:
+    path: ../models
 
 dev_dependencies:
   flutter_test:

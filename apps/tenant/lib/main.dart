@@ -64,16 +64,9 @@ void main() async {
       debugPrint('App Check error (tenant): $appCheckErr');
     }
 
-    // ----------------------------
-    // COUNTER INITIALIZATION
-    // ----------------------------
-    try {
-      final idService = IdGenerationService();
-      await idService.initializeCounters();
-      debugPrint('ID counters initialized');
-    } catch (e) {
-      debugPrint('ID counter init deferred: $e');
-    }
+    // NOTE: Counter initialization removed to avoid Firestore permission deadlock.
+    // Counters are accessed ONLY during business creation operations
+    // which have proper authorization.
 
   } catch (e) {
     debugPrint('Firebase init error: $e');

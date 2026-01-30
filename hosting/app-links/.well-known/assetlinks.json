@@ -1,0 +1,12 @@
+[
+  {
+    "relation": ["delegate_permission/common.handle_all_urls"],
+    "target": {
+      "namespace": "android_app",
+      "package_name": "com.onestay360.business",
+      "sha256_cert_fingerprints": [
+        "D5:6A:8D:84:B2:AD:0C:56:24:8B:5A:58:CA:F0:AF:53:04:0B:C0:0F:9C:B7:EF:B4:B2:2D:3F:C3:7D:43:CC:5B"
+      ]
+    }
+  }
+]

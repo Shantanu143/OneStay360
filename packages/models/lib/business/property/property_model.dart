@@ -29,6 +29,17 @@ class Property {
   final List<String>? images;
   final PropertyRating rating;
   final String status;
+  final String billingStatus; // paid | payment_due | trial
+  final int pricePerBed; // INR per active bed per month
+  final int totalBeds;
+  final int activeBedCount;
+  final int billedBedCount;
+  final DateTime? billingStartDate;
+  final DateTime? nextBillingDate;
+  final String? lastPaymentId;
+  final String? couponCode;
+  final double? couponDiscountPercent;
+  final Map<String, dynamic>? plan;
   final String businessId;
   final String businessName;
   final String businessPhone;
@@ -56,6 +67,17 @@ class Property {
     this.images,
     required this.rating,
     required this.status,
+    this.billingStatus = 'payment_due',
+    this.pricePerBed = 30,
+    this.totalBeds = 0,
+    this.activeBedCount = 0,
+    this.billedBedCount = 0,
+    this.billingStartDate,
+    this.nextBillingDate,
+    this.lastPaymentId,
+    this.couponCode,
+    this.couponDiscountPercent,
+    this.plan,
     required this.businessId,
     required this.businessName,
     required this.businessPhone,
@@ -85,6 +107,17 @@ class Property {
     List<String>? images,
     PropertyRating? rating,
     String? status,
+    String? billingStatus,
+    int? pricePerBed,
+    int? totalBeds,
+    int? activeBedCount,
+    int? billedBedCount,
+    DateTime? billingStartDate,
+    DateTime? nextBillingDate,
+    String? lastPaymentId,
+    String? couponCode,
+    double? couponDiscountPercent,
+    Map<String, dynamic>? plan,
     String? businessId,
     String? businessName,
     String? businessPhone,
@@ -112,6 +145,17 @@ class Property {
       images: images ?? this.images,
       rating: rating ?? this.rating,
       status: status ?? this.status,
+      billingStatus: billingStatus ?? this.billingStatus,
+      pricePerBed: pricePerBed ?? this.pricePerBed,
+      totalBeds: totalBeds ?? this.totalBeds,
+      activeBedCount: activeBedCount ?? this.activeBedCount,
+      billedBedCount: billedBedCount ?? this.billedBedCount,
+      billingStartDate: billingStartDate ?? this.billingStartDate,
+      nextBillingDate: nextBillingDate ?? this.nextBillingDate,
+      lastPaymentId: lastPaymentId ?? this.lastPaymentId,
+      couponCode: couponCode ?? this.couponCode,
+      couponDiscountPercent: couponDiscountPercent ?? this.couponDiscountPercent,
+      plan: plan ?? this.plan,
       businessId: businessId ?? this.businessId,
       businessName: businessName ?? this.businessName,
       businessPhone: businessPhone ?? this.businessPhone,
@@ -148,6 +192,19 @@ class Property {
       images: _parseImages(map['images']),
       rating: PropertyRating.fromMap(Map<String, dynamic>.from(map['rating'] ?? {})),
       status: map['status']?.toString() ?? 'active',
+      billingStatus: map['billingStatus']?.toString() ?? 'payment_due',
+      pricePerBed: (map['pricePerBed'] as num?)?.toInt() ?? 30,
+      totalBeds: (map['totalBeds'] as num?)?.toInt() ?? (map['rooms'] is List ? (map['rooms'] as List).length : 0),
+      activeBedCount: (map['activeBedCount'] as num?)?.toInt() ?? ((map['rooms'] as List?)?.where((room) => (room is Map) && ((room['isActive'] ?? false) == true)).length ?? 0),
+      billedBedCount: (map['billedBedCount'] as num?)?.toInt() ?? ((map['activeBedCount'] as num?)?.toInt() ?? 0),
+      billingStartDate: (map['billingStartDate'] as Timestamp?)?.toDate(),
+      nextBillingDate: (map['nextBillingDate'] as Timestamp?)?.toDate(),
+      lastPaymentId: map['lastPaymentId']?.toString(),
+      couponCode: map['couponCode']?.toString(),
+      couponDiscountPercent: (map['couponDiscountPercent'] as num?)?.toDouble(),
+        plan: map['plan'] is Map<String, dynamic>
+          ? Map<String, dynamic>.from(map['plan'] as Map)
+          : null,
       businessId: map['businessId']?.toString() ?? '',
       businessName: map['businessName']?.toString() ?? '',
       businessPhone: map['businessPhone']?.toString() ?? '',
@@ -190,6 +247,17 @@ class Property {
       'images': images,
       'rating': rating.toMap(),
       'status': status,
+      'billingStatus': billingStatus,
+      'pricePerBed': pricePerBed,
+      'totalBeds': totalBeds,
+      'activeBedCount': activeBedCount,
+      'billedBedCount': billedBedCount,
+      'billingStartDate': billingStartDate != null ? Timestamp.fromDate(billingStartDate!) : null,
+      'nextBillingDate': nextBillingDate != null ? Timestamp.fromDate(nextBillingDate!) : null,
+      'lastPaymentId': lastPaymentId,
+      'couponCode': couponCode,
+      'couponDiscountPercent': couponDiscountPercent,
+      if (plan != null) 'plan': plan,
       'businessId': businessId,
       'businessName': businessName,
       'businessPhone': businessPhone,

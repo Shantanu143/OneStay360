@@ -14,6 +14,8 @@ import './view_property_screen.dart';
 import './add_tenant_screen.dart';
 import './business_profile_screen.dart';
 import 'widgets/business_scaffold.dart';
+import '../../data/providers/business_state_provider.dart';
+import '../../utils/permissions.dart';
 
 class BusinessHomeScreen extends StatefulWidget {
   final String businessId;
@@ -63,6 +65,14 @@ class _BusinessHomeScreenState extends State<BusinessHomeScreen>
 
   void _goToAddProperty() {
     HapticFeedback.lightImpact();
+    final businessState = Provider.of<BusinessStateProvider>(context, listen: false);
+    final perms = BusinessPermissions.fromRole(businessState.role);
+    if (!perms.canEditRooms) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Only owners can add properties.')),
+      );
+      return;
+    }
     final user = FirebaseAuth.instance.currentUser;
     if (user != null) {
       FirebaseFirestore.instance.collection('users').doc(user.uid).get().then((userDoc) {
@@ -282,24 +292,32 @@ class _BusinessHomeScreenState extends State<BusinessHomeScreen>
 
   Widget _propertiesBody() {
     final propertyRepository = context.read<PropertyRepository>();
+    final businessState = context.watch<BusinessStateProvider>();
 
     return ChangeNotifierProvider(
-      create: (_) => BusinessPropertiesViewModel(propertyRepository: propertyRepository)..loadProperties(),
-      child: props_view.BusinessPropertiesView(
-        onAddProperty: _goToAddProperty,
-        onPropertySelected: (property) {
-          if (property.id != null) {
-            Navigator.of(context).push(
-              MaterialPageRoute(
-                builder: (_) => ViewPropertyScreen(propertyId: property.id!),
-              ),
+      create: (_) => BusinessPropertiesViewModel(propertyRepository: propertyRepository),
+      child: _PropertiesLoader(
+        businessId: businessState.businessId,
+        child: Consumer<BusinessPropertiesViewModel>(
+          builder: (context, viewModel, _) {
+            return props_view.BusinessPropertiesView(
+              onAddProperty: _goToAddProperty,
+              onPropertySelected: (property) {
+                if (property.id != null) {
+                  Navigator.of(context).push(
+                    MaterialPageRoute(
+                      builder: (_) => ViewPropertyScreen(propertyId: property.id!),
+                    ),
+                  );
+                } else {
+                  ScaffoldMessenger.of(context).showSnackBar(
+                    const SnackBar(content: Text('Cannot view property: ID is missing')),
+                  );
+                }
+              },
             );
-          } else {
-            ScaffoldMessenger.of(context).showSnackBar(
-              const SnackBar(content: Text('Cannot view property: ID is missing')),
-            );
-          }
-        },
+          },
+        ),
       ),
     );
   }
@@ -454,6 +472,62 @@ class _BusinessHomeScreenState extends State<BusinessHomeScreen>
         ],
       ),
     );
+  }
+}
+
+// Helper widget that loads properties only when businessId changes
+class _PropertiesLoader extends StatefulWidget {
+  final String? businessId;
+  final Widget child;
+
+  const _PropertiesLoader({
+    required this.businessId,
+    required this.child,
+  });
+
+  @override
+  State<_PropertiesLoader> createState() => _PropertiesLoaderState();
+}
+
+class _PropertiesLoaderState extends State<_PropertiesLoader> {
+  String? _lastLoadedBusinessId;
+
+  @override
+  void didUpdateWidget(_PropertiesLoader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    
+    // Load properties only when businessId changes
+    if (oldWidget.businessId != widget.businessId && 
+        widget.businessId != null && 
+        widget.businessId!.isNotEmpty) {
+      _lastLoadedBusinessId = widget.businessId;
+      Future.microtask(() {
+        if (mounted) {
+          final viewModel = context.read<BusinessPropertiesViewModel>();
+          viewModel.loadProperties(widget.businessId);
+        }
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    // Initial load on first build
+    if (widget.businessId != null && widget.businessId!.isNotEmpty) {
+      _lastLoadedBusinessId = widget.businessId;
+      Future.microtask(() {
+        if (mounted) {
+          final viewModel = context.read<BusinessPropertiesViewModel>();
+          viewModel.loadProperties(widget.businessId);
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.child;
   }
 }
 

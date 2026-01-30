@@ -5,8 +5,11 @@ import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
-import 'package:firebase_services/services/firestore_service.dart';
+import 'package:provider/provider.dart';
+import 'package:firebase_services/services/ensure_user_document_service.dart';
+import '../../../data/providers/business_state_provider.dart';
 import '../home_screen.dart';
+import 'phone_login_screen.dart';
 
 class LoginScreen extends StatefulWidget {
   final String userType; // 'tenant' or 'business'
@@ -256,8 +259,9 @@ class _LoginScreenState extends State<LoginScreen>
     );
   }
 
-  // Helper method to show snackbar
+  // Helper method to show snackbar with mounted check
   void _showSnackbar(String message, {bool isError = false}) {
+    if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
       SnackBar(
         content: Text(message),
@@ -269,61 +273,46 @@ class _LoginScreenState extends State<LoginScreen>
   // Handle navigation after successful authentication - UPDATED
   Future<void> _handlePostAuthNavigation(User user) async {
     try {
-      // ✅ FIRST: Check if user already exists in Firestore
-      final userData = await FirestoreService().getUserData(user.uid);
-      final bool userExists = userData != null && userData.isNotEmpty;
-
-      // ✅ ONLY initialize if user doesn't exist
-      if (!userExists) {
-        await FirestoreService().initializeUser(user, widget.userType);
-        _showSnackbar('Account created successfully!');
-      } else {
-        print('✅ User already exists in Firestore, skipping initialization');
-        if (_isSignUp) {
-          _showSnackbar('Welcome back! Signed in successfully.');
-        }
-      }
-
-      // ✅ THEN check profile completion status from Firestore
-      final isComplete = await FirestoreService().isProfileComplete(user.uid);
+      print('🔄 [LoginScreen._handlePostAuthNavigation] Starting for user: ${user.uid}');
+      
+      // ✅ STEP 1: ENSURE USER DOCUMENT EXISTS
+      // This must happen FIRST, before any other Firestore access
+      // Guarantees /users/{uid} exists before BusinessStateProvider reads it
+      print('📝 [LoginScreen] Step 1: Ensuring user document exists...');
+      await EnsureUserDocumentService().ensureUserDocumentExists(user);
+      print('✅ [LoginScreen] Step 1: User document ensured');
       if (!mounted) return;
 
-      if (isComplete) {
-        // Profile complete - go to home screen
-        if (!userExists) {
-          _showSnackbar('Account created successfully!');
-        }
+      // ✅ STEP 2: LOAD BUSINESS STATE
+      // Now that /users/{uid} is guaranteed to exist, load the business state
+      // This validates membership and sets businessId (or null if no business)
+      print('📝 [LoginScreen] Step 2: Loading business state...');
+      final businessState = context.read<BusinessStateProvider>();
+      await businessState.loadUserData();
+      print('✅ [LoginScreen] Step 2: Business state loaded. businessId=${businessState.businessId}');
+      if (!mounted) return;
 
-        // Get the appropriate ID for display
-        String displayId = 'User';
-        if (widget.userType == 'tenant') {
-          final tenantId = await FirestoreService().getTenantId(user.uid);
-          displayId = tenantId ?? 'Tenant';
-        } else {
-          final businessId = await FirestoreService().getBusinessId(user.uid);
-          displayId = businessId ?? 'Business';
-        }
+      // ✅ STEP 3: Determine navigation target
+      // businessState.businessId will be:
+      // - Non-null and valid → User has active membership, show business UI
+      // - null → No business yet, show empty state with "Create Business" button
+      final businessId = businessState.businessId ?? user.uid;
+      print('📝 [LoginScreen] Step 3: Determined businessId for navigation: $businessId (from state: ${businessState.businessId})');
 
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => BusinessHomeScreen(businessId: displayId),
-          ),
-        );
-      } else {
-        // Profile incomplete - route to home screen anyway
-        final existingData = await FirestoreService().getUserData(user.uid);
-        final businessId = existingData?['businessId'] as String? ?? user.uid;
-        Navigator.pushReplacement(
-          context,
-          MaterialPageRoute(
-            builder: (context) => BusinessHomeScreen(businessId: businessId),
-          ),
-        );
-      }
+      // ✅ STEP 4: Navigate to home screen
+      // BusinessScaffold will gate UI based on businessId
+      if (!mounted) return;
+      print('📝 [LoginScreen] Step 4: Navigating to BusinessHomeScreen...');
+      Navigator.pushReplacement(
+        context,
+        MaterialPageRoute(
+          builder: (context) => BusinessHomeScreen(businessId: businessId),
+        ),
+      );
+      print('✅ [LoginScreen] Navigation completed');
     } catch (e) {
-      _showSnackbar('Error during authentication: ${e.toString()}', isError: true);
       if (mounted) {
+        _showSnackbar('Error during authentication: ${e.toString()}', isError: true);
         setState(() => _isLoading = false);
       }
     }
@@ -355,7 +344,7 @@ class _LoginScreenState extends State<LoginScreen>
             'This email is already registered with Google. Please sign in with Google or use a different email.',
             isError: true,
           );
-          setState(() => _isLoading = false);
+          if (mounted) setState(() => _isLoading = false);
           return;
         }
 
@@ -378,31 +367,37 @@ class _LoginScreenState extends State<LoginScreen>
         await _handlePostAuthNavigation(user);
       }
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'email-already-in-use' && !_isSignUp) {
-        // If trying to sign in but email is registered with Google
-        _showSnackbar(
-          'This email is registered with Google. Please sign in with Google.',
-          isError: true,
-        );
-      } else {
-        _showSnackbar(e.message ?? 'An unknown error occurred.', isError: true);
+      if (mounted) {
+        if (e.code == 'email-already-in-use' && !_isSignUp) {
+          // If trying to sign in but email is registered with Google
+          _showSnackbar(
+            'This email is registered with Google. Please sign in with Google.',
+            isError: true,
+          );
+        } else {
+          _showSnackbar(e.message ?? 'An unknown error occurred.', isError: true);
+        }
+        setState(() => _isLoading = false);
       }
-      setState(() => _isLoading = false);
     } catch (e) {
-      _showSnackbar('An error occurred: ${e.toString()}', isError: true);
-      setState(() => _isLoading = false);
+      if (mounted) {
+        _showSnackbar('An error occurred: ${e.toString()}', isError: true);
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   // Sign in with Google
   void _handleGoogleSignIn() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
 
     try {
       final GoogleSignInAccount? googleUser = await GoogleSignIn().signIn();
+      if (!mounted) return;
       if (googleUser == null) {
         _showSnackbar('Google Sign In was cancelled.');
-        setState(() => _isLoading = false);
+        if (mounted) setState(() => _isLoading = false);
         return;
       }
       final GoogleSignInAuthentication googleAuth = await googleUser.authentication;
@@ -419,22 +414,23 @@ class _LoginScreenState extends State<LoginScreen>
         await _handlePostAuthNavigation(user);
       }
     } on FirebaseAuthException catch (e) {
-      if (e.code == 'account-exists-with-different-credential') {
-        _showSnackbar(
-          'This email is already registered with email/password. Please sign in with email/password.',
-          isError: true,
-        );
-      } else {
-        _showSnackbar(e.message ?? 'An error occurred during Google Sign In.', isError: true);
+      if (mounted) {
+        if (e.code == 'account-exists-with-different-credential') {
+          _showSnackbar(
+            'This email is already registered with email/password. Please sign in with email/password.',
+            isError: true,
+          );
+        } else {
+          _showSnackbar(e.message ?? 'An error occurred during Google Sign In.', isError: true);
+        }
+        setState(() => _isLoading = false);
       }
-      setState(() => _isLoading = false);
     } catch (e) {
-      print('Google Sign In error: $e');
-      _showSnackbar('An error occurred during Google Sign In: $e', isError: true);
-      setState(() => _isLoading = false);
-    } catch (e) {
-      _showSnackbar('An error occurred during Google Sign In.', isError: true);
-      setState(() => _isLoading = false);
+      if (mounted) {
+        print('Google Sign In error: $e');
+        _showSnackbar('An error occurred during Google Sign In: $e', isError: true);
+        setState(() => _isLoading = false);
+      }
     }
   }
 
@@ -542,16 +538,14 @@ class _LoginScreenState extends State<LoginScreen>
                               text: 'Continue with Phone',
                               icon: Icons.phone,
                               color: Colors.green.shade600,
-                              onPressed: null, // Phone login is now disabled
-                            ),
-                            const SizedBox(height: 4),
-                            Text(
-                              'Currently unavailable',
-                              textAlign: TextAlign.center,
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade500,
-                              ),
+                              onPressed: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (_) => PhoneLoginScreen(userType: widget.userType),
+                                  ),
+                                );
+                              },
                             ),
                           ],
                         ),

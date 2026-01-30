@@ -10,10 +10,17 @@ import './tenant_detail_screen.dart';
 import 'package:models/tenant/tenant_request_model.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'widgets/business_scaffold.dart';
+import 'package:razorpay_flutter/razorpay_flutter.dart';
+import 'checkout_screen.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:intl/intl.dart';
+import 'package:url_launcher/url_launcher.dart';
 
 class ViewPropertyScreen extends StatefulWidget {
   final String propertyId;
   final int? initialTabIndex;
+
+  static const int requestsTabIndex = 5;
 
   const ViewPropertyScreen({
     super.key,
@@ -28,18 +35,25 @@ class ViewPropertyScreen extends StatefulWidget {
 class _ViewPropertyScreenState extends State<ViewPropertyScreen>
     with SingleTickerProviderStateMixin {
   late TabController _tabController;
+  late Razorpay _razorpay;
+  ViewPropertyViewModel? _viewModelRef; // cached provider-safe reference for callbacks
 
   static const int kTabLayout = 0;
   static const int kTabOverview = 1;
   static const int kTabTenants = 2;
   static const int kTabFinancials = 3;
-  static const int kTabRequests = 4;
-  static const int kTabQr = 5;
+  static const int kTabPayments = 4;
+  static const int kTabRequests = 5;
+  static const int kTabQr = 6;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 6, vsync: this);
+    _razorpay = Razorpay();
+    _razorpay.on(Razorpay.EVENT_PAYMENT_SUCCESS, _handlePaymentSuccess);
+    _razorpay.on(Razorpay.EVENT_PAYMENT_ERROR, _handlePaymentError);
+    _razorpay.on(Razorpay.EVENT_EXTERNAL_WALLET, _handleExternalWallet);
+    _tabController = TabController(length: 7, vsync: this);
     if (widget.initialTabIndex != null &&
         widget.initialTabIndex! >= 0 &&
         widget.initialTabIndex! < _tabController.length) {
@@ -49,6 +63,7 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
 
   @override
   void dispose() {
+    _razorpay.clear();
     _tabController.dispose();
     super.dispose();
   }
@@ -67,6 +82,7 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
         ..listenRequests(widget.propertyId),
       child: Consumer<ViewPropertyViewModel>(
         builder: (context, viewModel, _) {
+          _viewModelRef = viewModel; // ensure callbacks have access without relying on ancestor context
           // Title uses property name when available - NOW USED WITHIN DEFAULT HEADER STRUCTURE
           final titleWidget = Text(
             viewModel.property?.name ?? 'Property Details',
@@ -113,10 +129,11 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
           unselectedLabelStyle:
           const TextStyle(fontSize: 16, fontWeight: FontWeight.w500),
           tabs: [
-            const Tab(text: 'Layout'),
             const Tab(text: 'Overview'),
+            const Tab(text: 'Layout'),
             const Tab(text: 'Tenants'),
             const Tab(text: 'Financials'),
+            const Tab(text: 'Payment History'),
             Tab(
               child: Row(
                 children: [
@@ -166,13 +183,384 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
     return TabBarView(
       controller: _tabController,
       children: [
-        _buildLayoutTab(viewModel),
         _buildOverviewTab(viewModel),
+        _buildLayoutTab(viewModel),
         _buildTenantsTab(viewModel),
         _buildFinancialsTab(viewModel),
+        _buildPaymentHistoryTab(viewModel),
         _buildRequestsTab(viewModel),
         _buildQrTab(viewModel),
       ],
+    );
+  }
+
+  Widget _buildPaymentHistoryTab(ViewPropertyViewModel viewModel) {
+    final property = viewModel.property;
+    if (property == null) {
+      return const Center(child: Text('No property loaded'));
+    }
+
+    final billingStatus = (property.billingStatus ?? 'unknown').toString();
+    final nextBillingDate = property.nextBillingDate;
+    final planName = (property.plan?['name'] as String?) ?? 'Plan';
+    final pricePerBed = (property.plan?['pricePerBedInr'] as num?)?.toInt() ?? property.pricePerBed;
+    final dateFmt = DateFormat('d MMM yyyy, h:mm a');
+
+    if (viewModel.paymentsLoading) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (viewModel.paymentsError != null) {
+      return Center(child: Text(viewModel.paymentsError!));
+    }
+
+    final payments = viewModel.payments;
+
+    // Group payments by Month/Year for display-only grouping
+    final Map<String, List<Map<String, dynamic>>> grouped = {};
+    for (final p in payments) {
+      DateTime? created;
+      final ts = p['createdAt'];
+      if (ts is Timestamp) created = ts.toDate();
+      if (ts is DateTime) created = ts;
+      final key = created != null ? DateFormat('MMMM yyyy').format(created) : 'Unspecified';
+      grouped.putIfAbsent(key, () => []).add(p);
+    }
+
+    return Padding(
+      padding: const EdgeInsets.all(16),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          _buildStatusHeader(context, viewModel, billingStatus, nextBillingDate, dateFmt),
+          const SizedBox(height: 12),
+          _buildPlanCard(planName, pricePerBed),
+          const SizedBox(height: 16),
+          if (billingStatus == 'suspended')
+            _buildSuspendedBanner(viewModel),
+          if (payments.isEmpty)
+            _buildEmptyPaymentsState()
+          else
+            Expanded(
+              child: ListView(
+                children: grouped.entries.map((entry) {
+                  return Padding(
+                    padding: const EdgeInsets.only(bottom: 16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text(entry.key, style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 8),
+                        ...entry.value.map((payment) {
+                          final status = (payment['status'] ?? 'unknown').toString();
+                          final amount = payment['finalAmount'] ?? payment['amount'];
+                          final purposeRaw = payment['purpose']?.toString() ?? '';
+                          final purposeLabel = purposeRaw == 'activation'
+                              ? 'Activation payment'
+                              : purposeRaw == 'monthly'
+                                  ? 'Monthly subscription'
+                                  : 'Payment';
+                          final createdAt = payment['createdAt'];
+                          DateTime? created;
+                          if (createdAt is Timestamp) created = createdAt.toDate();
+                          if (createdAt is DateTime) created = createdAt;
+                          final statusChip = _statusChip(status, compact: true);
+                          final purposeIcon = purposeRaw == 'activation' ? '⚡' : '🔁';
+
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 12),
+                            child: InkWell(
+                              borderRadius: BorderRadius.circular(12),
+                              onTap: () => _showPaymentDetails(context, payment, dateFmt),
+                              child: Container(
+                                decoration: BoxDecoration(
+                                  borderRadius: BorderRadius.circular(12),
+                                  border: Border.all(color: Colors.grey.shade200),
+                                  color: Colors.white,
+                                  boxShadow: const [
+                                    BoxShadow(
+                                      color: Color(0x0F000000),
+                                      blurRadius: 8,
+                                      offset: Offset(0, 4),
+                                    ),
+                                  ],
+                                ),
+                                padding: const EdgeInsets.all(16),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Row(
+                                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                                      children: [
+                                        Text('₹$amount', style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800)),
+                                        Row(
+                                          children: [
+                                            Text('View details', style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+                                            const SizedBox(width: 4),
+                                            const Icon(Icons.chevron_right, size: 20, color: Colors.grey),
+                                          ],
+                                        ),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 6),
+                                    Row(
+                                      children: [
+                                        Text(purposeIcon, style: const TextStyle(fontSize: 16)),
+                                        const SizedBox(width: 6),
+                                        Text(purposeLabel, style: const TextStyle(fontWeight: FontWeight.w600)),
+                                      ],
+                                    ),
+                                    const SizedBox(height: 2),
+                                    Text(
+                                      '${created != null ? dateFmt.format(created) : 'Date unavailable'} · Razorpay',
+                                      style: const TextStyle(color: Colors.black54),
+                                    ),
+                                    const SizedBox(height: 6),
+                                    statusChip,
+                                  ],
+                                ),
+                              ),
+                            ),
+                          );
+                        }),
+                      ],
+                    ),
+                  );
+                }).toList(),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildStatusHeader(BuildContext context, ViewPropertyViewModel viewModel, String billingStatus, DateTime? nextBillingDate, DateFormat fmt) {
+    final statusMeta = _billingStatusMeta(billingStatus);
+    final unpaidInvoiceId = viewModel.unpaidInvoiceId;
+    final showPayCta = billingStatus == 'due' || billingStatus == 'grace' || billingStatus == 'past_due';
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: statusMeta['color'] as Color,
+        borderRadius: BorderRadius.circular(14),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(statusMeta['label'] as String, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+          const SizedBox(height: 6),
+          if (nextBillingDate != null)
+            Text('Next billing: ${fmt.format(nextBillingDate)}', style: const TextStyle(color: Colors.white70)),
+          if (showPayCta)
+            Padding(
+              padding: const EdgeInsets.only(top: 10),
+              child: ElevatedButton(
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: Colors.white,
+                  foregroundColor: statusMeta['color'] as Color,
+                  minimumSize: const Size(120, 38),
+                ),
+                onPressed: unpaidInvoiceId == null
+                    ? null
+                    : () async {
+                        final paid = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (_) => CheckoutScreen(
+                              propertyId: widget.propertyId,
+                              purpose: 'monthly',
+                              invoiceId: unpaidInvoiceId,
+                            ),
+                          ),
+                        );
+                        if (paid == true) {
+                          await viewModel.refreshProperty(widget.propertyId);
+                        }
+                      },
+                child: const Text('Pay now'),
+              ),
+            ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildPlanCard(String planName, int pricePerBed) {
+    return Card(
+      elevation: 0,
+      color: Colors.grey.shade50,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      child: ListTile(
+        title: const Text('Plan & Charges'),
+        subtitle: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const SizedBox(height: 4),
+            Text(planName, style: const TextStyle(fontWeight: FontWeight.w700)),
+            Text('₹$pricePerBed / bed / month'),
+          ],
+        ),
+        trailing: OutlinedButton(
+          onPressed: null,
+          child: const Text('Change plan'),
+        ),
+      ),
+    );
+  }
+
+  Widget _buildSuspendedBanner(ViewPropertyViewModel viewModel) {
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Row(
+        children: [
+          const Icon(Icons.warning_amber_rounded, color: Colors.red),
+          const SizedBox(width: 10),
+          const Expanded(child: Text('⚠️ Billing overdue — service suspended. Pay now to reactivate.', style: TextStyle(color: Colors.red))),
+          TextButton(
+            onPressed: () => _onActivateProperty(viewModel),
+            child: const Text('Pay now'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildEmptyPaymentsState() {
+    return Column(
+      children: const [
+        SizedBox(height: 12),
+        Text('No payments yet.', style: TextStyle(fontWeight: FontWeight.w700)),
+        SizedBox(height: 4),
+        Text('Your first payment will appear here after activation.', textAlign: TextAlign.center),
+      ],
+    );
+  }
+
+  Widget _statusChip(String status, {bool compact = false}) {
+    Color chipColor;
+    String label;
+    switch (status) {
+      case 'success':
+        chipColor = const Color(0xFFC8E6C9);
+        label = 'Successful';
+        break;
+      case 'failed':
+      case 'cancelled':
+        chipColor = Colors.red.shade100;
+        label = 'Failed';
+        break;
+      default:
+        chipColor = Colors.orange.shade100;
+        label = 'Pending';
+    }
+    return Chip(
+      visualDensity: compact ? const VisualDensity(horizontal: -2, vertical: -2) : null,
+      materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
+      label: Text(label, style: TextStyle(fontSize: compact ? 12 : 14)),
+      backgroundColor: chipColor,
+    );
+  }
+
+  Map<String, dynamic> _billingStatusMeta(String status) {
+    switch (status) {
+      case 'paid':
+        return {'label': 'Billing Active', 'color': const Color(0xFF2E7D32)};
+      case 'due':
+      case 'grace':
+        return {'label': 'Payment Due', 'color': const Color(0xFFFFC107)};
+      case 'past_due':
+        return {'label': 'Overdue', 'color': const Color(0xFFFF9800)};
+      case 'suspended':
+        return {'label': 'Service Suspended', 'color': const Color(0xFFD32F2F)};
+      default:
+        return {'label': 'Billing Status', 'color': Colors.grey.shade600};
+    }
+  }
+
+  void _showPaymentDetails(BuildContext context, Map<String, dynamic> payment, DateFormat fmt) {
+    final status = (payment['status'] ?? 'unknown').toString();
+    final amount = payment['finalAmount'] ?? payment['amount'];
+    final purposeRaw = payment['purpose']?.toString() ?? '';
+    final purpose = purposeRaw == 'activation'
+        ? 'Activation payment'
+        : purposeRaw == 'monthly'
+            ? 'Monthly subscription'
+            : purposeRaw.isNotEmpty
+                ? purposeRaw
+                : 'Payment';
+    final paymentId = payment['paymentId']?.toString() ?? payment['id']?.toString() ?? '';
+    final orderId = payment['orderId']?.toString() ?? '';
+    final gateway = payment['gateway']?.toString() ?? 'Razorpay';
+    final promoCode = payment['promoCode']?.toString();
+    final discountAmount = payment['discountAmount'];
+    final createdAt = payment['createdAt'];
+    DateTime? created;
+    if (createdAt is Timestamp) created = createdAt.toDate();
+    if (createdAt is DateTime) created = createdAt;
+
+    showModalBottomSheet(
+      context: context,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(16)),
+      ),
+      builder: (_) {
+        bool expanded = false;
+        return StatefulBuilder(
+          builder: (context, setState) {
+            return Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Text('₹$amount', style: const TextStyle(fontSize: 22, fontWeight: FontWeight.w700)),
+                      _statusChip(status),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Text(purpose, style: const TextStyle(fontWeight: FontWeight.w700)),
+                  Text(gateway, style: const TextStyle(color: Colors.black54)),
+                  if (created != null)
+                    Text(fmt.format(created), style: const TextStyle(color: Colors.black54)),
+                  if (promoCode != null) ...[
+                    const SizedBox(height: 12),
+                    Text('🎁 Promo applied: $promoCode', style: const TextStyle(fontWeight: FontWeight.w600)),
+                    if (discountAmount != null) Text('You saved ₹$discountAmount'),
+                  ],
+                  const SizedBox(height: 12),
+                  ListTile(
+                    contentPadding: EdgeInsets.zero,
+                    title: const Text('Technical details'),
+                    trailing: Icon(expanded ? Icons.expand_less : Icons.expand_more),
+                    onTap: () => setState(() => expanded = !expanded),
+                  ),
+                  if (expanded) ...[
+                    const SizedBox(height: 4),
+                    if (paymentId.isNotEmpty)
+                      Text('Payment ID: $paymentId', style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                    if (orderId.isNotEmpty)
+                      Text('Order ID: $orderId', style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                    if (payment['propertyId'] != null)
+                      Text('Property: ${payment['propertyId']}', style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                    if (payment['invoiceId'] != null)
+                      Text('Invoice: ${payment['invoiceId']}', style: const TextStyle(fontSize: 13, color: Colors.black87)),
+                    const SizedBox(height: 12),
+                  ],
+                ],
+              ),
+            );
+          },
+        );
+      },
     );
   }
 
@@ -204,6 +592,373 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
           ),
         ],
       ),
+    );
+  }
+
+  Future<void> _onActivateProperty(ViewPropertyViewModel viewModel) async {
+    if (!mounted) return;
+    final activated = await Navigator.of(context).push<bool>(
+      MaterialPageRoute(
+        builder: (_) => CheckoutScreen(
+          propertyId: widget.propertyId,
+          purpose: 'activation',
+          invoiceId: null,
+        ),
+      ),
+    );
+    if (activated == true) {
+      await viewModel.refreshProperty(widget.propertyId);
+    }
+  }
+
+  Widget _buildActivationBanner(ViewPropertyViewModel viewModel) {
+    final property = viewModel.property;
+    if (property == null) return const SizedBox.shrink();
+
+    // Banner shows only when property is not fully activated/paid
+    final billingStatus = (property.billingStatus ?? '').toString();
+    final status = (property.status ?? '').toString();
+    final needsActivation = status != 'active' || billingStatus != 'paid';
+    if (!needsActivation) return const SizedBox.shrink();
+
+    final title = status == 'draft' || billingStatus == 'payment_due'
+      ? 'Property is in draft'
+      : 'Payment due';
+    final subtitle = status == 'draft' || billingStatus == 'payment_due'
+      ? 'Activate to unlock beds and tenant assignments.'
+      : 'Complete activation to enable beds and assignments.';
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.orange.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.orange.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.lock_open, color: Colors.orange, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Text(
+                      title,
+                      style: const TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      subtitle,
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.orange.shade800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              ElevatedButton.icon(
+                onPressed: viewModel.isActivating ? null : () => _onActivateProperty(viewModel),
+                icon: viewModel.isActivating
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.flash_on),
+                label: Text(viewModel.isActivating ? 'Activating...' : 'Activate now'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2E7D32),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                    billingStatus == 'payment_due'
+                      ? 'Current billing status: payment due'
+                      : 'Current billing status: $billingStatus',
+                  style: TextStyle(color: Colors.grey.shade700),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                ),
+              ),
+            ],
+          ),
+          if (viewModel.activationError != null) ...[
+            const SizedBox(height: 8),
+            Text(
+              viewModel.activationError!,
+              style: const TextStyle(color: Colors.red, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildMonthlyBillingBanner(ViewPropertyViewModel viewModel) {
+    final property = viewModel.property;
+    if (property == null) return const SizedBox.shrink();
+    final status = property.billingStatus;
+    final show = status == 'due' || status == 'grace' || status == 'past_due';
+    if (!show) return const SizedBox.shrink();
+
+    final invoiceId = viewModel.unpaidInvoiceId;
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 16),
+      padding: const EdgeInsets.all(16),
+      decoration: BoxDecoration(
+        color: Colors.red.shade50,
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: Colors.red.shade200),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Row(
+            children: [
+              const Icon(Icons.warning_amber_rounded, color: Colors.red, size: 28),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    const Text(
+                      'Payment due',
+                      style: TextStyle(
+                        fontSize: 16,
+                        fontWeight: FontWeight.w700,
+                        color: Colors.black87,
+                      ),
+                    ),
+                    const SizedBox(height: 4),
+                    Text(
+                      'Complete monthly payment to avoid suspension.',
+                      style: TextStyle(
+                        fontSize: 14,
+                        color: Colors.red.shade800,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 12),
+          Row(
+            children: [
+              ElevatedButton.icon(
+                onPressed: (invoiceId == null)
+                    ? null
+                    : () async {
+                        if (!mounted) return;
+                        final paid = await Navigator.of(context).push<bool>(
+                          MaterialPageRoute(
+                            builder: (_) => CheckoutScreen(
+                              propertyId: widget.propertyId,
+                              purpose: 'monthly',
+                              invoiceId: invoiceId,
+                            ),
+                          ),
+                        );
+                        if (paid == true) {
+                          await viewModel.refreshProperty(widget.propertyId);
+                        }
+                      },
+                icon: viewModel.isActivating
+                    ? const SizedBox(
+                        width: 16,
+                        height: 16,
+                        child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                      )
+                    : const Icon(Icons.payment),
+                label: const Text('Pay Monthly'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF2E7D32),
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                ),
+              ),
+              const SizedBox(width: 12),
+              Text(
+                'Status: $status',
+                style: TextStyle(color: Colors.grey.shade700),
+              ),
+            ],
+          ),
+          if (invoiceId == null) ...[
+            const SizedBox(height: 8),
+            const Text(
+              'Invoice missing. Please retry later.',
+              style: TextStyle(color: Colors.red, fontSize: 12),
+            ),
+          ],
+        ],
+      ),
+    );
+  }
+
+  Widget _buildBillingStatusBadge(String? billingStatus) {
+    if (billingStatus == null || billingStatus.isEmpty) return const SizedBox.shrink();
+
+    Color bg;
+    Color fg;
+    IconData icon;
+    String label;
+
+    switch (billingStatus) {
+      case 'paid':
+        bg = Colors.green.shade50;
+        fg = const Color(0xFF2E7D32);
+        icon = Icons.check_circle;
+        label = 'Paid';
+        break;
+      case 'due':
+        bg = Colors.amber.shade50;
+        fg = Colors.orange.shade800;
+        icon = Icons.warning_amber_rounded;
+        label = 'Due';
+        break;
+      case 'grace':
+        bg = Colors.blue.shade50;
+        fg = Colors.blue.shade700;
+        icon = Icons.hourglass_bottom;
+        label = 'Grace';
+        break;
+      case 'past_due':
+        bg = Colors.red.shade50;
+        fg = Colors.red.shade700;
+        icon = Icons.error_outline;
+        label = 'Past Due';
+        break;
+      case 'suspended':
+        bg = Colors.grey.shade200;
+        fg = Colors.grey.shade800;
+        icon = Icons.block;
+        label = 'Suspended';
+        break;
+      default:
+        bg = Colors.grey.shade100;
+        fg = Colors.grey.shade700;
+        icon = Icons.help_outline;
+        label = billingStatus;
+    }
+
+    return Container(
+      margin: const EdgeInsets.only(bottom: 12),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      decoration: BoxDecoration(
+        color: bg,
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: fg.withOpacity(0.3)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, color: fg, size: 18),
+          const SizedBox(width: 8),
+          Text(
+            'Billing: $label',
+            style: TextStyle(color: fg, fontWeight: FontWeight.w600),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _openRazorpayCheckout(Map<String, dynamic> order) {
+    final keyId = order['razorpayKeyId']?.toString();
+    final orderId = order['orderId']?.toString();
+    final amountPaise = (order['amount'] as num?)?.toInt();
+
+    if (keyId == null || orderId == null || amountPaise == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Missing payment details, please retry')),
+      );
+      return;
+    }
+
+    final options = {
+      'key': keyId,
+      'order_id': orderId,
+      'amount': amountPaise,
+      'currency': 'INR',
+      'method': {
+        'upi': true,
+        'card': false,
+        'netbanking': false,
+        'wallet': false,
+      },
+      'retry': {'enabled': false},
+      'prefill': {},
+      'notes': {},
+    };
+
+    try {
+      _razorpay.open(options);
+    } catch (e) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to open payment: $e')),
+      );
+    }
+  }
+
+  Future<void> _handlePaymentSuccess(PaymentSuccessResponse response) async {
+    final orderId = response.orderId;
+    final paymentId = response.paymentId;
+    final signature = response.signature;
+
+    if (orderId == null || paymentId == null || signature == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Payment success missing fields')),
+        );
+      }
+      return;
+    }
+
+    final viewModel = _viewModelRef;
+    if (viewModel == null) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Payment confirmed but screen was disposed. Please refresh.')),
+        );
+      }
+      return;
+    }
+    // Legacy inline payment path is no longer used; checkout handled in CheckoutScreen.
+  }
+
+  void _handlePaymentError(PaymentFailureResponse response) {
+    if (!mounted) return;
+    final message = response.message ?? 'Payment failed';
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text(message)),
+    );
+  }
+
+  void _handleExternalWallet(ExternalWalletResponse response) {
+    // Wallets are disabled in options; this is a safeguard.
+    if (!mounted) return;
+    ScaffoldMessenger.of(context).showSnackBar(
+      SnackBar(content: Text('External wallet not allowed: ${response.walletName}')),
     );
   }
 
@@ -665,6 +1420,9 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
+          _buildBillingStatusBadge(property.billingStatus),
+          _buildActivationBanner(viewModel),
+          _buildMonthlyBillingBanner(viewModel),
           GridView.count(
             shrinkWrap: true,
             physics: const NeverScrollableScrollPhysics(),
@@ -1165,6 +1923,13 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
                       ]),
                 ),
                 const SizedBox(width: 12),
+                IconButton(
+                  icon: const Icon(Icons.call),
+                  color: Colors.teal.shade600,
+                  tooltip: 'Call tenant',
+                  onPressed: () => _callTenant(r.phone),
+                ),
+                const SizedBox(width: 4),
                 Icon(Icons.arrow_forward_ios,
                     size: 16, color: Colors.grey.shade500),
               ],
@@ -1206,6 +1971,23 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
           style: TextStyle(
               color: fg, fontWeight: FontWeight.w600, fontSize: 12)),
     );
+  }
+
+  Future<void> _callTenant(String phone) async {
+    final normalized = phone.replaceAll(RegExp(r'[^0-9+]'), '');
+    if (normalized.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('No phone number available for this tenant')),
+      );
+      return;
+    }
+
+    final telUri = Uri(scheme: 'tel', path: normalized);
+    if (!await launchUrl(telUri)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open dialer')),
+      );
+    }
   }
 
   // QR tab

@@ -1,14 +1,19 @@
-// cursor test
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_auth/firebase_auth.dart';
 import 'package:models/business/property/property_model.dart';
-import 'package:firebase_services/repositories/property_repository.dart'; // ADDED IMPORT
+import 'package:firebase_services/repositories/property_repository.dart';
+import 'package:firebase_services/repositories/enrollment_repository.dart';
+import 'package:firebase_services/services/firestore_service.dart';
 
 class PGDetailViewModel extends ChangeNotifier {
-  final PropertyRepository propertyRepository; // ADDED
+  final PropertyRepository propertyRepository;
+  final EnrollmentRepository enrollmentRepository = EnrollmentRepository();
+  final FirestoreService firestoreService = FirestoreService();
+  final FirebaseAuth _auth = FirebaseAuth.instance;
+  
   Property? _property;
   bool _isLoading = false;
   bool _hasError = false;
@@ -16,12 +21,14 @@ class PGDetailViewModel extends ChangeNotifier {
   bool _isFavorite = false;
   int _currentImageIndex = 0;
   int _currentTabIndex = 0;
+  bool _isSubmittingEnrollment = false;
 
   // UPDATED CONSTRUCTOR
   PGDetailViewModel({required this.propertyRepository});
 
   // Getters
   Property? get property => _property;
+  bool get isSubmittingEnrollment => _isSubmittingEnrollment;
   bool get isLoading => _isLoading;
   bool get hasError => _hasError;
   String get errorMessage => _errorMessage;
@@ -47,6 +54,10 @@ class PGDetailViewModel extends ChangeNotifier {
         _property = property;
         _checkIfFavorite();
         debugPrint('✅ Successfully loaded property: ${_property!.name}');
+        debugPrint('📍 Property ID: ${_property!.id}');
+        debugPrint('📝 Description: ${_property!.description}');
+        debugPrint('🏢 Business ID: ${_property!.businessId}');
+        debugPrint('📊 Data source: /businesses/${_property!.businessId}/properties/${_property!.id}');
       } else {
         _hasError = true;
         _errorMessage = 'Property not found in any location';
@@ -63,15 +74,15 @@ class PGDetailViewModel extends ChangeNotifier {
 
   // Search for property in all possible Firestore locations
   Future<Property?> _findPropertyInAllLocations(String propertyId) async {
-    // Try primary location: /businesses/{businessId}/properties/{propertyId}
-    final property = await _findPropertyInBusinessSubcollection(propertyId);
-    if (property != null) return property;
+    // Primary: business subcollection is source of truth
+    final businessProperty = await _findPropertyInBusinessSubcollection(propertyId);
+    if (businessProperty != null) return businessProperty;
 
-    // Try city index: /properties_by_city/{city}/properties/{propertyId}
+    // City index is only a reference; if found, try to hop to business doc using businessId
     final cityProperty = await _findPropertyInCityIndex(propertyId);
     if (cityProperty != null) return cityProperty;
 
-    // Try root collection (legacy): /properties/{propertyId}
+    // Legacy root fallback
     final rootProperty = await _findPropertyInRoot(propertyId);
     if (rootProperty != null) return rootProperty;
 
@@ -125,7 +136,27 @@ class PGDetailViewModel extends ChangeNotifier {
 
         if (doc.exists) {
           debugPrint('✅ Found in city: $city');
-          return Property.fromMap(doc.data()!, doc.id);
+          final data = doc.data()!;
+          final businessId = data['businessId']?.toString();
+
+          if (businessId != null && businessId.isNotEmpty) {
+            debugPrint('↗️  City doc points to business $businessId, fetching source of truth');
+            final bizDoc = await FirebaseFirestore.instance
+                .collection('businesses')
+                .doc(businessId)
+                .collection('properties')
+                .doc(propertyId)
+                .get();
+
+            if (bizDoc.exists) {
+              debugPrint('✅ Loaded business doc via city pointer');
+              return Property.fromMap(bizDoc.data()!, bizDoc.id);
+            }
+          }
+
+          // Fallback to city doc if business doc missing
+          debugPrint('⚠️ Using city doc as fallback');
+          return Property.fromMap(data, doc.id);
         }
       }
     } catch (e) {
@@ -237,13 +268,30 @@ Find your perfect PG with OneStay360!
     if (_property == null || _property!.businessPhone.isEmpty) return;
 
     HapticFeedback.lightImpact();
-    final phoneUrl = 'tel:${_property!.businessPhone}';
+    
+    // Clean phone number - remove all non-digit and non-plus characters
+    String phoneNumber = _property!.businessPhone.replaceAll(RegExp(r'[^\d+]'), '');
+    
+    if (phoneNumber.isEmpty) {
+      debugPrint('Phone number is empty after cleaning');
+      return;
+    }
+
+    final telUri = Uri(scheme: 'tel', path: phoneNumber);
 
     try {
-      if (await canLaunchUrl(Uri.parse(phoneUrl))) {
-        await launchUrl(Uri.parse(phoneUrl));
+      debugPrint('Attempting to call: $phoneNumber');
+      debugPrint('Tel URI: $telUri');
+      
+      if (await canLaunchUrl(telUri)) {
+        await launchUrl(telUri);
       } else {
-        throw 'Could not launch $phoneUrl';
+        // Try with launchUrl without checking canLaunchUrl first
+        try {
+          await launchUrl(telUri, mode: LaunchMode.externalApplication);
+        } catch (e) {
+          debugPrint('Error launching URL: $e');
+        }
       }
     } catch (e) {
       debugPrint('Error making call: $e');
@@ -350,11 +398,22 @@ Find your perfect PG with OneStay360!
     if (_property == null) return '₹0';
 
     final pricing = _property!.pricing;
+    final maxSharing = pricing.maxSharing ?? pricing.sharing.length;
+
     final prices = <int>[];
 
-    if (pricing.single > 0) prices.add(pricing.single);
-    if (pricing.double > 0) prices.add(pricing.double);
-    if (pricing.triple > 0) prices.add(pricing.triple);
+    for (final entry in pricing.sharing) {
+      if (entry.sharing <= 0 || entry.sharing > maxSharing) continue;
+      if (entry.nonAc != null && entry.nonAc! > 0) prices.add(entry.nonAc!);
+      if (entry.ac != null && entry.ac! > 0) prices.add(entry.ac!);
+    }
+
+    // Fallback to legacy fields if sharing list has no values
+    if (prices.isEmpty) {
+      if (pricing.single > 0) prices.add(pricing.single);
+      if (pricing.double > 0) prices.add(pricing.double);
+      if (pricing.triple > 0) prices.add(pricing.triple);
+    }
 
     if (prices.isEmpty) return '₹0';
 
@@ -517,5 +576,78 @@ Find your perfect PG with OneStay360!
 
     return terms.join('\n');
   }
+
+  /// Get current tenant's profile data
+  Future<Map<String, dynamic>?> getCurrentTenantData() async {
+    try {
+      final user = _auth.currentUser;
+      if (user == null) return null;
+
+      final tenantId = await firestoreService.getTenantId(user.uid);
+      if (tenantId == null) return null;
+
+      return await firestoreService.getTenantData(tenantId);
+    } catch (e) {
+      debugPrint('❌ Error getting tenant data: $e');
+      return null;
+    }
+  }
+
+  /// Submit enrollment request with pre-filled tenant data
+  Future<bool> submitEnrollmentRequest({
+    required DateTime moveInDate,
+    String? roomType,
+    String? sharingType,
+    String? notes,
+  }) async {
+    try {
+      _isSubmittingEnrollment = true;
+      notifyListeners();
+
+      if (_property == null) {
+        throw Exception('Property data not loaded');
+      }
+
+      // Get current tenant data
+      final tenantData = await getCurrentTenantData();
+      if (tenantData == null) {
+        throw Exception('Failed to load tenant data');
+      }
+
+      final tenantNameRaw = tenantData['name'];
+      final tenantPhoneRaw = tenantData['phone'];
+      
+      final String tenantName = (tenantNameRaw is String) ? tenantNameRaw : '';
+      final String tenantPhone = (tenantPhoneRaw is String) ? tenantPhoneRaw : '';
+
+      if (tenantName.isEmpty || tenantPhone.isEmpty) {
+        throw Exception('Tenant name or phone is missing');
+      }
+
+      // Submit enrollment request
+      await enrollmentRepository.submitEnrollmentRequest(
+        propertyId: _property!.id!,
+        businessId: _property!.businessId,
+        tenantName: tenantName,
+        tenantPhone: tenantPhone,
+        moveInDate: moveInDate,
+        propertyName: _property!.name,
+        roomType: roomType,
+        sharingType: sharingType,
+        notes: notes,
+      );
+
+      debugPrint('✅ Enrollment request submitted successfully');
+      return true;
+    } catch (e) {
+      _errorMessage = 'Failed to submit request: ${e.toString()}';
+      debugPrint('❌ Error submitting enrollment: $e');
+      return false;
+    } finally {
+      _isSubmittingEnrollment = false;
+      notifyListeners();
+    }
+  }
 }
+
 

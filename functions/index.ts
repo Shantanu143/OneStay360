@@ -12,3 +12,4 @@ export * from './invitations';
 export * from './auditTriggers';
 export * from './memberAccess';
 export * from './enrollmentNotifications';
+export * from './tenantOnboarding';

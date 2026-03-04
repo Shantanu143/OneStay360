@@ -36,7 +36,6 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.expireStaleInvitations = exports.acceptBusinessInvitation = exports.createBusinessInvitation = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
-const params_1 = require("firebase-functions/params");
 const sendEmail_1 = require("./sendEmail");
 const sendSms_1 = require("./sendSms");
 const permissions_1 = require("./permissions");
@@ -46,14 +45,19 @@ if (admin.apps.length === 0) {
 }
 const db = admin.firestore();
 /**
- * 🔐 Secrets
- * MUST be defined like this (NOT process.env)
+ * 🔐 Environment Config (set via firebase functions:config:set)
+ * Example: firebase functions:config:set invite.base_url="https://..."
  */
-const INVITE_BASE_URL = (0, params_1.defineSecret)('INVITE_BASE_URL');
-const MAILGUN_API_KEY = (0, params_1.defineSecret)('MAILGUN_API_KEY');
-const MAILGUN_DOMAIN = (0, params_1.defineSecret)('MAILGUN_DOMAIN');
-const MAILGUN_FROM = (0, params_1.defineSecret)('MAILGUN_FROM');
-const MAILGUN_API_BASE = (0, params_1.defineSecret)('MAILGUN_API_BASE'); // optional, default US
+function getConfig() {
+    const config = functions.config();
+    return {
+        inviteBaseUrl: config.invite?.base_url || process.env.INVITE_BASE_URL || '',
+        mailgunApiKey: config.mailgun?.api_key || process.env.MAILGUN_API_KEY || '',
+        mailgunDomain: config.mailgun?.domain || process.env.MAILGUN_DOMAIN || '',
+        mailgunFrom: config.mailgun?.from || process.env.MAILGUN_FROM || '',
+        mailgunApiBase: config.mailgun?.api_base || process.env.MAILGUN_API_BASE || 'https://api.mailgun.net',
+    };
+}
 /**
  * Helpers
  */
@@ -83,13 +87,8 @@ function addDays(ts, days) {
  */
 exports.createBusinessInvitation = functions
     .runWith({
-    secrets: [
-        INVITE_BASE_URL,
-        MAILGUN_API_KEY,
-        MAILGUN_DOMAIN,
-        MAILGUN_FROM,
-        MAILGUN_API_BASE,
-    ],
+    timeoutSeconds: 60,
+    memory: '256MB',
 })
     .https.onCall(async (data, context) => {
     const uid = context.auth?.uid;
@@ -103,10 +102,11 @@ exports.createBusinessInvitation = functions
     if (role !== 'manager' && role !== 'staff') {
         throw new functions.https.HttpsError('invalid-argument', 'Invalid role');
     }
-    // 🔐 Read secret correctly
-    const inviteBaseUrl = INVITE_BASE_URL.value();
+    // 🔐 Read config
+    const config = getConfig();
+    const inviteBaseUrl = config.inviteBaseUrl;
     if (!inviteBaseUrl) {
-        throw new functions.https.HttpsError('failed-precondition', 'INVITE_BASE_URL not configured');
+        throw new functions.https.HttpsError('failed-precondition', 'INVITE_BASE_URL not configured. Set via: firebase functions:config:set invite.base_url="https://..."');
     }
     const trimmedBaseUrl = inviteBaseUrl.replace(/\/+$/, '');
     const properties = Array.isArray(propertyIds)

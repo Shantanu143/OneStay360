@@ -2,6 +2,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/material.dart';
 import './tenant_invitation_approval_screen.dart';
+import './bill_review_screen.dart';
 import './widgets/tenant_scaffold.dart';
 
 class NotificationsScreen extends StatefulWidget {
@@ -88,6 +89,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
           setState(() {});
         }
       }
+    } else if (type == 'bill_received') {
+      // Navigate to bill review screen
+      final enrollmentRequestId = notification['enrollmentRequestId']?.toString();
+      if (enrollmentRequestId != null && mounted) {
+        await Navigator.push(
+          context,
+          MaterialPageRoute(
+            builder: (_) => BillReviewScreen(
+              enrollmentRequestId: enrollmentRequestId,
+            ),
+          ),
+        );
+      }
     }
   }
 
@@ -156,17 +170,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 12),
-                color: isRead ? Colors.white : Colors.blue.shade50,
+                color: isRead ? Colors.white : (type == 'bill_received' ? Colors.green.shade50 : Colors.blue.shade50),
                 child: ListTile(
                   leading: CircleAvatar(
                     backgroundColor: isRead
                         ? Colors.grey.shade300
-                        : Colors.blue.shade100,
+                        : (type == 'bill_received' ? Colors.green.shade100 : Colors.blue.shade100),
                     child: Icon(
                       type == 'tenant_invitation'
                           ? Icons.home
-                          : Icons.notifications,
-                      color: isRead ? Colors.grey : Colors.blue,
+                          : type == 'bill_received'
+                              ? Icons.receipt_long
+                              : Icons.notifications,
+                      color: isRead ? Colors.grey : (type == 'bill_received' ? Colors.green : Colors.blue),
                     ),
                   ),
                   title: Text(
@@ -192,19 +208,19 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                       ],
                     ],
                   ),
-                  trailing: type == 'tenant_invitation' && !isRead
+                  trailing: (type == 'tenant_invitation' || type == 'bill_received') && !isRead
                       ? Container(
                           padding: const EdgeInsets.symmetric(
                             horizontal: 8,
                             vertical: 4,
                           ),
                           decoration: BoxDecoration(
-                            color: Colors.orange,
+                            color: type == 'bill_received' ? Colors.green : Colors.orange,
                             borderRadius: BorderRadius.circular(12),
                           ),
-                          child: const Text(
-                            'Action Required',
-                            style: TextStyle(
+                          child: Text(
+                            type == 'bill_received' ? 'Pay Now' : 'Action Required',
+                            style: const TextStyle(
                               color: Colors.white,
                               fontSize: 10,
                               fontWeight: FontWeight.bold,

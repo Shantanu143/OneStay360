@@ -1,6 +1,5 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
-import { defineSecret } from 'firebase-functions/params';
 
 import { buildInvitationEmail, sendEmail } from './sendEmail';
 import { sendSms } from './sendSms';
@@ -14,14 +13,19 @@ if (admin.apps.length === 0) {
 const db = admin.firestore();
 
 /**
- * 🔐 Secrets
- * MUST be defined like this (NOT process.env)
+ * 🔐 Environment Config (set via firebase functions:config:set)
+ * Example: firebase functions:config:set invite.base_url="https://..."
  */
-const INVITE_BASE_URL = defineSecret('INVITE_BASE_URL');
-const MAILGUN_API_KEY = defineSecret('MAILGUN_API_KEY');
-const MAILGUN_DOMAIN = defineSecret('MAILGUN_DOMAIN');
-const MAILGUN_FROM = defineSecret('MAILGUN_FROM');
-const MAILGUN_API_BASE = defineSecret('MAILGUN_API_BASE'); // optional, default US
+function getConfig() {
+  const config = functions.config();
+  return {
+    inviteBaseUrl: config.invite?.base_url || process.env.INVITE_BASE_URL || '',
+    mailgunApiKey: config.mailgun?.api_key || process.env.MAILGUN_API_KEY || '',
+    mailgunDomain: config.mailgun?.domain || process.env.MAILGUN_DOMAIN || '',
+    mailgunFrom: config.mailgun?.from || process.env.MAILGUN_FROM || '',
+    mailgunApiBase: config.mailgun?.api_base || process.env.MAILGUN_API_BASE || 'https://api.mailgun.net',
+  };
+}
 
 /**
  * Helpers
@@ -66,13 +70,8 @@ function addDays(ts: admin.firestore.Timestamp, days: number) {
  */
 export const createBusinessInvitation = functions
   .runWith({
-    secrets: [
-      INVITE_BASE_URL,
-      MAILGUN_API_KEY,
-      MAILGUN_DOMAIN,
-      MAILGUN_FROM,
-      MAILGUN_API_BASE,
-    ],
+    timeoutSeconds: 60,
+    memory: '256MB',
   })
   .https.onCall(async (data, context) => {
     const uid = context.auth?.uid;
@@ -93,12 +92,13 @@ export const createBusinessInvitation = functions
       throw new functions.https.HttpsError('invalid-argument', 'Invalid role');
     }
 
-    // 🔐 Read secret correctly
-    const inviteBaseUrl = INVITE_BASE_URL.value();
+    // 🔐 Read config
+    const config = getConfig();
+    const inviteBaseUrl = config.inviteBaseUrl;
     if (!inviteBaseUrl) {
       throw new functions.https.HttpsError(
         'failed-precondition',
-        'INVITE_BASE_URL not configured'
+        'INVITE_BASE_URL not configured. Set via: firebase functions:config:set invite.base_url="https://..."'
       );
     }
 

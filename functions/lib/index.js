@@ -48,4 +48,5 @@ __exportStar(require("./invitations"), exports);
 __exportStar(require("./auditTriggers"), exports);
 __exportStar(require("./memberAccess"), exports);
 __exportStar(require("./enrollmentNotifications"), exports);
+__exportStar(require("./tenantOnboarding"), exports);
 //# sourceMappingURL=index.js.map

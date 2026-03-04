@@ -1860,7 +1860,7 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
             border: Border.all(
               color: isPending
                   ? Colors.orange.shade200
-                  : (r.status == 'accepted'
+                  : (r.status == 'approved'
                   ? Colors.green.shade200
                   : Colors.red.shade200),
             ),

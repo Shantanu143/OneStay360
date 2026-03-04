@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import '../../data/providers/business_notifications_provider.dart';
 import 'view_property_screen.dart';
+import 'pending_payments_screen.dart';
 import 'widgets/business_scaffold.dart';
 import 'package:models/business/business_notification_model.dart';
 
@@ -252,9 +253,29 @@ class _NotificationTile extends StatelessWidget {
       case BusinessNotificationType.enrollmentRequest:
         await _openRequestsTab(context);
         break;
+      case BusinessNotificationType.payment:
+        await _openPendingPayments(context);
+        break;
       default:
         break;
     }
+  }
+
+  Future<void> _openPendingPayments(BuildContext context) async {
+    final businessId = notification.businessId;
+    if (businessId.isEmpty) {
+      _showError(context, 'Business information missing');
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => PendingPaymentsScreen(
+          businessId: businessId,
+          propertyId: notification.propertyId,
+        ),
+      ),
+    );
   }
 
   Future<void> _openRequestsTab(BuildContext context) async {

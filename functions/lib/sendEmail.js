@@ -40,19 +40,24 @@ exports.sendEmail = sendEmail;
 exports.buildWelcomeEmail = buildWelcomeEmail;
 exports.buildInvitationEmail = buildInvitationEmail;
 const functions = __importStar(require("firebase-functions"));
-const params_1 = require("firebase-functions/params");
 const mailgun_js_1 = __importDefault(require("mailgun.js"));
 const form_data_1 = __importDefault(require("form-data"));
-const MAILGUN_API_KEY = (0, params_1.defineSecret)('MAILGUN_API_KEY');
-const MAILGUN_DOMAIN = (0, params_1.defineSecret)('MAILGUN_DOMAIN');
-const MAILGUN_FROM = (0, params_1.defineSecret)('MAILGUN_FROM');
-const MAILGUN_API_BASE = (0, params_1.defineSecret)('MAILGUN_API_BASE'); // optional, default US
+/**
+ * Get Mailgun config from Firebase config or environment variables
+ * Set via: firebase functions:config:set mailgun.api_key="..." mailgun.domain="..." mailgun.from="..."
+ */
+function getMailgunConfig() {
+    const config = functions.config();
+    return {
+        apiKey: config.mailgun?.api_key || process.env.MAILGUN_API_KEY || '',
+        domain: config.mailgun?.domain || process.env.MAILGUN_DOMAIN || '',
+        from: config.mailgun?.from || process.env.MAILGUN_FROM || '',
+        apiBase: config.mailgun?.api_base || process.env.MAILGUN_API_BASE || 'https://api.mailgun.net',
+    };
+}
 // Best-effort transactional email sender using Mailgun sandbox. Never throws to callers.
 async function sendEmail(payload) {
-    const apiKey = MAILGUN_API_KEY.value();
-    const domain = MAILGUN_DOMAIN.value();
-    const from = MAILGUN_FROM.value();
-    const apiBase = MAILGUN_API_BASE.value() || 'https://api.mailgun.net';
+    const { apiKey, domain, from, apiBase } = getMailgunConfig();
     if (!apiKey || !domain || !from) {
         functions.logger.error('email_missing_mailgun_config', {
             hasKey: Boolean(apiKey),

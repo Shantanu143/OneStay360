@@ -56,14 +56,25 @@ type QuoteResult = {
 
 /* -------------------- Razorpay Client -------------------- */
 
+/**
+ * Get Razorpay credentials from Firebase config or environment variables
+ * Set via: firebase functions:config:set razorpay.key_id="..." razorpay.key_secret="..."
+ */
+function getRazorpayConfig() {
+  const config = functions.config();
+  return {
+    keyId: config.razorpay?.key_id || process.env.RAZORPAY_KEY_ID || '',
+    keySecret: config.razorpay?.key_secret || process.env.RAZORPAY_KEY_SECRET || '',
+  };
+}
+
 function getRazorpayClient() {
-  const keyId = process.env.RAZORPAY_KEY_ID;
-  const keySecret = process.env.RAZORPAY_KEY_SECRET;
+  const { keyId, keySecret } = getRazorpayConfig();
 
   if (!keyId || !keySecret) {
     throw new functions.https.HttpsError(
       'failed-precondition',
-      'RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET not configured'
+      'RAZORPAY_KEY_ID / RAZORPAY_KEY_SECRET not configured. Set via: firebase functions:config:set razorpay.key_id="..." razorpay.key_secret="..."'
     );
   }
 
@@ -102,8 +113,11 @@ function addDays(ts: admin.firestore.Timestamp, days: number) {
 }
 
 function verifySignature(orderId: string, paymentId: string, signature: string) {
-  const secret = process.env.RAZORPAY_KEY_SECRET!;
-  const hmac = crypto.createHmac('sha256', secret);
+  const { keySecret } = getRazorpayConfig();
+  if (!keySecret) {
+    throw new functions.https.HttpsError('failed-precondition', 'RAZORPAY_KEY_SECRET not configured');
+  }
+  const hmac = crypto.createHmac('sha256', keySecret);
   hmac.update(`${orderId}|${paymentId}`);
   if (hmac.digest('hex') !== signature) {
     throw new functions.https.HttpsError('failed-precondition', 'Invalid Razorpay signature');
@@ -369,7 +383,7 @@ export const createCheckoutQuote = functions.https.onCall(async (data, context) 
 });
 
 export const createActivationOrder = functions
-  .runWith({ secrets: ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET'] })
+  .runWith({ timeoutSeconds: 60, memory: '256MB' })
   .https.onCall(async (data, context) => {
     const uid = context.auth?.uid;
     const { businessId, propertyId, purpose, promoCode, clientFinalAmount, invoiceId } = data || {};
@@ -425,6 +439,7 @@ export const createActivationOrder = functions
         },
       });
 
+      const { keyId } = getRazorpayConfig();
       return {
         orderId: order.id,
         amount: order.amount,
@@ -433,7 +448,7 @@ export const createActivationOrder = functions
         discountAmount: quote.discountAmount,
         finalAmount: quote.finalAmount,
         promo: quote.promo,
-        razorpayKeyId: process.env.RAZORPAY_KEY_ID,
+        razorpayKeyId: keyId,
       };
     } catch (err: any) {
       const rpCode = err?.error?.code || err?.code || 'UNKNOWN';
@@ -462,7 +477,7 @@ export const createActivationOrder = functions
 /* -------------------- CONFIRM PAYMENT & ACTIVATE -------------------- */
 
 export const confirmActivationPayment = functions
-  .runWith({ secrets: ['RAZORPAY_KEY_ID', 'RAZORPAY_KEY_SECRET'] })
+  .runWith({ timeoutSeconds: 120, memory: '256MB' })
   .https.onCall(async (data, context) => {
     const uid = context.auth?.uid;
     const { orderId, paymentId, razorpaySignature } = data || {};

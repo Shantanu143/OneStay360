@@ -15,6 +15,7 @@ BusinessNotificationType _notificationTypeFromString(String? value) {
     case 'tenant_event':
       return BusinessNotificationType.tenantEvent;
     case 'payment':
+    case 'payment_submitted': // Tenant submitted payment confirmation
       return BusinessNotificationType.payment;
     default:
       return BusinessNotificationType.general;

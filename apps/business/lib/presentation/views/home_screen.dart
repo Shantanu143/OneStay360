@@ -13,6 +13,7 @@ import '../view_models/business_properties_viewmodel.dart';
 import './view_property_screen.dart';
 import './add_tenant_screen.dart';
 import './business_profile_screen.dart';
+import './pending_payments_screen.dart';
 import 'widgets/business_scaffold.dart';
 import '../../data/providers/business_state_provider.dart';
 import '../../utils/permissions.dart';
@@ -124,6 +125,16 @@ class _BusinessHomeScreenState extends State<BusinessHomeScreen>
     );
   }
 
+  void _goToPendingPayments() {
+    HapticFeedback.lightImpact();
+    Navigator.push(
+      context,
+      MaterialPageRoute(
+        builder: (_) => PendingPaymentsScreen(businessId: widget.businessId),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return BusinessScaffold(
@@ -216,10 +227,10 @@ class _BusinessHomeScreenState extends State<BusinessHomeScreen>
                     ),
                     const SizedBox(width: 16),
                     _buildQuickAction(
-                      icon: Icons.receipt_long_outlined,
-                      label: 'Collect Rent',
+                      icon: Icons.payment_outlined,
+                      label: 'Pending Payments',
                       color: Colors.green.shade600,
-                      onTap: () => debugPrint('Collect Rent tapped'),
+                      onTap: _goToPendingPayments,
                     ),
                     const SizedBox(width: 16),
                     _buildQuickAction(

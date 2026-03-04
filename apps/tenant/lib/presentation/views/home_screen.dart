@@ -7,6 +7,7 @@ import 'explore_screen.dart';
 import 'my_pg_screen.dart';
 import 'tenant_profile_screen.dart';
 import 'enroll_request_screen.dart';
+import 'bill_review_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -175,6 +176,101 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
                       );
                     },
                   ),
+                
+                // Pending Bill Banner
+                if (currentUser != null)
+                  StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('enrollmentRequests')
+                        .where('tenantId', isEqualTo: currentUser.uid)
+                        .where('status', isEqualTo: 'bill_sent')
+                        .limit(1)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      
+                      final doc = snapshot.data!.docs.first;
+                      final data = doc.data() as Map<String, dynamic>;
+                      final propertyName = data['propertyName'] ?? 'PG';
+                      final totalAmount = (data['totalBillAmount'] as num?)?.toDouble() 
+                          ?? ((data['depositAmount'] as num?)?.toDouble() ?? 0) + ((data['advanceAmount'] as num?)?.toDouble() ?? 0);
+                      
+                      return Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: const Color(0xFFDCFCE7),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(color: const Color(0xFF86EFAC)),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Row(
+                              children: [
+                                Container(
+                                  padding: const EdgeInsets.all(8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade600,
+                                    borderRadius: BorderRadius.circular(8),
+                                  ),
+                                  child: const Icon(Icons.receipt_long, color: Colors.white, size: 20),
+                                ),
+                                const SizedBox(width: 12),
+                                Expanded(
+                                  child: Column(
+                                    crossAxisAlignment: CrossAxisAlignment.start,
+                                    children: [
+                                      const Text(
+                                        '💰 Payment Pending',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                          color: Color(0xFF166534),
+                                        ),
+                                      ),
+                                      Text(
+                                        '$propertyName • ₹${totalAmount.toInt()}',
+                                        style: const TextStyle(
+                                          color: Color(0xFF166534),
+                                        ),
+                                      ),
+                                    ],
+                                  ),
+                                ),
+                              ],
+                            ),
+                            const SizedBox(height: 12),
+                            SizedBox(
+                              width: double.infinity,
+                              child: ElevatedButton(
+                                onPressed: () {
+                                  HapticFeedback.lightImpact();
+                                  Navigator.push(
+                                    context,
+                                    MaterialPageRoute(
+                                      builder: (_) => BillReviewScreen(
+                                        enrollmentRequestId: doc.id,
+                                      ),
+                                    ),
+                                  );
+                                },
+                                style: ElevatedButton.styleFrom(
+                                  backgroundColor: Colors.green.shade600,
+                                  foregroundColor: Colors.white,
+                                ),
+                                child: const Text('Pay Now'),
+                              ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                
                 // Current Accommodation Card
                 Container(
                   width: double.infinity,

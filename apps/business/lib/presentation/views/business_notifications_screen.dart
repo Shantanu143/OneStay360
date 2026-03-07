@@ -228,6 +228,10 @@ class _NotificationTile extends StatelessWidget {
         icon = Icons.currency_rupee;
         color = Colors.green;
         break;
+      case BusinessNotificationType.billing:
+        icon = Icons.receipt_long;
+        color = Colors.orange;
+        break;
       case BusinessNotificationType.tenantEvent:
         icon = Icons.home_work_outlined;
         color = Colors.orange;
@@ -256,9 +260,29 @@ class _NotificationTile extends StatelessWidget {
       case BusinessNotificationType.payment:
         await _openPendingPayments(context);
         break;
+      case BusinessNotificationType.billing:
+        await _openBillingTab(context);
+        break;
       default:
         break;
     }
+  }
+
+  Future<void> _openBillingTab(BuildContext context) async {
+    final propertyId = notification.propertyId;
+    if (propertyId == null || propertyId.isEmpty) {
+      _showError(context, 'Property information missing');
+      return;
+    }
+
+    Navigator.of(context).push(
+      MaterialPageRoute(
+        builder: (_) => ViewPropertyScreen(
+          propertyId: propertyId,
+          initialTabIndex: ViewPropertyScreen.billingTabIndex,
+        ),
+      ),
+    );
   }
 
   Future<void> _openPendingPayments(BuildContext context) async {

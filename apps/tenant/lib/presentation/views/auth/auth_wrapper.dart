@@ -2,11 +2,25 @@ import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import '../home_screen.dart';
 import 'login_screen.dart';
+import '../../../services/device_token_service.dart';
 
 class AuthWrapper extends StatelessWidget {
   const AuthWrapper({super.key});
+
+  /// Register device token for push notifications when user is authenticated
+  Future<void> _registerDeviceTokenForUser() async {
+    try {
+      final token = await FirebaseMessaging.instance.getToken();
+      if (token != null) {
+        await DeviceTokenService().registerDeviceToken(token);
+      }
+    } catch (e) {
+      debugPrint('Error registering device token after auth: $e');
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -26,6 +40,9 @@ class AuthWrapper extends StatelessWidget {
           // User not logged in - show login screen
           return const LoginScreen(userType: 'tenant');
         }
+
+        // User is logged in - register device token for push notifications
+        _registerDeviceTokenForUser();
 
         // User is logged in - show tenant home
         return FutureBuilder<DocumentSnapshot>(
@@ -48,7 +65,7 @@ class AuthWrapper extends StatelessWidget {
               debugPrint('Firestore error: ${userSnapshot.error}');
               return TenantHomeScreen(
                 tenantName: user.displayName ?? user.email?.split('@').first ?? 'Tenant',
-                tenantId: user.uid,
+                tenantId: null, // No tenant yet
               );
             }
 
@@ -57,16 +74,18 @@ class AuthWrapper extends StatelessWidget {
               debugPrint('User document does not exist');
               return TenantHomeScreen(
                 tenantName: user.displayName ?? user.email?.split('@').first ?? 'Tenant',
-                tenantId: user.uid,
+                tenantId: null, // No tenant yet
               );
             }
 
             final userData = userSnapshot.data!.data() as Map<String, dynamic>;
             final tenantName = userData['fullName'] ?? user.displayName ?? user.email?.split('@').first ?? 'Tenant';
+            // Use the actual tenantId from the user document (like TEN0000003), not the user.uid
+            final actualTenantId = userData['tenantId']?.toString();
 
             return TenantHomeScreen(
               tenantName: tenantName,
-              tenantId: user.uid,
+              tenantId: actualTenantId, // This is the Firestore tenant document ID
             );
           },
         );

@@ -490,13 +490,27 @@ exports.confirmActivationPayment = functions
             const bedsSnap = await tx.get(roomDoc.ref.collection('beds'));
             bedsSnap.docs.forEach((b) => bedRefs.push(b.ref));
         }
-        // Promo redemption lock
+        // Pre-read promo redemption if applicable (all reads must happen before writes)
+        let redemptionSnap = null;
         if (quote.promo && quote.promoRefs) {
-            const { promoRef, redemptionRef } = quote.promoRefs;
-            const redemptionSnap = await tx.get(redemptionRef);
+            redemptionSnap = await tx.get(quote.promoRefs.redemptionRef);
             if (redemptionSnap.exists) {
                 throw new functions.https.HttpsError('failed-precondition', 'Promo already used by business');
             }
+        }
+        // Pre-read invoice and payment docs for monthly flow (all reads before writes)
+        let invoiceSnap = null;
+        let existingPaymentSnap = null;
+        let existingBusinessPaymentSnap = null;
+        if (purpose === 'monthly' && invoiceRef) {
+            invoiceSnap = await tx.get(invoiceRef);
+            existingPaymentSnap = await tx.get(paymentRef);
+            existingBusinessPaymentSnap = await tx.get(businessPaymentRef);
+        }
+        // === ALL WRITES BELOW THIS POINT ===
+        // Promo redemption write (now that all reads are done)
+        if (quote.promo && quote.promoRefs) {
+            const { promoRef, redemptionRef } = quote.promoRefs;
             tx.set(redemptionRef, {
                 promoCode: quote.promo.code,
                 businessId,
@@ -586,10 +600,9 @@ exports.confirmActivationPayment = functions
             }, { merge: true });
         }
         else if (purpose === 'monthly') {
-            if (!invoiceRef) {
+            if (!invoiceRef || !invoiceSnap) {
                 throw new functions.https.HttpsError('invalid-argument', 'invoiceId required for monthly');
             }
-            const invoiceSnap = await tx.get(invoiceRef);
             if (!invoiceSnap.exists) {
                 throw new functions.https.HttpsError('not-found', 'Invoice not found');
             }
@@ -602,15 +615,14 @@ exports.confirmActivationPayment = functions
             if (!periodStart || !periodEnd) {
                 throw new functions.https.HttpsError('failed-precondition', 'Invoice missing billing period');
             }
-            const existingPaymentSnap = await tx.get(paymentRef);
-            if (existingPaymentSnap.exists) {
+            // Use pre-fetched payment snapshots (reads already done above)
+            if (existingPaymentSnap && existingPaymentSnap.exists) {
                 const existingPayment = existingPaymentSnap.data();
                 if (existingPayment.invoiceId && existingPayment.invoiceId !== invoiceRef.id) {
                     throw new functions.https.HttpsError('failed-precondition', 'Payment already linked to another invoice');
                 }
             }
-            const existingBusinessPaymentSnap = await tx.get(businessPaymentRef);
-            if (existingBusinessPaymentSnap.exists) {
+            if (existingBusinessPaymentSnap && existingBusinessPaymentSnap.exists) {
                 const existingPayment = existingBusinessPaymentSnap.data();
                 if (existingPayment.invoiceId && existingPayment.invoiceId !== invoiceRef.id) {
                     throw new functions.https.HttpsError('failed-precondition', 'Business payment already linked to another invoice');

@@ -33,7 +33,7 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.triggerBillingManual = exports.processMonthlyBilling = void 0;
+exports.fixPropertyBillingDate = exports.debugPropertyBilling = exports.triggerBillingManual = exports.processMonthlyBilling = void 0;
 // PLAN & PRICING INVARIANTS:
 // - Plans and pricing are platform-owned.
 // - Properties carry a plan snapshot (immutable per property).
@@ -311,7 +311,7 @@ exports.processMonthlyBilling = functions
     .runWith({
     timeoutSeconds: 540,
     memory: '512MB',
-    minInstances: 0,
+    minInstances: 1, // Keep 1 instance warm to prevent cold start failures
     maxInstances: 1,
 })
     .pubsub.schedule('0 3 * * *')
@@ -392,5 +392,120 @@ exports.triggerBillingManual = functions.https.onCall(async (data, context) => {
         }
         return { success: true, processed };
     }
+});
+/**
+ * Debug function to check property billing configuration
+ */
+exports.debugPropertyBilling = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+    const { propertyId, businessId } = data || {};
+    if (!propertyId || !businessId) {
+        // List all properties with their billing status
+        const propsSnap = await db.collectionGroup('properties').get();
+        const properties = propsSnap.docs.map(doc => {
+            const data = doc.data();
+            return {
+                id: doc.id,
+                path: doc.ref.path,
+                name: data.name || doc.id,
+                status: data.status,
+                billingStatus: data.billingStatus,
+                nextBillingDate: data.nextBillingDate?.toDate?.() || data.nextBillingDate,
+                totalBeds: data.totalBeds,
+                plan: data.plan ? { id: data.plan.id, pricePerBedInr: data.plan.pricePerBedInr } : null,
+            };
+        });
+        return {
+            count: properties.length,
+            properties,
+            now: new Date().toISOString(),
+        };
+    }
+    // Single property details
+    const propSnap = await db.doc(`businesses/${businessId}/properties/${propertyId}`).get();
+    if (!propSnap.exists) {
+        throw new functions.https.HttpsError('not-found', 'Property not found');
+    }
+    const prop = propSnap.data();
+    const now = admin.firestore.Timestamp.now();
+    // Check billing conditions
+    const checks = {
+        hasActiveStatus: prop.status === 'active' || prop.status === 'suspended',
+        hasNextBillingDate: !!prop.nextBillingDate,
+        nextBillingDateValue: prop.nextBillingDate?.toDate?.() || prop.nextBillingDate,
+        billingDatePassed: prop.nextBillingDate ? now.toMillis() >= prop.nextBillingDate.toMillis() : false,
+        hasTotalBeds: !!prop.totalBeds && prop.totalBeds > 0,
+        hasPlan: !!prop.plan,
+    };
+    // Get recent invoices
+    const invoicesSnap = await db.collection('billing_invoices')
+        .where('propertyId', '==', propertyId)
+        .orderBy('createdAt', 'desc')
+        .limit(5)
+        .get();
+    const invoices = invoicesSnap.docs.map(doc => ({
+        id: doc.id,
+        ...doc.data(),
+        periodStart: doc.data().periodStart?.toDate?.(),
+        periodEnd: doc.data().periodEnd?.toDate?.(),
+        dueDate: doc.data().dueDate?.toDate?.(),
+    }));
+    return {
+        property: {
+            id: propertyId,
+            name: prop.name,
+            status: prop.status,
+            billingStatus: prop.billingStatus,
+            totalBeds: prop.totalBeds,
+            plan: prop.plan,
+            nextBillingDate: prop.nextBillingDate?.toDate?.(),
+            activatedAt: prop.activatedAt?.toDate?.(),
+        },
+        checks,
+        invoices,
+        now: now.toDate().toISOString(),
+        recommendation: !checks.hasNextBillingDate
+            ? 'Property is missing nextBillingDate - needs to be set when property is activated'
+            : !checks.billingDatePassed
+                ? `Billing will run on ${checks.nextBillingDateValue}`
+                : 'Ready for billing',
+    };
+});
+/**
+ * Fix missing nextBillingDate for a property (admin only)
+ */
+exports.fixPropertyBillingDate = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+    }
+    const { propertyId, businessId, daysFromNow = 0 } = data || {};
+    if (!propertyId || !businessId) {
+        throw new functions.https.HttpsError('invalid-argument', 'propertyId and businessId required');
+    }
+    const propRef = db.doc(`businesses/${businessId}/properties/${propertyId}`);
+    const propSnap = await propRef.get();
+    if (!propSnap.exists) {
+        throw new functions.https.HttpsError('not-found', 'Property not found');
+    }
+    const prop = propSnap.data();
+    const now = admin.firestore.Timestamp.now();
+    // Set nextBillingDate to now + daysFromNow (default: now, meaning billing should run immediately)
+    const nextBillingDate = admin.firestore.Timestamp.fromDate(new Date(now.toDate().getTime() + daysFromNow * 24 * 60 * 60 * 1000));
+    await propRef.update({
+        nextBillingDate,
+        updatedAt: now,
+    });
+    console.log(`✅ Fixed nextBillingDate for ${propertyId}: ${nextBillingDate.toDate()}`);
+    return {
+        success: true,
+        propertyId,
+        previousNextBillingDate: prop.nextBillingDate?.toDate?.() || null,
+        newNextBillingDate: nextBillingDate.toDate(),
+        message: daysFromNow === 0
+            ? 'Next billing date set to now. Run processMonthlyBilling to trigger billing.'
+            : `Next billing date set to ${daysFromNow} days from now.`,
+    };
 });
 //# sourceMappingURL=billing.js.map

@@ -201,11 +201,12 @@ class _PhoneLoginScreenState extends State<PhoneLoginScreen>
       final displayName = (existingData?['fullName'] as String?)
           ?? (user.displayName?.isNotEmpty == true ? user.displayName : user.email?.split('@').first)
           ?? 'Tenant';
+      final actualTenantId = existingData?['tenantId']?.toString();
       if (!mounted) return;
       Navigator.pushReplacement(
         context,
         MaterialPageRoute(
-          builder: (context) => TenantHomeScreen(tenantName: displayName, tenantId: user.uid),
+          builder: (context) => TenantHomeScreen(tenantName: displayName, tenantId: actualTenantId),
         ),
       );
     }

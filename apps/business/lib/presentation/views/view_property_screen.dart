@@ -21,6 +21,7 @@ class ViewPropertyScreen extends StatefulWidget {
   final int? initialTabIndex;
 
   static const int requestsTabIndex = 5;
+  static const int billingTabIndex = 4;
 
   const ViewPropertyScreen({
     super.key,
@@ -338,32 +339,53 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
     final statusMeta = _billingStatusMeta(billingStatus);
     final unpaidInvoiceId = viewModel.unpaidInvoiceId;
     final showPayCta = billingStatus == 'due' || billingStatus == 'grace' || billingStatus == 'past_due';
+    final bgColor = statusMeta['color'] as Color;
+    // Use dark text for yellow backgrounds (due/grace), white for others
+    final textColor = (billingStatus == 'due' || billingStatus == 'grace') 
+        ? Colors.black87 
+        : Colors.white;
+    final subtextColor = (billingStatus == 'due' || billingStatus == 'grace') 
+        ? Colors.black54 
+        : Colors.white70;
+    
+    debugPrint('🔍 _buildStatusHeader: billingStatus=$billingStatus, unpaidInvoiceId=$unpaidInvoiceId, showPayCta=$showPayCta');
+    
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: statusMeta['color'] as Color,
+        color: bgColor,
         borderRadius: BorderRadius.circular(14),
       ),
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(statusMeta['label'] as String, style: const TextStyle(color: Colors.white, fontSize: 18, fontWeight: FontWeight.w800)),
+          Text(statusMeta['label'] as String, style: TextStyle(color: textColor, fontSize: 18, fontWeight: FontWeight.w800)),
           const SizedBox(height: 6),
           if (nextBillingDate != null)
-            Text('Next billing: ${fmt.format(nextBillingDate)}', style: const TextStyle(color: Colors.white70)),
+            Text('Next billing: ${fmt.format(nextBillingDate)}', style: TextStyle(color: subtextColor)),
           if (showPayCta)
             Padding(
               padding: const EdgeInsets.only(top: 10),
               child: ElevatedButton(
                 style: ElevatedButton.styleFrom(
-                  backgroundColor: Colors.white,
-                  foregroundColor: statusMeta['color'] as Color,
+                  backgroundColor: (billingStatus == 'due' || billingStatus == 'grace') 
+                      ? Colors.black87 
+                      : Colors.white,
+                  foregroundColor: (billingStatus == 'due' || billingStatus == 'grace') 
+                      ? Colors.white 
+                      : bgColor,
                   minimumSize: const Size(120, 38),
                 ),
                 onPressed: unpaidInvoiceId == null
-                    ? null
+                    ? () {
+                        debugPrint('❌ Pay Now pressed but unpaidInvoiceId is null!');
+                        ScaffoldMessenger.of(context).showSnackBar(
+                          const SnackBar(content: Text('Loading invoice... please wait')),
+                        );
+                      }
                     : () async {
+                        debugPrint('✅ Pay Now pressed with invoiceId: $unpaidInvoiceId');
                         final paid = await Navigator.of(context).push<bool>(
                           MaterialPageRoute(
                             builder: (_) => CheckoutScreen(
@@ -377,7 +399,7 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
                           await viewModel.refreshProperty(widget.propertyId);
                         }
                       },
-                child: const Text('Pay now'),
+                child: Text(unpaidInvoiceId == null ? 'Loading...' : 'Pay now'),
               ),
             ),
         ],

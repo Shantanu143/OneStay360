@@ -160,16 +160,45 @@ class FirebasePropertyRepository implements PropertyRepository {
     required String businessId,
     required String propertyId,
   }) async {
+    debugPrint('🔍 getUnpaidInvoiceId: businessId=$businessId, propertyId=$propertyId');
+    // Query must include businessId for Firestore security rules to work
     final snap = await _firestore
         .collection('billing_invoices')
         .where('businessId', isEqualTo: businessId)
         .where('propertyId', isEqualTo: propertyId)
-        .where('status', whereIn: ['issued', 'due', 'grace', 'past_due'])
-        .orderBy('dueDate')
-        .limit(1)
         .get();
+    
+    debugPrint('📋 Found ${snap.docs.length} invoices for property');
+    
     if (snap.docs.isEmpty) return null;
-    return snap.docs.first.id;
+    
+    // Filter for unpaid statuses client-side (to avoid composite index)
+    final unpaidStatuses = {'issued', 'due', 'grace', 'past_due'};
+    final unpaidInvoices = snap.docs
+        .where((doc) {
+          final status = doc.data()['status'];
+          debugPrint('   Invoice ${doc.id}: status=$status');
+          return unpaidStatuses.contains(status);
+        })
+        .toList();
+    
+    debugPrint('📋 Found ${unpaidInvoices.length} unpaid invoices');
+    
+    if (unpaidInvoices.isEmpty) return null;
+    
+    // Sort by dueDate and return the earliest
+    unpaidInvoices.sort((a, b) {
+      final aDate = a.data()['dueDate'] as Timestamp?;
+      final bDate = b.data()['dueDate'] as Timestamp?;
+      if (aDate == null && bDate == null) return 0;
+      if (aDate == null) return 1;
+      if (bDate == null) return -1;
+      return aDate.compareTo(bDate);
+    });
+    
+    final result = unpaidInvoices.first.id;
+    debugPrint('✅ Returning unpaidInvoiceId: $result');
+    return result;
   }
 
   // Helper method to safely convert DocumentSnapshot to Property

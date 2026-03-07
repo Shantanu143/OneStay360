@@ -199,13 +199,17 @@ class ViewPropertyViewModel extends ChangeNotifier {
   Future<void> _loadUnpaidInvoiceIfNeeded() async {
     if (_property == null) return;
     final status = _property!.billingStatus;
+    debugPrint('🔍 _loadUnpaidInvoiceIfNeeded: billingStatus=$status');
     if (status == 'due' || status == 'grace' || status == 'past_due') {
       try {
+        debugPrint('🔄 Fetching unpaid invoice for propertyId=${_property!.id}');
         _unpaidInvoiceId = await _propertyRepository.getUnpaidInvoiceId(
           businessId: _property!.businessId,
           propertyId: _property!.id!,
         );
-      } catch (_) {
+        debugPrint('✅ Got unpaidInvoiceId: $_unpaidInvoiceId');
+      } catch (e) {
+        debugPrint('❌ Error getting unpaid invoice: $e');
         _unpaidInvoiceId = null;
       }
       notifyListeners();

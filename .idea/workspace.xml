@@ -1,0 +1,72 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<project version="4">
+  <component name="AutoImportSettings">
+    <option name="autoReloadType" value="NONE" />
+  </component>
+  <component name="ChangeListManager">
+    <list default="true" id="32779d56-499d-415d-9398-2ff42c401127" name="Changes" comment="">
+      <change beforePath="$PROJECT_DIR$/IMPORT_MIGRATION_MAPPING.md" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/business/lib/data/providers/business_state_provider.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/business/lib/data/providers/business_state_provider.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/business/lib/main.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/business/lib/main.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/business/lib/presentation/view_models/business_properties_viewmodel.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/business/lib/presentation/view_models/business_properties_viewmodel.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/business/lib/presentation/view_models/view_property_viewmodel.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/business/lib/presentation/view_models/view_property_viewmodel.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/business/lib/presentation/views/auth/auth_wrapper.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/business/lib/presentation/views/auth/auth_wrapper.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/business/lib/presentation/views/auth/login_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/business/lib/presentation/views/auth/login_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/business/lib/presentation/views/auth/phone_login_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/business/lib/presentation/views/auth/phone_login_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/business/lib/presentation/views/business_profile_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/business/lib/presentation/views/business_profile_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/business/lib/presentation/views/business_properties_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/business/lib/presentation/views/business_properties_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/business/lib/presentation/views/home_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/business/lib/presentation/views/home_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/business/lib/presentation/views/view_property_screen.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/business/lib/presentation/views/view_property_screen.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/business/lib/presentation/views/widgets/business_scaffold.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/business/lib/presentation/views/widgets/business_scaffold.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/business/pubspec.yaml" beforeDir="false" afterPath="$PROJECT_DIR$/apps/business/pubspec.yaml" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/apps/tenant/lib/main.dart" beforeDir="false" afterPath="$PROJECT_DIR$/apps/tenant/lib/main.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/firestore_rules_updated.txt" beforeDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/firebase_services/lib/firebase_services.dart" beforeDir="false" afterPath="$PROJECT_DIR$/packages/firebase_services/lib/firebase_services.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/firebase_services/lib/repositories/property_repository.dart" beforeDir="false" afterPath="$PROJECT_DIR$/packages/firebase_services/lib/repositories/property_repository.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/firebase_services/lib/services/id_generation_service.dart" beforeDir="false" afterPath="$PROJECT_DIR$/packages/firebase_services/lib/services/id_generation_service.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/models/lib/business/property/property_model.dart" beforeDir="false" afterPath="$PROJECT_DIR$/packages/models/lib/business/property/property_model.dart" afterDir="false" />
+      <change beforePath="$PROJECT_DIR$/packages/models/lib/business/property/property_room_model.dart" beforeDir="false" afterPath="$PROJECT_DIR$/packages/models/lib/business/property/property_room_model.dart" afterDir="false" />
+    </list>
+    <option name="SHOW_DIALOG" value="false" />
+    <option name="HIGHLIGHT_CONFLICTS" value="true" />
+    <option name="HIGHLIGHT_NON_ACTIVE_CHANGELIST" value="false" />
+    <option name="LAST_RESOLUTION" value="IGNORE" />
+  </component>
+  <component name="ClangdSettings">
+    <option name="formatViaClangd" value="false" />
+  </component>
+  <component name="Git.Settings">
+    <option name="RECENT_GIT_ROOT_PATH" value="$PROJECT_DIR$" />
+  </component>
+  <component name="ProjectColorInfo"><![CDATA[{
+  "associatedIndex": 4
+}]]></component>
+  <component name="ProjectId" id="37AMXDYGPeyfruxHbWudg7qny3n" />
+  <component name="ProjectViewState">
+    <option name="hideEmptyMiddlePackages" value="true" />
+    <option name="showLibraryContents" value="true" />
+  </component>
+  <component name="PropertiesComponent"><![CDATA[{
+  "keyToString": {
+    "ModuleVcsDetector.initialDetectionPerformed": "true",
+    "RunOnceActivity.ShowReadmeOnStart": "true",
+    "RunOnceActivity.cidr.known.project.marker": "true",
+    "RunOnceActivity.git.unshallow": "true",
+    "RunOnceActivity.readMode.enableVisualFormatting": "true",
+    "cf.first.check.clang-format": "false",
+    "cidr.known.project.marker": "true",
+    "dart.analysis.tool.window.visible": "false",
+    "show.migrate.to.gradle.popup": "false"
+  }
+}]]></component>
+  <component name="TaskManager">
+    <task active="true" id="Default" summary="Default task">
+      <changelist id="32779d56-499d-415d-9398-2ff42c401127" name="Changes" comment="" />
+      <created>1766341466975</created>
+      <option name="number" value="Default" />
+      <option name="presentableId" value="Default" />
+      <updated>1766341466975</updated>
+    </task>
+    <servers />
+  </component>
+</project>

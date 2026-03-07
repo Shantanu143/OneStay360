@@ -193,7 +193,6 @@ class _EnrollmentRequestsScreenState extends State<EnrollmentRequestsScreen> {
 
   void _showRequestDetails(String requestId, Map<String, dynamic> request) {
     final propertyName = (request['propertyName'] as String?) ?? '';
-    final propertyId = request['propertyId'] as String? ?? '';
     
     showModalBottomSheet(
       context: context,
@@ -485,6 +484,7 @@ class _ApprovalDialogState extends State<_ApprovalDialog> {
   
   List<Map<String, dynamic>> _rooms = [];
   Map<String, List<Map<String, dynamic>>> _bedsByRoom = {};
+  Map<String, dynamic>? _propertyPricing;
   
   String? _selectedRoomId;
   String? _selectedRoomNumber;
@@ -495,10 +495,95 @@ class _ApprovalDialogState extends State<_ApprovalDialog> {
   bool _isSubmitting = false;
   String? _error;
 
+  // Tenant's requested occupancy from enrollment request
+  String get _requestedSharing => widget.request['sharingType']?.toString() ?? '';
+  String get _requestedRoomType => widget.request['roomType']?.toString() ?? '';
+
   @override
   void initState() {
     super.initState();
     _loadRoomsAndBeds();
+    _loadPropertyDefaults();
+    _loadBusinessUpiId();
+    _setRentFromRequestedSharing();
+  }
+
+  /// Load UPI ID from business document
+  Future<void> _loadBusinessUpiId() async {
+    try {
+      final businessDoc = await _firestore
+          .collection('businesses')
+          .doc(widget.businessId)
+          .get();
+      
+      if (businessDoc.exists && mounted) {
+        // UPI ID is loaded but used only when approving
+        final upiId = businessDoc.data()?['upiId'] as String?;
+        debugPrint('Business UPI ID loaded: $upiId');
+      }
+    } catch (e) {
+      debugPrint('Error loading business UPI ID: $e');
+    }
+  }
+
+  /// Set rent based on tenant's requested sharing type
+  void _setRentFromRequestedSharing() {
+    // Will be called after pricing is loaded
+  }
+
+  Future<void> _loadPropertyDefaults() async {
+    try {
+      final propertyDoc = await _firestore
+          .collection('businesses')
+          .doc(widget.businessId)
+          .collection('properties')
+          .doc(widget.propertyId)
+          .get();
+      
+      if (propertyDoc.exists && mounted) {
+        final data = propertyDoc.data();
+        final pricing = data?['pricing'] as Map<String, dynamic>?;
+        
+        setState(() {
+          _propertyPricing = pricing;
+        });
+        
+        // Set rent based on tenant's REQUESTED sharing type
+        if (pricing != null && _rentController.text.isEmpty) {
+          final requestedSharing = _requestedSharing.toLowerCase();
+          int? rent;
+          
+          if (requestedSharing.contains('single') || requestedSharing == '1') {
+            rent = pricing['single'] as int?;
+          } else if (requestedSharing.contains('double') || requestedSharing.contains('twin') || requestedSharing == '2') {
+            rent = pricing['double'] as int?;
+          } else if (requestedSharing.contains('triple') || requestedSharing == '3') {
+            rent = pricing['triple'] as int?;
+          } else if (requestedSharing.contains('4') || requestedSharing.contains('four')) {
+            // Check dynamic pricing for 4-sharing
+            final sharingList = pricing['sharing'] as List<dynamic>?;
+            if (sharingList != null) {
+              final entry = sharingList.firstWhere(
+                (e) => (e as Map)['sharing'] == 4,
+                orElse: () => null,
+              );
+              if (entry != null) {
+                rent = (entry as Map)['nonAc'] as int? ?? (entry)['ac'] as int?;
+              }
+            }
+          }
+          
+          // Fallback to single if no match
+          rent ??= pricing['single'] as int?;
+          
+          if (rent != null) {
+            _rentController.text = rent.toString();
+          }
+        }
+      }
+    } catch (e) {
+      debugPrint('Error loading property defaults: $e');
+    }
   }
 
   Future<void> _loadRoomsAndBeds() async {
@@ -607,6 +692,33 @@ class _ApprovalDialogState extends State<_ApprovalDialog> {
                   mainAxisSize: MainAxisSize.min,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
+                    // Show tenant's requested preferences
+                    if (_requestedSharing.isNotEmpty || _requestedRoomType.isNotEmpty)
+                      Container(
+                        width: double.infinity,
+                        padding: const EdgeInsets.all(12),
+                        margin: const EdgeInsets.only(bottom: 16),
+                        decoration: BoxDecoration(
+                          color: Colors.blue.shade50,
+                          borderRadius: BorderRadius.circular(8),
+                          border: Border.all(color: Colors.blue.shade200),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              '📋 Tenant\'s Request:',
+                              style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                            ),
+                            const SizedBox(height: 8),
+                            if (_requestedSharing.isNotEmpty)
+                              Text('• Occupancy: $_requestedSharing sharing', style: const TextStyle(fontSize: 13)),
+                            if (_requestedRoomType.isNotEmpty)
+                              Text('• Room Type: $_requestedRoomType', style: const TextStyle(fontSize: 13)),
+                          ],
+                        ),
+                      ),
+                    
                     const Text(
                       'Assign Room & Bed',
                       style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
@@ -637,6 +749,8 @@ class _ApprovalDialogState extends State<_ApprovalDialog> {
                           _selectedRoomNumber = room['roomNumber'] ?? room['name'] ?? value;
                           _selectedBedId = null;
                           _selectedBedNumber = null;
+                          // Note: Rent is already set based on tenant's requested sharing type
+                          // Don't override it when room is selected
                         });
                       },
                     ),

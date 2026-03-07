@@ -329,10 +329,11 @@ class _LoginScreenState extends State<LoginScreen>
           // Tenant goes to home screen
           final existingData = await FirestoreService().getUserData(user.uid);
           final displayName = existingData?['fullName'] as String? ?? user.displayName ?? 'Tenant';
+          final actualTenantId = existingData?['tenantId']?.toString();
           Navigator.pushReplacement(
             context,
             MaterialPageRoute(
-              builder: (context) => TenantHomeScreen(tenantName: displayName, tenantId: user.uid),
+              builder: (context) => TenantHomeScreen(tenantName: displayName, tenantId: actualTenantId),
             ),
           );
         }

@@ -5,6 +5,7 @@ enum BusinessNotificationType {
   enrollmentRequest,
   tenantEvent,
   payment,
+  billing,
   general,
 }
 
@@ -17,6 +18,9 @@ BusinessNotificationType _notificationTypeFromString(String? value) {
     case 'payment':
     case 'payment_submitted': // Tenant submitted payment confirmation
       return BusinessNotificationType.payment;
+    case 'billing':
+    case 'billing_status_change': // Platform billing notification
+      return BusinessNotificationType.billing;
     default:
       return BusinessNotificationType.general;
   }
@@ -30,6 +34,8 @@ String _notificationTypeToString(BusinessNotificationType type) {
       return 'tenant_event';
     case BusinessNotificationType.payment:
       return 'payment';
+    case BusinessNotificationType.billing:
+      return 'billing';
     case BusinessNotificationType.general:
       return 'general';
   }

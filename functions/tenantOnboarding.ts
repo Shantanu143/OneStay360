@@ -424,8 +424,40 @@ async function handleBillSent(
     }
 
     // 4. Create notification record for tenant app
+    // Look up the actual tenant document ID (like TEN0000003) from user's document
+    let actualTenantDocId: string | null = null;
+    
     if (tenantUserId) {
-      await db.collection('users').doc(tenantUserId).collection('notifications').add({
+      try {
+        const userDoc = await db.collection('users').doc(tenantUserId).get();
+        if (userDoc.exists) {
+          actualTenantDocId = userDoc.data()?.tenantId || null;
+        }
+      } catch (err) {
+        console.warn('Failed to look up tenant doc ID from user:', err);
+      }
+    }
+    
+    // If we couldn't find it, try querying tenants collection by userId
+    if (!actualTenantDocId && tenantUserId) {
+      try {
+        const tenantQuery = await db.collection('tenants')
+          .where('userId', '==', tenantUserId)
+          .limit(1)
+          .get();
+        if (!tenantQuery.empty) {
+          actualTenantDocId = tenantQuery.docs[0].id;
+        }
+      } catch (err) {
+        console.warn('Failed to query tenant by userId:', err);
+      }
+    }
+    
+    if (!actualTenantDocId) {
+      console.warn(`Could not find tenant document ID for user ${tenantUserId}`);
+      // Don't create notification if we can't find the correct tenant doc
+    } else {
+      const notificationData = {
         type: 'bill_received',
         title: '💰 Payment Required',
         body: `Pay ${formattedAmount} to confirm your room at ${propertyName}`,
@@ -442,7 +474,11 @@ async function handleBillSent(
         monthlyRent: monthlyRent || 0,
         read: false,
         createdAt: now,
-      });
+      };
+      
+      // Write to the correct tenant document (e.g., TEN0000003)
+      await db.collection('tenants').doc(actualTenantDocId).collection('notifications').add(notificationData);
+      console.log(`📝 Notification saved to tenants/${actualTenantDocId}/notifications`);
     }
 
     // 5. Send email notification
@@ -543,6 +579,7 @@ async function handlePaymentSubmitted(
                 transactionId: transactionId || 'Not provided',
                 totalAmount: String(totalAmount),
                 click_action: 'FLUTTER_NOTIFICATION_CLICK',
+                 businessId,
               },
             });
           } catch (err) {

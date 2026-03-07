@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
@@ -17,6 +18,16 @@ import '../presentation/views/splash/splash_screen.dart';
 import '../presentation/views/auth/auth_wrapper.dart';
 import '../data/providers/tenant_state_provider.dart';
 import '../presentation/view_models/explore_viewmodel.dart';
+import 'services/device_token_service.dart';
+
+/// Background message handler (must be top-level)
+@pragma('vm:entry-point')
+Future<void> _firebaseMessagingBackgroundHandler(RemoteMessage message) async {
+  await Firebase.initializeApp();
+  debugPrint(
+    '📬 Background message received (Tenant): ${message.notification?.title}',
+  );
+}
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -26,6 +37,9 @@ void main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
     debugPrint('Firebase initialized');
+
+    // Set up background message handler
+    FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
 
     // ----------------------------
     // APP CHECK INITIALIZATION
@@ -44,7 +58,9 @@ void main() async {
           final token = await FirebaseAppCheck.instance.getToken(true);
           if (token != null) {
             debugPrint('🔐 App Check DEBUG token (tenant): $token');
-            debugPrint('⚠️ Save this token to Firebase Console → App Check → Debug tokens for the tenant app.');
+            debugPrint(
+              '⚠️ Save this token to Firebase Console → App Check → Debug tokens for the tenant app.',
+            );
           } else {
             debugPrint('⚠️ App Check DEBUG token returned null (tenant).');
           }
@@ -56,18 +72,31 @@ void main() async {
         await FirebaseAppCheck.instance.activate(
           androidProvider: AndroidProvider.playIntegrity,
           appleProvider: AppleProvider.deviceCheck,
-          webProvider: ReCaptchaV3Provider('6LfGFa8rAAAAADg7OAND4vCCo6vBZYygMwFB-eLh'),
+          webProvider: ReCaptchaV3Provider(
+            '6LfGFa8rAAAAADg7OAND4vCCo6vBZYygMwFB-eLh',
+          ),
         );
-        debugPrint('✅ App Check initialized (Production providers) for tenant app');
+        debugPrint(
+          '✅ App Check initialized (Production providers) for tenant app',
+        );
       }
     } catch (appCheckErr) {
       debugPrint('App Check error (tenant): $appCheckErr');
     }
 
+    // ----------------------------
+    // DEVICE TOKEN SERVICE INITIALIZATION
+    // ----------------------------
+    try {
+      await DeviceTokenService().initialize();
+      debugPrint('✅ Device Token Service initialized (tenant app)');
+    } catch (e) {
+      debugPrint('⚠️ Device Token Service error (tenant): $e');
+    }
+
     // NOTE: Counter initialization removed to avoid Firestore permission deadlock.
     // Counters are accessed ONLY during business creation operations
     // which have proper authorization.
-
   } catch (e) {
     debugPrint('Firebase init error: $e');
   }
@@ -113,9 +142,7 @@ class MyApp extends StatelessWidget {
         debugShowCheckedModeBanner: false,
         theme: _buildTheme(),
         home: const SplashScreen(),
-        routes: {
-          '/authWrapper': (_) => const AuthWrapper(),
-        },
+        routes: {'/authWrapper': (_) => const AuthWrapper()},
         builder: (context, child) {
           return GestureDetector(
             onTap: () => FocusManager.instance.primaryFocus?.unfocus(),

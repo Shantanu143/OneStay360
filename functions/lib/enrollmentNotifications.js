@@ -311,6 +311,20 @@ exports.registerDeviceToken = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError('internal', 'Failed to register device token');
     }
 });
+/*
+ * DISABLED - This functionality is now handled by tenantOnboarding.ts → handleBillSent()
+ * Keeping this commented out for reference
+ *
+ * Firestore trigger: Send push notification to tenant when bill is sent
+ * Triggers on: /enrollmentRequests/{requestId} update when status changes to 'bill_sent'
+ */
+/*
+export const onBillSentToTenant = functions.firestore
+  .document('enrollmentRequests/{requestId}')
+  .onUpdate(async (change, context) => {
+    // ... disabled - see tenantOnboarding.ts handleBillSent() instead
+  });
+*/
 /**
  * Scheduled function to clean up inactive device tokens (daily)
  * Removes tokens that have been inactive for more than 30 days

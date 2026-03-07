@@ -118,6 +118,15 @@ service cloud.firestore {
       match /deviceTokens/{tokenId} {
         allow read, write: if isAuth() && request.auth.uid == uid;
       }
+
+      // User notifications (for enrollment requests, bills, etc.)
+      match /notifications/{notificationId} {
+        allow read: if isAuth() && request.auth.uid == uid;
+        allow update: if isAuth() && request.auth.uid == uid;
+        // Only server/admin can create notifications
+        allow create: if false;
+        allow delete: if false;
+      }
     }
 
     // ───────────────────────────────
@@ -407,11 +416,13 @@ service cloud.firestore {
       allow create, update, delete: if false;
     }
 
-    // BILLING INVOICES (SERVER ONLY)
+    // BILLING INVOICES (SERVER ONLY for writes, owners can read their own)
     match /billing_invoices/{invoiceId} {
+      // Query must filter by businessId - we verify ownership via function
+      // Note: Client must always include businessId filter in queries
       allow read: if isAuth()
         && resource.data.businessId is string
-        && isBusinessOwner(resource.data.businessId);
+        && (isBusinessOwner(resource.data.businessId) || isBusinessManager(resource.data.businessId));
       allow create, update, delete: if false;
     }
 

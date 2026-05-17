@@ -14,6 +14,7 @@ class TenantStateProvider with ChangeNotifier {
   String _roomId = '';
   String _bedId = '';
   int _unreadNotificationsCount = 0;
+  Map<String, dynamic> _tenantData = {};
 
   // Getters
   String get fullName => _fullName;
@@ -26,16 +27,19 @@ class TenantStateProvider with ChangeNotifier {
   String get roomId => _roomId;
   String get bedId => _bedId;
   int get unreadNotificationsCount => _unreadNotificationsCount;
+  Map<String, dynamic> get tenantData => _tenantData;
 
-  StreamSubscription<DocumentSnapshot>? _sub;
+  StreamSubscription<DocumentSnapshot>? _userSub;
+  StreamSubscription<QuerySnapshot>? _tenantSub;
 
   Future<void> loadUserData() async {
     final user = FirebaseAuth.instance.currentUser;
     if (user == null) return;
 
-    await _sub?.cancel();
+    await _userSub?.cancel();
+    await _tenantSub?.cancel();
 
-    _sub = FirebaseFirestore.instance
+    _userSub = FirebaseFirestore.instance
         .collection('users')
         .doc(user.uid)
         .snapshots()
@@ -43,29 +47,57 @@ class TenantStateProvider with ChangeNotifier {
       if (!doc.exists) return;
 
       final data = doc.data()!;
-      final updated = _applyUserData(data);
+      _tenantId = data['tenantId'] ?? '';
+      _fullName = data['fullName'] ?? data['name'] ?? '';
+      _email = data['email'] ?? _email;
+      _phone = data['phone'] ?? data['mobileNumber'] ?? '';
+      
+      notifyListeners();
 
-      if (updated) {
-        debugPrint("🔄 TenantStateProvider Updated: businessId=$_businessId propertyId=$_propertyId roomId=$_roomId bedId=$_bedId");
-        notifyListeners();
+      // If we have a tenantId, start listening to the global tenant document for PG details
+      if (_tenantId.isNotEmpty) {
+        _startTenantListener(_tenantId);
       }
     });
   }
 
-  bool _applyUserData(Map<String, dynamic> data) {
-    bool changed = false;
+  void _startTenantListener(String tId) {
+    _tenantSub?.cancel();
+    _tenantSub = FirebaseFirestore.instance
+        .collection('tenants')
+        .doc(tId)
+        .collection('stays')
+        .where('status', isEqualTo: 'active')
+        .limit(1)
+        .snapshots()
+        .listen((snapshot) {
+      if (snapshot.docs.isEmpty) {
+        debugPrint("⚠️ No active stay found in stays subcollection for $tId");
+        bool changed = false;
+        changed |= _updateField(() => _currentPG, (v) => _currentPG = v, '');
+        changed |= _updateField(() => _propertyId, (v) => _propertyId = v, '');
+        changed |= _updateField(() => _businessId, (v) => _businessId = v, '');
+        changed |= _updateField(() => _roomId, (v) => _roomId = v, '');
+        changed |= _updateField(() => _bedId, (v) => _bedId = v, '');
+        if (changed) notifyListeners();
+        return;
+      }
 
-    changed |= _updateField(() => _fullName, (v) => _fullName = v, data['fullName'] ?? data['name'] ?? '');
-    changed |= _updateField(() => _email, (v) => _email = v, data['email'] ?? _email);
-    changed |= _updateField(() => _phone, (v) => _phone = v, data['phone'] ?? data['mobileNumber'] ?? '');
-    changed |= _updateField(() => _tenantId, (v) => _tenantId = v, data['tenantId'] ?? '');
-    changed |= _updateField(() => _currentPG, (v) => _currentPG = v, data['currentPG'] ?? '');
-    changed |= _updateField(() => _propertyId, (v) => _propertyId = v, data['propertyId'] ?? '');
-    changed |= _updateField(() => _businessId, (v) => _businessId = v, data['businessId'] ?? '');
-    changed |= _updateField(() => _roomId, (v) => _roomId = v, data['roomId'] ?? '');
-    changed |= _updateField(() => _bedId, (v) => _bedId = v, data['bedId'] ?? '');
+      final data = snapshot.docs.first.data();
+      _tenantData = data;
+      bool changed = false;
 
-    return changed;
+      changed |= _updateField(() => _currentPG, (v) => _currentPG = v, data['propertyName'] ?? '');
+      changed |= _updateField(() => _propertyId, (v) => _propertyId = v, data['propertyId'] ?? '');
+      changed |= _updateField(() => _businessId, (v) => _businessId = v, data['businessId'] ?? '');
+      changed |= _updateField(() => _roomId, (v) => _roomId = v, data['roomId'] ?? data['roomNumber'] ?? '');
+      changed |= _updateField(() => _bedId, (v) => _bedId = v, data['bedId'] ?? data['bedNumber'] ?? '');
+
+      if (changed) {
+        debugPrint("🔄 TenantStateProvider Shared Data Updated from stays subcollection: businessId=$_businessId propertyId=$_propertyId roomId=$_roomId bedId=$_bedId");
+        notifyListeners();
+      }
+    });
   }
 
   bool _updateField(String Function() getter, void Function(String) setter, String newValue) {
@@ -78,7 +110,8 @@ class TenantStateProvider with ChangeNotifier {
 
   @override
   void dispose() {
-    _sub?.cancel();
+    _userSub?.cancel();
+    _tenantSub?.cancel();
     super.dispose();
   }
 

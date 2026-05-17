@@ -22,6 +22,7 @@ class AddTenantViewModel extends ChangeNotifier {
   final TextEditingController phoneController = TextEditingController();
   final TextEditingController emailController = TextEditingController();
   final TextEditingController monthlyRentController = TextEditingController();
+  final TextEditingController genderController = TextEditingController(); // for gender lock enforcement
 
   // Assignment selections
   String? selectedPropertyId;
@@ -104,9 +105,9 @@ class AddTenantViewModel extends ChangeNotifier {
         throw Exception('Business account not found');
       }
 
-      // Create a tenant document id
-      final tenantDocRef = _firestore.collection('tenants').doc();
-      final tenantId = tenantDocRef.id;
+      // Generate actual tenantId (TEN...)
+      final tenantId = await _firestoreService.generateTenantId();
+      final tenantDocRef = _firestore.collection('tenants').doc(tenantId);
 
       // Build model
       final tenant = biz.Tenant(
@@ -123,47 +124,88 @@ class AddTenantViewModel extends ChangeNotifier {
         status: 'active',
       );
 
-      // Batched write: tenant master + business subcollection reference
-      final batch = _firestore.batch();
-
-      // 1) Master tenant doc
-      batch.set(tenantDocRef, tenant.toMap());
-
-      // 2) Business scoped tenants
-      final bizTenantRef = _firestore
-          .collection('businesses')
-          .doc(businessId)
-          .collection('tenants')
-          .doc(tenantId);
-      batch.set(bizTenantRef, {
-        ...tenant.toMap(),
-        'businessId': businessId,
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
-      });
-
-      // 3) Optional: mark bed occupancy under property path (if you maintain rooms/beds per property)
-      // Safe no-op if path not used by current schema.
-      final occupancyRef = _firestore
+      // ── Gender lock enforcement ──
+      // Read the room document to check if it's gender-locked.
+      final roomDoc = await _firestore
           .collection('businesses')
           .doc(businessId)
           .collection('properties')
           .doc(selectedPropertyId!)
           .collection('rooms')
-          .doc(selectedRoomId!);
-      batch.set(occupancyRef, {
-        'lastUpdated': FieldValue.serverTimestamp(),
-        'beds': {
-          // Store bed assignment minimally; adapt to your room schema if needed
-          (selectedBedIndex! + 1).toString(): {
-            'occupied': true,
-            'tenantId': tenantId,
-            'since': FieldValue.serverTimestamp(),
-          },
-        },
-      }, SetOptions(merge: true));
+          .doc(selectedRoomId!)
+          .get();
 
-      await batch.commit();
+      final roomGender = roomDoc.data()?['gender'] as String?;
+      final tenantGender = genderController?.text.trim(); // from form if available
+
+      if (roomGender != null && roomGender.isNotEmpty &&
+          tenantGender != null && tenantGender.isNotEmpty &&
+          roomGender != tenantGender) {
+        throw Exception(
+          'Room $selectedRoomId is reserved for $roomGender tenants only. '
+          'This tenant is $tenantGender.',
+        );
+      }
+
+      final now = FieldValue.serverTimestamp();
+
+      // Batched write: tenant master + business subcollection + bed status
+      await _firestore.runTransaction((transaction) async {
+        // 1) Master tenant doc
+        transaction.set(tenantDocRef, {
+          ...tenant.toMap(),
+          'tenantId': tenantId, // Friendly TEN... ID
+          'createdAt': now,
+          'updatedAt': now,
+        });
+
+        // 2) Business scoped tenants
+        final bizTenantRef = _firestore
+            .collection('businesses')
+            .doc(businessId)
+            .collection('tenants')
+            .doc(tenantId);
+        transaction.set(bizTenantRef, {
+          ...tenant.toMap(),
+          'tenantId': tenantId, // Friendly TEN... ID
+          'businessId': businessId,
+          'createdAt': now,
+          'updatedAt': now,
+        });
+
+        // 3) Mark bed occupancy (Correct path: .../rooms/{roomId}/beds/{bedId})
+        final bedId = (selectedBedIndex! + 1).toString();
+        final bedRef = _firestore
+            .collection('businesses')
+            .doc(businessId)
+            .collection('properties')
+            .doc(selectedPropertyId!)
+            .collection('rooms')
+            .doc(selectedRoomId!)
+            .collection('beds')
+            .doc(bedId);
+        
+        transaction.set(bedRef, {
+          'occupied': true,
+          'isOccupied': true,
+          'tenantId': tenantId,
+          'tenantName': tenant.name,
+          'occupiedAt': now,
+          'updatedAt': now,
+        }, SetOptions(merge: true));
+
+        // 4) Update property occupancy count
+        final propertyRef = _firestore
+            .collection('businesses')
+            .doc(businessId)
+            .collection('properties')
+            .doc(selectedPropertyId!);
+        
+        transaction.update(propertyRef, {
+          'occupiedBeds': FieldValue.increment(1),
+          'updatedAt': now,
+        });
+      });
 
     } catch (e) {
       errorMessage = e.toString();

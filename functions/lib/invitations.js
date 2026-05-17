@@ -353,19 +353,28 @@ exports.expireStaleInvitations = functions.pubsub
     .timeZone('Etc/UTC')
     .onRun(async () => {
     const now = admin.firestore.Timestamp.now();
-    const snapshot = await db
-        .collection('business_invitations')
-        .where('status', '==', 'pending')
-        .where('expiresAt', '<', now)
-        .limit(500)
-        .get();
-    if (snapshot.empty)
-        return null;
-    const batch = db.batch();
-    snapshot.docs.forEach((doc) => {
-        batch.update(doc.ref, { status: 'expired' });
-    });
-    await batch.commit();
+    let processedCount = 0;
+    while (true) {
+        const snapshot = await db
+            .collection('business_invitations')
+            .where('status', '==', 'pending')
+            .where('expiresAt', '<', now)
+            .limit(500)
+            .get();
+        if (snapshot.empty)
+            break;
+        const batch = db.batch();
+        snapshot.docs.forEach((doc) => {
+            batch.update(doc.ref, { status: 'expired' });
+        });
+        await batch.commit();
+        processedCount += snapshot.size;
+        if (snapshot.size < 500)
+            break;
+    }
+    if (processedCount > 0) {
+        functions.logger.info(`expireStaleInvitations: Expired ${processedCount} stale invitations.`);
+    }
     return null;
 });
 //# sourceMappingURL=invitations.js.map

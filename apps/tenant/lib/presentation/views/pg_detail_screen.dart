@@ -236,6 +236,55 @@ class _PGDetailScreenState extends State<PGDetailScreen> {
                   minLines: 2,
                   textCapitalization: TextCapitalization.sentences,
                 ),
+                const SizedBox(height: 16),
+
+                // KYC Document Upload
+                const Text(
+                  'KYC Document (Optional)',
+                  style: TextStyle(fontWeight: FontWeight.w600, fontSize: 13),
+                ),
+                const SizedBox(height: 8),
+                Consumer<PGDetailViewModel>(
+                  builder: (context, viewModel, _) {
+                    return viewModel.kycDocument == null 
+                      ? OutlinedButton.icon(
+                          onPressed: viewModel.pickKycDocument,
+                          icon: const Icon(Icons.upload_file, size: 18),
+                          label: const Text('Attach ID Proof (Image)'),
+                          style: OutlinedButton.styleFrom(
+                            minimumSize: const Size.fromHeight(45),
+                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                          ),
+                        )
+                      : Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                          decoration: BoxDecoration(
+                            border: Border.all(color: Colors.green.shade300),
+                            borderRadius: BorderRadius.circular(8),
+                            color: Colors.green.shade50,
+                          ),
+                          child: Row(
+                            children: [
+                              const Icon(Icons.check_circle, color: Colors.green, size: 20),
+                              const SizedBox(width: 8),
+                              Expanded(
+                                child: Text(
+                                  viewModel.kycDocument!.name,
+                                  style: const TextStyle(fontSize: 13, color: Colors.green),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                              IconButton(
+                                icon: const Icon(Icons.close, size: 18, color: Colors.red),
+                                onPressed: viewModel.removeKycDocument,
+                                padding: EdgeInsets.zero,
+                                constraints: const BoxConstraints(),
+                              ),
+                            ],
+                          ),
+                        );
+                  },
+                ),
               ],
             ),
           ),

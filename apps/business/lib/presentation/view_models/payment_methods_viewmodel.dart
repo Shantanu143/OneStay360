@@ -34,6 +34,15 @@ class PaymentMethodsViewModel extends ChangeNotifier {
   // Add new payment method
   Future<bool> addPaymentMethod(String businessId, PaymentMethod method) async {
     try {
+      if (method.type.toLowerCase() == 'razorpay') {
+        final alreadyExists = _paymentMethods.any((m) => m.type.toLowerCase() == 'razorpay');
+        if (alreadyExists) {
+          _error = 'Razorpay is already configured for this business.';
+          notifyListeners();
+          return false;
+        }
+      }
+
       final newMethod = PaymentMethod(
         id: '', // Will be set by service
         businessId: businessId,

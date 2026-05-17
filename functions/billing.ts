@@ -321,7 +321,6 @@ export const processMonthlyBilling = functions
   .runWith({
     timeoutSeconds: 540,
     memory: '512MB',
-    minInstances: 1,  // Keep 1 instance warm to prevent cold start failures
     maxInstances: 1,
   })
   .pubsub.schedule('0 3 * * *')
@@ -570,4 +569,272 @@ export const fixPropertyBillingDate = functions.https.onCall(async (data, contex
       ? 'Next billing date set to now. Run processMonthlyBilling to trigger billing.'
       : `Next billing date set to ${daysFromNow} days from now.`,
   };
+});
+
+/**
+ * Record a tenant payment (manual entry by business owner / manager).
+ * Writes to payments subcollection, updates lastPaymentDate on tenant docs.
+ */
+export const recordPayment = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+  }
+
+  const {
+    businessId,
+    tenantId,
+    amount,
+    month,       // e.g. "March 2026"
+    paymentMode, // 'Cash' | 'UPI' | 'Bank Transfer' | 'Cheque' | 'Other'
+    transactionId,
+    note,
+  } = data;
+
+  if (!businessId || !tenantId || !amount || !month) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Missing required fields: businessId, tenantId, amount, month'
+    );
+  }
+
+  const now = admin.firestore.Timestamp.now();
+
+  // Verify the tenant belongs to this business
+  const bizTenantRef = db.doc(`businesses/${businessId}/tenants/${tenantId}`);
+  const bizTenantSnap = await bizTenantRef.get();
+
+  if (!bizTenantSnap.exists) {
+    throw new functions.https.HttpsError('not-found', `Tenant ${tenantId} not found in business ${businessId}`);
+  }
+
+  const tenantData = bizTenantSnap.data() as any;
+
+  // Create payment record
+  const paymentRef = db.collection(`businesses/${businessId}/tenants/${tenantId}/payments`).doc();
+  const paymentRecord = {
+    id: paymentRef.id,
+    tenantId,
+    businessId,
+    tenantName: tenantData.name || '',
+    roomNumber: tenantData.roomNumber || tenantData.roomId || '',
+    bedNumber: tenantData.bedNumber || tenantData.bedId || '',
+    amount: Number(amount),
+    month,
+    date: now,
+    status: 'Paid',
+    method: paymentMode || 'Cash',
+    transactionId: transactionId || null,
+    note: note || null,
+    recordedBy: context.auth.uid,
+    createdAt: now,
+  };
+
+  await db.runTransaction(async (tx) => {
+    // Read before write
+    const globalTenantRef = db.doc(`tenants/${tenantId}`);
+    const globalSnap = await tx.get(globalTenantRef);
+
+    // Write payment record
+    tx.set(paymentRef, paymentRecord);
+
+    // Update lastPaymentDate on business-scoped tenant doc
+    tx.update(bizTenantRef, {
+      lastPaymentDate: now,
+      lastPaymentAmount: Number(amount),
+      lastPaymentMonth: month,
+      updatedAt: now,
+    });
+
+    // Update global tenant doc if it exists
+    if (globalSnap.exists) {
+      tx.update(globalTenantRef, {
+        lastPaymentDate: now,
+        lastPaymentAmount: Number(amount),
+        updatedAt: now,
+      });
+    }
+  });
+
+  console.log(`✅ Payment recorded: ${tenantId} paid ₹${amount} for ${month} (${paymentMode})`);
+
+  return {
+    success: true,
+    paymentId: paymentRef.id,
+    tenantId,
+    amount: Number(amount),
+    month,
+  };
+});
+/**
+ * Tenant submits a rent payment (waiting for verification)
+ */
+export const submitRentPayment = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+  }
+
+  const {
+    businessId,
+    amount,
+    month,
+    paymentMode, // 'Cash' | 'UPI'
+    transactionId,
+    screenshotUrl,
+  } = data;
+
+  const tenantId = context.auth.uid; // Ensuring tenant can only submit for themselves
+
+  if (!businessId || !amount || !month || !paymentMode) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Missing required fields: businessId, amount, month, paymentMode'
+    );
+  }
+
+  if (paymentMode === 'UPI' && !transactionId) {
+    throw new functions.https.HttpsError('invalid-argument', 'Transaction ID is required for UPI payments');
+  }
+
+  const now = admin.firestore.Timestamp.now();
+
+  // Verify the tenant belongs to this business
+  const bizTenantRef = db.doc(`businesses/${businessId}/tenants/${tenantId}`);
+  const bizTenantSnap = await bizTenantRef.get();
+
+  if (!bizTenantSnap.exists) {
+    throw new functions.https.HttpsError('not-found', `Tenant not found in business ${businessId}`);
+  }
+
+  const tenantData = bizTenantSnap.data() as any;
+
+  // Create payment record in pending state
+  const paymentRef = db.collection(`businesses/${businessId}/tenants/${tenantId}/payments`).doc();
+  const paymentRecord = {
+    id: paymentRef.id,
+    tenantId,
+    businessId,
+    tenantName: tenantData.name || '',
+    roomNumber: tenantData.roomNumber || tenantData.roomId || '',
+    bedNumber: tenantData.bedNumber || tenantData.bedId || '',
+    amount: Number(amount),
+    month,
+    date: now,
+    status: 'pending_verification',
+    method: paymentMode,
+    transactionId: transactionId || null,
+    screenshotUrl: screenshotUrl || null,
+    submittedBy: 'tenant',
+    createdAt: now,
+  };
+
+  await paymentRef.set(paymentRecord);
+
+  console.log(`Payment submitted for verification: ${tenantId} paid ₹${amount} for ${month} via ${paymentMode}`);
+
+  return {
+    success: true,
+    paymentId: paymentRef.id,
+    status: 'pending_verification',
+  };
+});
+
+/**
+ * Property owner verifies (confirms or rejects) a tenant's rent payment submission
+ */
+export const verifyRentPayment = functions.https.onCall(async (data, context) => {
+  if (!context.auth) {
+    throw new functions.https.HttpsError('unauthenticated', 'Must be logged in');
+  }
+
+  const { businessId, tenantId, paymentId, action, rejectionReason } = data;
+
+  if (!businessId || !tenantId || !paymentId || !action) {
+    throw new functions.https.HttpsError(
+      'invalid-argument',
+      'Missing required fields: businessId, tenantId, paymentId, action'
+    );
+  }
+
+  if (action !== 'confirm' && action !== 'reject') {
+    throw new functions.https.HttpsError('invalid-argument', 'Action must be confirm or reject');
+  }
+
+  if (action === 'reject' && !rejectionReason) {
+    throw new functions.https.HttpsError('invalid-argument', 'rejectionReason is required when rejecting');
+  }
+
+  const now = admin.firestore.Timestamp.now();
+
+  const bizTenantRef = db.doc(`businesses/${businessId}/tenants/${tenantId}`);
+  const paymentRef = db.collection(`businesses/${businessId}/tenants/${tenantId}/payments`).doc(paymentId);
+  const globalTenantRef = db.doc(`tenants/${tenantId}`);
+
+  let finalStatus = '';
+
+  await db.runTransaction(async (tx) => {
+    // Reads
+    const [bizTenantSnap, paymentSnap, globalTenantSnap] = await Promise.all([
+      tx.get(bizTenantRef),
+      tx.get(paymentRef),
+      tx.get(globalTenantRef),
+    ]);
+
+    if (!paymentSnap.exists) {
+      throw new functions.https.HttpsError('not-found', 'Payment record not found');
+    }
+
+    const paymentData = paymentSnap.data() as any;
+
+    if (paymentData.status !== 'pending_verification') {
+      throw new functions.https.HttpsError('failed-precondition', `Payment is already ${paymentData.status}`);
+    }
+
+    if (action === 'confirm') {
+      finalStatus = 'Paid';
+      // 1. Mark payment as Paid
+      tx.update(paymentRef, {
+        status: finalStatus,
+        verifiedBy: context.auth!.uid,
+        verifiedAt: now,
+        updatedAt: now,
+      });
+
+      // 2. Update lastPaymentDate on business tenant doc
+      if (bizTenantSnap.exists) {
+        tx.update(bizTenantRef, {
+          lastPaymentDate: now,
+          lastPaymentAmount: paymentData.amount,
+          lastPaymentMonth: paymentData.month,
+          updatedAt: now,
+        });
+      }
+
+      // 3. Update global tenant doc if exists
+      if (globalTenantSnap.exists) {
+        tx.update(globalTenantRef, {
+          lastPaymentDate: now,
+          lastPaymentAmount: paymentData.amount,
+          updatedAt: now,
+        });
+      }
+    } else {
+      // Reject
+      finalStatus = 'rejected';
+      tx.update(paymentRef, {
+        status: finalStatus,
+        rejectionReason: rejectionReason,
+        rejectedBy: context.auth!.uid,
+        rejectedAt: now,
+        updatedAt: now,
+      });
+    }
+  });
+
+  if (finalStatus === 'Paid') {
+    console.log(`Payment verified/confirmed: ${paymentId}`);
+  } else {
+    console.log(`Payment rejected: ${paymentId} - Reason: ${rejectionReason}`);
+  }
+
+  return { success: true, paymentId, action };
 });

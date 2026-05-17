@@ -170,3 +170,55 @@ export function buildInvitationEmail(options: {
 
   return { to, subject, html, text };
 }
+
+export function buildTenantInvitationEmail(options: {
+  tenantName: string;
+  businessName: string;
+  propertyName: string;
+  roomNumber: string;
+  bedNumber: string;
+  appLink: string;
+  to: string;
+}): EmailPayload {
+  const { tenantName, businessName, propertyName, roomNumber, bedNumber, appLink, to } = options;
+  const subject = `Your room is ready at ${businessName}`;
+
+  const html = `
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Tenant Invitation</title>
+  <style>
+    body { margin:0; padding:0; background:#f8fafc; font-family: Arial, sans-serif; color:#0f172a; }
+    .wrapper { width:100%; padding:18px; }
+    .card { max-width:640px; margin:0 auto; background:#ffffff; border-radius:14px; padding:22px; box-shadow:0 6px 24px rgba(15,23,42,0.08); }
+    .title { font-size:20px; font-weight:700; margin:0 0 10px; }
+    .body { font-size:15px; line-height:1.6; color:#1f2937; }
+    .pill { display:inline-block; padding:6px 12px; border-radius:999px; background:#ecfdf3; color:#15803d; font-weight:600; font-size:13px; }
+    .cta { display:inline-block; padding:12px 18px; background:#0f766e; color:#ffffff; text-decoration:none; border-radius:10px; font-weight:600; }
+    .footer { margin-top:22px; font-size:13px; color:#64748b; }
+  </style>
+</head>
+<body>
+  <div class="wrapper">
+    <div class="card">
+      <div class="title">Welcome to ${businessName}</div>
+      <div class="body">
+        <p>Hi ${tenantName},</p>
+        <p>Your room is ready at <strong>${propertyName || businessName}</strong>.</p>
+        <p class="pill">Room ${roomNumber} · Bed ${bedNumber}</p>
+        <p>Install the OneStay360 tenant app to view your room details, bills, and updates.</p>
+        <p><a class="cta" href="${appLink}">Open Tenant App</a></p>
+        <p class="footer">If you were not expecting this email, you can ignore it.</p>
+      </div>
+    </div>
+  </div>
+</body>
+</html>`;
+
+  const text = `Hi ${tenantName}, your room is ready at ${propertyName || businessName}. Room ${roomNumber}, Bed ${bedNumber}. Install the app: ${appLink}`;
+
+  return { to, subject, html, text };
+}

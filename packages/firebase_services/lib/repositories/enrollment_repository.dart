@@ -1,13 +1,13 @@
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/foundation.dart';
 
 class EnrollmentRepository {
   final FirebaseFirestore _firestore = FirebaseFirestore.instance;
   final FirebaseAuth _auth = FirebaseAuth.instance;
 
-  /// Submit an enrollment request to Firestore
-  /// Saves to: /enrollmentRequests/{requestId}
+  /// Submit an enrollment request to Firestore via Callable Cloud Function
   Future<String> submitEnrollmentRequest({
     required String propertyId,
     required String businessId,
@@ -18,6 +18,7 @@ class EnrollmentRepository {
     String? roomType,
     String? sharingType,
     String? notes,
+    String? kycDocumentUrl,
   }) async {
     try {
       final user = _auth.currentUser;
@@ -25,27 +26,26 @@ class EnrollmentRepository {
         throw Exception('User not authenticated');
       }
 
-      final requestId = _firestore.collection('enrollmentRequests').doc().id;
-
-      await _firestore.collection('enrollmentRequests').doc(requestId).set({
-        'requestId': requestId,
-        'tenantId': user.uid,
-        'tenantName': tenantName,
-        'tenantPhone': tenantPhone,
+      final callable = FirebaseFunctions.instance.httpsCallable('submitEnrollmentRequest');
+      final result = await callable.call({
         'propertyId': propertyId,
         'businessId': businessId,
+        'tenantName': tenantName,
+        'tenantPhone': tenantPhone,
+        'moveInDate': moveInDate.toIso8601String(),
         'propertyName': propertyName ?? '',
-        'moveInDate': moveInDate,
         'roomType': roomType ?? '',
         'sharingType': sharingType ?? '',
         'notes': notes ?? '',
-        'status': 'pending',
-        'createdAt': FieldValue.serverTimestamp(),
-        'updatedAt': FieldValue.serverTimestamp(),
+        'kycDocumentUrl': kycDocumentUrl ?? '',
       });
 
-      debugPrint('✅ Enrollment request submitted: $requestId');
+      final requestId = result.data['requestId'] as String;
+      debugPrint('✅ Enrollment request submitted securely: $requestId');
       return requestId;
+    } on FirebaseFunctionsException catch (e) {
+      debugPrint('❌ Firebase Functions Error: \${e.code} - \${e.message}');
+      throw Exception(e.message ?? 'Failed to submit enrollment request');
     } catch (e) {
       debugPrint('❌ Error submitting enrollment request: $e');
       rethrow;

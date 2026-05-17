@@ -1,7 +1,7 @@
 class PaymentMethod {
   final String id;
   final String businessId;
-  final String type; // 'upi', 'bank', 'cash'
+  final String type; // 'upi', 'bank', 'cash', 'razorpay'
   final String? upiId;
   final String? phoneNumber;
   

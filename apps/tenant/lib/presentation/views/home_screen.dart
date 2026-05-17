@@ -8,6 +8,7 @@ import 'my_pg_screen.dart';
 import 'tenant_profile_screen.dart';
 import 'enroll_request_screen.dart';
 import 'bill_review_screen.dart';
+import 'rent_payment_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 
@@ -113,6 +114,8 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+// Removed duplicate header since TenantScaffold handles it
+                const SizedBox(height: 8),
                 if (currentUser != null)
                   StreamBuilder<DocumentSnapshot<Map<String, dynamic>>>(
                     stream: FirebaseFirestore.instance
@@ -133,39 +136,49 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
                           border: Border.all(color: const Color(0xFFFDE68A)),
                         ),
                         child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
+                          crossAxisAlignment: CrossAxisAlignment.center,
                           children: [
-                            const Icon(Icons.info_outline, color: Color(0xFF92400E)),
-                            const SizedBox(width: 12),
+                            Container(
+                              padding: const EdgeInsets.all(12),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFFDE68A),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.person_add_alt_1, color: Color(0xFF92400E)),
+                            ),
+                            const SizedBox(width: 16),
                             Expanded(
                               child: Column(
                                 crossAxisAlignment: CrossAxisAlignment.start,
                                 children: [
                                   const Text(
-                                    'Complete your profile',
+                                    'Complete Your Profile',
                                     style: TextStyle(
-                                      fontWeight: FontWeight.w700,
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
                                       color: Color(0xFF92400E),
                                     ),
                                   ),
-                                  const SizedBox(height: 6),
+                                  const SizedBox(height: 4),
                                   const Text(
-                                    'Add your details once to speed up bookings and verifications.',
-                                    style: TextStyle(color: Color(0xFF92400E)),
+                                    'Add details to speed up your booking.',
+                                    style: TextStyle(color: Color(0xFFB45309), fontSize: 13),
                                   ),
-                                  const SizedBox(height: 10),
-                                  Align(
-                                    alignment: Alignment.centerLeft,
-                                    child: OutlinedButton.icon(
-                                      onPressed: () {
-                                        HapticFeedback.selectionClick();
-                                        Navigator.push(
-                                          context,
-                                          MaterialPageRoute(builder: (_) => const TenantProfileScreen()),
-                                        );
-                                      },
-                                      icon: const Icon(Icons.edit_outlined, size: 16),
-                                      label: const Text('Complete Profile'),
+                                  const SizedBox(height: 8),
+                                  GestureDetector(
+                                    onTap: () {
+                                      HapticFeedback.selectionClick();
+                                      Navigator.push(
+                                        context,
+                                        MaterialPageRoute(builder: (_) => const TenantProfileScreen()),
+                                      );
+                                    },
+                                    child: const Text(
+                                      'Complete Now →',
+                                      style: TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        color: Color(0xFFD97706),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -258,11 +271,93 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
                                     ),
                                   );
                                 },
-                                style: ElevatedButton.styleFrom(
-                                  backgroundColor: Colors.green.shade600,
-                                  foregroundColor: Colors.white,
-                                ),
-                                child: const Text('Pay Now'),
+                                 style: ElevatedButton.styleFrom(
+                                   backgroundColor: Colors.green.shade600,
+                                   foregroundColor: Colors.white,
+                                   elevation: 0,
+                                   shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                   padding: const EdgeInsets.symmetric(vertical: 16),
+                                 ),
+                                 child: const Text('Pay Now', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
+                               ),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                // Pending Application Banner
+                if (currentUser != null)
+                  StreamBuilder<QuerySnapshot>(
+                    stream: FirebaseFirestore.instance
+                        .collection('enrollmentRequests')
+                        .where('tenantId', isEqualTo: currentUser.uid)
+                        .where('status', isEqualTo: 'pending')
+                        .limit(1)
+                        .snapshots(),
+                    builder: (context, snapshot) {
+                      if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
+                        return const SizedBox.shrink();
+                      }
+                      
+                      final doc = snapshot.data!.docs.first;
+                      final data = doc.data() as Map<String, dynamic>;
+                      final propertyName = data['propertyName'] ?? 'PG';
+                      
+                      return Container(
+                        width: double.infinity,
+                        margin: const EdgeInsets.only(bottom: 16),
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          gradient: const LinearGradient(
+                            colors: [Color(0xFFFFFBEB), Color(0xFFFEF3C7)],
+                            begin: Alignment.topLeft,
+                            end: Alignment.bottomRight,
+                          ),
+                          borderRadius: BorderRadius.circular(16),
+                          border: Border.all(color: const Color(0xFFFDE68A).withOpacity(0.5)),
+                          boxShadow: [
+                            BoxShadow(
+                              color: const Color(0xFFF59E0B).withOpacity(0.05),
+                              blurRadius: 10,
+                              offset: const Offset(0, 4),
+                            ),
+                          ],
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: const Color(0xFFF59E0B).withOpacity(0.15),
+                                shape: BoxShape.circle,
+                              ),
+                              child: const Icon(Icons.hourglass_empty, color: Color(0xFFD97706), size: 22),
+                            ),
+                            const SizedBox(width: 16),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  const Text(
+                                    'Application Pending',
+                                    style: TextStyle(
+                                      fontWeight: FontWeight.w800,
+                                      fontSize: 16,
+                                      color: Color(0xFF92400E),
+                                      letterSpacing: -0.3,
+                                    ),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Your request to join $propertyName is currently under review by the owner.',
+                                    style: const TextStyle(
+                                      color: Color(0xFFB45309),
+                                      fontSize: 13,
+                                    ),
+                                  ),
+                                ],
                               ),
                             ),
                           ],
@@ -272,58 +367,92 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
                   ),
                 
                 // Current Accommodation Card
-                Container(
-                  width: double.infinity,
-                  padding: const EdgeInsets.all(20),
-                  decoration: BoxDecoration(
-                    gradient: const LinearGradient(
-                      colors: [Color(0xFF0891B2), Color(0xFF06B6D4)],
-                      begin: Alignment.topLeft,
-                      end: Alignment.bottomRight,
-                    ),
-                    borderRadius: BorderRadius.circular(16),
-                    boxShadow: [
-                      BoxShadow(
-                        color: Color(0xFF0891B2).withAlpha((0.3 * 255).round()),
-                        blurRadius: 20,
-                        offset: const Offset(0, 8),
-                      ),
-                    ],
-                  ),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      const Text(
-                        'Current Accommodation',
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: 16,
-                          fontWeight: FontWeight.w500,
+                Builder(
+                  builder: (context) {
+                    final hasProperty = tenantState.propertyId.isNotEmpty && tenantState.businessId.isNotEmpty;
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(24),
+                      decoration: BoxDecoration(
+                        gradient: const LinearGradient(
+                          colors: [Color(0xFF1E3A8A), Color(0xFF3B82F6)], // Premium deep blue gradient
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
                         ),
+                        borderRadius: BorderRadius.circular(20),
+                        boxShadow: [
+                          BoxShadow(
+                            color: const Color(0xFF3B82F6).withOpacity(0.3),
+                            blurRadius: 20,
+                            offset: const Offset(0, 10),
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 12),
-                      Text(
-                        tenantState.currentPG.isNotEmpty ? tenantState.currentPG : 'No PG Assigned',
-                        style: const TextStyle(
-                          color: Colors.white,
-                          fontSize: 24,
-                          fontWeight: FontWeight.bold,
-                        ),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                            children: [
+                              Container(
+                                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                                decoration: BoxDecoration(
+                                  color: Colors.white.withOpacity(0.2),
+                                  borderRadius: BorderRadius.circular(20),
+                                ),
+                                child: Text(
+                                  hasProperty ? 'CURRENT STAY' : 'NO ACTIVE PG',
+                                  style: const TextStyle(
+                                    color: Colors.white,
+                                    fontSize: 10,
+                                    fontWeight: FontWeight.bold,
+                                    letterSpacing: 1.2,
+                                  ),
+                                ),
+                              ),
+                              Icon(hasProperty ? Icons.home_work_outlined : Icons.explore, color: Colors.white.withOpacity(0.8), size: 24),
+                            ],
+                          ),
+                          const SizedBox(height: 16),
+                          Text(
+                            hasProperty ? tenantState.currentPG : 'Start Exploring PGs',
+                            style: const TextStyle(
+                              color: Colors.white,
+                              fontSize: 26,
+                              fontWeight: FontWeight.w800,
+                            ),
+                          ),
+                          const SizedBox(height: 8),
+                          hasProperty ? const _HomeLocationRow() : Row(
+                            children: [
+                              const Icon(Icons.touch_app, color: Colors.white70, size: 16),
+                              const SizedBox(width: 4),
+                              Expanded(
+                                child: Text(
+                                  'Find your perfect stay today',
+                                  style: TextStyle(
+                                    color: Colors.white.withAlpha((0.9 * 255).round()),
+                                    fontSize: 14,
+                                  ),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ),
+                            ],
+                          ),
+                        ],
                       ),
-                      const SizedBox(height: 8),
-                      const _HomeLocationRow(),
-                    ],
-                  ),
+                    );
+                  }
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 32),
 
-                // Quick Actions
                 const Text(
                   'Quick Actions',
                   style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.bold,
-                    color: Color(0xFF1F2937),
+                    fontSize: 20,
+                    fontWeight: FontWeight.w800,
+                    color: Color(0xFF111827),
+                    letterSpacing: -0.5,
                   ),
                 ),
                 const SizedBox(height: 16),
@@ -333,41 +462,41 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
                   crossAxisCount: 2,
                   crossAxisSpacing: 16,
                   mainAxisSpacing: 16,
-                  childAspectRatio: 1.2,
+                  childAspectRatio: 1.1,
                   children: [
                     _buildQuickActionCard(
-                      'Payments',
-                      Icons.payment,
+                      'Pay Rent',
+                      Icons.account_balance_wallet_outlined,
                       const Color(0xFF10B981),
-                          () => HapticFeedback.lightImpact(),
-                    ),
-                    _buildQuickActionCard(
-                      'Complaints',
-                      Icons.report_problem_outlined,
-                      const Color(0xFFF59E0B),
-                          () => HapticFeedback.lightImpact(),
-                    ),
-                    _buildQuickActionCard(
-                      'Support',
-                      Icons.support_agent,
-                      const Color(0xFF8B5CF6),
-                          () => HapticFeedback.lightImpact(),
-                    ),
-                    _buildQuickActionCard(
-                      'Maintenance',
-                      Icons.build_outlined,
-                      const Color(0xFFEF4444),
-                          () => HapticFeedback.lightImpact(),
+                      () {
+                        HapticFeedback.lightImpact();
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(builder: (_) => const RentPaymentScreen()),
+                        );
+                      },
                     ),
                     _buildQuickActionCard(
                       'Enroll Request',
                       Icons.assignment_turned_in_outlined,
-                      const Color(0xFF06B6D4),
+                      const Color(0xFF3B82F6),
                       _openEnrollRequest,
+                    ),
+                    _buildQuickActionCard(
+                      'Maintenance',
+                      Icons.build_circle_outlined,
+                      const Color(0xFFF43F5E),
+                          () => HapticFeedback.lightImpact(),
+                    ),
+                    _buildQuickActionCard(
+                      'Support',
+                      Icons.support_agent_outlined,
+                      const Color(0xFF8B5CF6),
+                          () => HapticFeedback.lightImpact(),
                     ),
                   ],
                 ),
-                const SizedBox(height: 24),
+                const SizedBox(height: 32),
 
                 // Recent Activity
                 const Text(
@@ -379,26 +508,20 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                _buildActivityItem(
-                  'Rent Payment',
-                  'Paid ₹12,000 for December',
-                  Icons.payment,
-                  const Color(0xFF10B981),
-                  '2 days ago',
-                ),
-                _buildActivityItem(
-                  'Complaint Resolved',
-                  'WiFi connectivity issue fixed',
-                  Icons.check_circle,
-                  const Color(0xFF0891B2),
-                  '1 week ago',
-                ),
-                _buildActivityItem(
-                  'Maintenance Request',
-                  'AC repair scheduled for tomorrow',
-                  Icons.build,
-                  const Color(0xFFF59E0B),
-                  '3 days ago',
+                Center(
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 24),
+                    child: Column(
+                      children: [
+                        Icon(Icons.history_toggle_off, size: 48, color: Colors.grey.shade300),
+                        const SizedBox(height: 12),
+                        Text(
+                          'No recent activity yet',
+                          style: TextStyle(color: Colors.grey.shade500),
+                        ),
+                      ],
+                    ),
+                  ),
                 ),
               ],
             );
@@ -408,40 +531,41 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
     );
   }
 
+// _buildGreetingHeader removed.
   Widget _buildQuickActionCard(String title, IconData icon, Color color, VoidCallback onTap) {
     return GestureDetector(
       onTap: onTap,
       child: Container(
-        padding: const EdgeInsets.all(16),
         decoration: BoxDecoration(
           color: Colors.white,
-          borderRadius: BorderRadius.circular(12),
+          borderRadius: BorderRadius.circular(20),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withAlpha((0.05 * 255).round()),
-              blurRadius: 10,
-              offset: const Offset(0, 2),
+              color: color.withOpacity(0.08),
+              blurRadius: 16,
+              offset: const Offset(0, 4),
             ),
           ],
+          border: Border.all(color: Colors.grey.shade100, width: 1.5),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
             Container(
-              padding: const EdgeInsets.all(12),
+              padding: const EdgeInsets.all(14),
               decoration: BoxDecoration(
                 color: color.withOpacity(0.1),
-                borderRadius: BorderRadius.circular(12),
+                shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: color, size: 24),
+              child: Icon(icon, color: color, size: 28),
             ),
             const SizedBox(height: 12),
             Text(
               title,
               style: const TextStyle(
-                fontSize: 14,
+                fontSize: 15,
                 fontWeight: FontWeight.w600,
-                color: Color(0xFF1F2937),
+                color: Color(0xFF374151),
               ),
               textAlign: TextAlign.center,
             ),
@@ -453,30 +577,31 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
 
   Widget _buildActivityItem(String title, String subtitle, IconData icon, Color color, String time) {
     return Container(
-      margin: const EdgeInsets.only(bottom: 12),
+      margin: const EdgeInsets.only(bottom: 16),
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
+        borderRadius: BorderRadius.circular(16),
+        border: Border.all(color: Colors.grey.shade100),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
+            color: Colors.black.withOpacity(0.03),
+            blurRadius: 12,
+            offset: const Offset(0, 4),
           ),
         ],
       ),
       child: Row(
         children: [
           Container(
-            padding: const EdgeInsets.all(8),
-                decoration: BoxDecoration(
-              color: color.withAlpha((0.1 * 255).round()),
-              borderRadius: BorderRadius.circular(8),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withOpacity(0.1),
+              shape: BoxShape.circle,
             ),
-            child: Icon(icon, color: color, size: 20),
+            child: Icon(icon, color: color, size: 22),
           ),
-          const SizedBox(width: 12),
+          const SizedBox(width: 16),
           Expanded(
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
@@ -484,16 +609,17 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
                 Text(
                   title,
                   style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
+                    fontSize: 15,
+                    fontWeight: FontWeight.w700,
                     color: Color(0xFF1F2937),
                   ),
                 ),
+                const SizedBox(height: 4),
                 Text(
                   subtitle,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.grey[600],
+                  style: const TextStyle(
+                    fontSize: 13,
+                    color: Color(0xFF6B7280),
                   ),
                 ),
               ],
@@ -501,9 +627,10 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
           ),
           Text(
             time,
-            style: TextStyle(
+            style: const TextStyle(
               fontSize: 12,
-              color: Colors.grey[500],
+              fontWeight: FontWeight.w500,
+              color: Color(0xFF9CA3AF),
             ),
           ),
         ],
@@ -517,18 +644,69 @@ class _HomeLocationRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Row(
-      children: [
-        const Icon(Icons.location_on, color: Colors.white70, size: 16),
-        const SizedBox(width: 4),
-        Text(
-          'Andheri West, Mumbai',
-            style: TextStyle(
-            color: Colors.white.withAlpha((0.9 * 255).round()),
-            fontSize: 14,
+    final tenantState = Provider.of<TenantStateProvider>(context, listen: true);
+    final hasProperty = tenantState.propertyId.isNotEmpty;
+    final businessId = tenantState.businessId;
+    final propertyId = tenantState.propertyId;
+
+    if (!hasProperty || businessId.isEmpty) {
+      return Row(
+        children: [
+          const Icon(Icons.location_on, color: Colors.white70, size: 16),
+          const SizedBox(width: 4),
+          Expanded(
+            child: Text(
+              'Location provided upon assignment',
+              style: TextStyle(
+                color: Colors.white.withAlpha((0.9 * 255).round()),
+                fontSize: 14,
+              ),
+              overflow: TextOverflow.ellipsis,
+            ),
           ),
-        ),
-      ],
+        ],
+      );
+    }
+
+    return StreamBuilder<DocumentSnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('businesses')
+          .doc(businessId)
+          .collection('properties')
+          .doc(propertyId)
+          .snapshots(),
+      builder: (context, snapshot) {
+        String locationText = 'Location details loading...';
+        
+        if (snapshot.hasData && snapshot.data!.exists) {
+            final data = snapshot.data!.data() as Map<String, dynamic>;
+            final address = data['address'] as String? ?? '';
+            final city = data['city'] as String? ?? '';
+            locationText = [address, city].where((e) => e.toString().trim().isNotEmpty).join(', ');
+            if (locationText.isEmpty) {
+                locationText = 'Location details hidden';
+            }
+        } else if (snapshot.hasError) {
+            locationText = 'Location currently unavailable';
+        }
+
+        return Row(
+          children: [
+            const Icon(Icons.location_on, color: Colors.white70, size: 16),
+            const SizedBox(width: 4),
+            Expanded(
+              child: Text(
+                locationText,
+                style: TextStyle(
+                  color: Colors.white.withAlpha((0.9 * 255).round()),
+                  fontSize: 14,
+                ),
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+          ],
+        );
+      },
     );
   }
 }

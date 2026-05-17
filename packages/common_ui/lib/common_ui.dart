@@ -1,5 +1,5 @@
-/// A Calculator.
-class Calculator {
-  /// Returns [value] plus 1.
-  int addOne(int value) => value + 1;
-}
+library common_ui;
+
+export 'widgets/empty_state_widget.dart';
+export 'widgets/error_state_widget.dart';
+export 'widgets/loading_skeleton.dart';

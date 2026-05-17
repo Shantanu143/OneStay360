@@ -47,17 +47,87 @@ var __importStar = (this && this.__importStar) || (function () {
     };
 })();
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.resendTenantInvitation = exports.onTenantUserCreated = exports.onTenantCreated = exports.onEnrollmentStatusChanged = void 0;
+exports.vacateTenant = exports.onTenantInvitationCreated = exports.createTenantInvitation = exports.resendTenantInvitation = exports.onTenantUserCreated = exports.onTenantCreated = exports.onEnrollmentStatusChanged = exports.submitEnrollmentRequest = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 const sendWhatsApp_1 = require("./sendWhatsApp");
+const sendEmail_1 = require("./sendEmail");
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
 const db = admin.firestore();
 const messaging = admin.messaging();
+/**
+ * Generate a sequential tenant ID (TEN0000001)
+ */
+async function generateTenantId() {
+    const counterRef = db.collection('counters').doc('tenant_counter');
+    return db.runTransaction(async (tx) => {
+        const counterSnap = await tx.get(counterRef);
+        let count = 1;
+        if (counterSnap.exists) {
+            count = (counterSnap.data()?.count || 0) + 1;
+        }
+        tx.set(counterRef, { count }, { merge: true });
+        return `TEN${count.toString().padStart(7, '0')}`;
+    });
+}
 // App download link - update this with your actual app link
 const APP_DOWNLOAD_LINK = 'https://onestay360.page.link/tenant';
+/**
+ * Callable Function: Submit an enrollment request securely
+ * Validates:
+ * 1. User doesn't already have an active PG
+ * 2. User hasn't already submitted a pending request to this business
+ */
+exports.submitEnrollmentRequest = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'You must be logged in to submit an enrollment request.');
+    }
+    const { propertyId, businessId, tenantName, tenantPhone, moveInDate, propertyName, roomType, sharingType, notes, kycDocumentUrl } = data;
+    if (!propertyId || !businessId || !tenantName || !tenantPhone || !moveInDate) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields.');
+    }
+    const uid = context.auth.uid;
+    // 1. Check if user already has an active PG
+    const userDoc = await db.collection('users').doc(uid).get();
+    const userData = userDoc.data();
+    if (userData?.tenantId) {
+        const globalTenantSnap = await db.collection('tenants').doc(userData.tenantId).get();
+        if (globalTenantSnap.exists && globalTenantSnap.data()?.status === 'active') {
+            throw new functions.https.HttpsError('failed-precondition', 'You are already an active part of a PG. You must vacate your current PG before applying to a new one.');
+        }
+    }
+    // 2. Check for existing pending requests to this business
+    const pendingRequestsSnap = await db.collection('enrollmentRequests')
+        .where('tenantId', '==', uid)
+        .where('businessId', '==', businessId)
+        .where('status', '==', 'pending')
+        .get();
+    if (!pendingRequestsSnap.empty) {
+        throw new functions.https.HttpsError('already-exists', 'You already have a pending enrollment request for this property/business. Please wait for the owner to respond.');
+    }
+    const requestId = db.collection('enrollmentRequests').doc().id;
+    await db.collection('enrollmentRequests').doc(requestId).set({
+        requestId: requestId,
+        tenantId: uid,
+        tenantName: tenantName,
+        tenantPhone: tenantPhone,
+        propertyId: propertyId,
+        businessId: businessId,
+        propertyName: propertyName || '',
+        moveInDate: moveInDate, // Assumed to be passed securely, perhaps as a string ISO
+        roomType: roomType || '',
+        sharingType: sharingType || '',
+        notes: notes || '',
+        kycDocumentUrl: kycDocumentUrl || '',
+        status: 'pending',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        updatedAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+    console.log(`✅ Validated & submitted enrollment request: ${requestId} for user: ${uid}`);
+    return { requestId };
+});
 /**
  * =====================================================
  * TRIGGER: When enrollment request status changes
@@ -111,7 +181,6 @@ async function handleEnrollmentApproved(requestId, enrollment) {
     // Validate required fields for approval
     if (!roomId || !bedId) {
         console.error('❌ Enrollment approved without room/bed assignment!');
-        // Update status back to pending with error
         await db.doc(`enrollmentRequests/${requestId}`).update({
             status: 'pending',
             approvalError: 'Room and bed must be assigned before approval',
@@ -119,7 +188,29 @@ async function handleEnrollmentApproved(requestId, enrollment) {
         return;
     }
     const now = admin.firestore.Timestamp.now();
-    const tenantDocId = `${businessId}_${tenantUserId || tenantPhone.replace(/\D/g, '')}`;
+    // Resolve the actual tenantId (e.g. TEN0000003) from the user doc
+    let tenantDocId = null;
+    let profileGender = null;
+    if (tenantUserId) {
+        const userSnap = await db.doc(`users/${tenantUserId}`).get();
+        const userData = userSnap.data();
+        tenantDocId = userData?.tenantId || null;
+    }
+    // If still no friendly tenantId, generate one
+    if (!tenantDocId) {
+        tenantDocId = await generateTenantId();
+        console.log(`✨ Generated new sequential tenantDocId: ${tenantDocId}`);
+    }
+    else {
+        console.log(`📋 Reusing existing tenantDocId: ${tenantDocId}`);
+    }
+    // Read gender from the global tenant doc (/tenants/{TEN_ID})
+    // This is where the full profile including gender is stored after profile completion
+    if (tenantDocId) {
+        const globalTenantSnap = await db.doc(`tenants/${tenantDocId}`).get();
+        profileGender = globalTenantSnap.data()?.gender || null;
+        console.log(`👤 Tenant profile gender resolved from /tenants/${tenantDocId}: ${profileGender}`);
+    }
     try {
         await db.runTransaction(async (tx) => {
             // 1. Check if bed is already occupied
@@ -131,10 +222,22 @@ async function handleEnrollmentApproved(requestId, enrollment) {
                     throw new Error(`Bed ${bedNumber || bedId} is already occupied`);
                 }
             }
-            // 2. Create tenant record
+            // 1b. Check / enforce room gender lock
+            const roomRef = db.doc(`businesses/${businessId}/properties/${propertyId}/rooms/${roomId}`);
+            const roomSnap = await tx.get(roomRef);
+            const roomData = roomSnap.data();
+            const roomGender = roomData?.gender || null;
+            // Priority: tenant's completed profile gender > enrollment request field (fallback for manual adds)
+            const tenantGender = profileGender || enrollment.tenantGender || null;
+            if (roomGender && tenantGender && roomGender !== tenantGender) {
+                // Room is gender-locked and tenant doesn't match — REJECT
+                throw new Error(`Room ${roomNumber || roomId} is reserved for ${roomGender} tenants only. This tenant is ${tenantGender}.`);
+            }
+            // 2. Create tenant record using the actual tenantId
             const tenantData = {
                 id: tenantDocId,
-                userId: tenantUserId || null, // Link to user account if they have one
+                tenantId: tenantDocId,
+                userId: tenantUserId || null,
                 name: tenantName,
                 phone: tenantPhone,
                 email: enrollment.tenantEmail || null,
@@ -151,18 +254,27 @@ async function handleEnrollmentApproved(requestId, enrollment) {
                 enrollmentRequestId: requestId,
                 createdAt: now,
                 updatedAt: now,
-                linkedAt: tenantUserId ? now : null, // Linked if user exists
+                linkedAt: tenantUserId ? now : null,
                 inviteSentAt: null,
+                additionalInfo: {
+                    depositAmount: enrollment.depositAmount || 0,
+                    maintenanceAmount: enrollment.maintenanceAmount || 0,
+                    foodAddon: enrollment.foodAddon || 0,
+                    foodDeduction: enrollment.foodDeduction || 0,
+                    proratedRent: enrollment.proratedRent || 0,
+                    totalFirstMonth: enrollment.totalFirstMonth || 0,
+                    paymentMode: enrollment.paymentMode || '',
+                    transactionId: enrollment.transactionId || '',
+                    billingDate: enrollment.billingDate || 1,
+                },
             };
-            // Master tenant record
-            const masterTenantRef = db.doc(`tenants/${tenantDocId}`);
-            tx.set(masterTenantRef, tenantData);
-            // Business-scoped tenant record
+            // Business-scoped tenant record (uses actual tenantId like TEN0000003)
             const bizTenantRef = db.doc(`businesses/${businessId}/tenants/${tenantDocId}`);
             tx.set(bizTenantRef, tenantData);
             // 3. Mark bed as occupied
             tx.set(bedRef, {
                 occupied: true,
+                isOccupied: true,
                 tenantId: tenantDocId,
                 tenantName,
                 occupiedAt: now,
@@ -173,36 +285,104 @@ async function handleEnrollmentApproved(requestId, enrollment) {
                 occupiedBeds: admin.firestore.FieldValue.increment(1),
                 updatedAt: now,
             });
-            // 5. If user exists, update their user document with property link
+            // 4b. Lock room gender if this is the first tenant in the room
+            if (!roomGender && tenantGender) {
+                tx.set(roomRef, { gender: tenantGender, updatedAt: now }, { merge: true });
+                console.log(`🔒 Room ${roomNumber || roomId} gender locked to: ${tenantGender}`);
+            }
+            // 5. If user exists, update their user document (Only essential fields)
             if (tenantUserId) {
                 const userRef = db.doc(`users/${tenantUserId}`);
                 tx.update(userRef, {
                     tenantId: tenantDocId,
-                    currentPropertyId: propertyId,
-                    currentBusinessId: businessId,
                     isTenant: true,
                     updatedAt: now,
                 });
             }
-            // 6. Mark enrollment as completed
+            // 6. Sync room/bed/rent data to the global /tenants doc so tenant app can read it
+            const globalTenantRef = db.doc(`tenants/${tenantDocId}`);
+            tx.set(globalTenantRef, {
+                propertyId,
+                businessId,
+                roomId,
+                bedId,
+                roomNumber: roomNumber || roomId,
+                bedNumber: bedNumber || bedId,
+                propertyName: propertyName || '',
+                monthlyRent: monthlyRent || 0,
+                checkInDate: moveInDate || now,
+                status: 'active',
+                updatedAt: now,
+            }, { merge: true });
+            // 6b. Create a history record in the stays subcollection
+            const stayRef = globalTenantRef.collection('stays').doc();
+            tx.set(stayRef, {
+                stayId: stayRef.id,
+                enrollmentRequestId: requestId,
+                propertyId,
+                businessId,
+                roomId,
+                bedId,
+                roomNumber: roomNumber || roomId,
+                bedNumber: bedNumber || bedId,
+                propertyName: propertyName || '',
+                monthlyRent: monthlyRent || 0,
+                checkInDate: moveInDate || now,
+                status: 'active',
+                createdAt: now,
+                updatedAt: now,
+            });
+            // 7. Create initial payment record in the payments subcollection
+            const totalFirstMonth = enrollment.totalFirstMonth || monthlyRent || 0;
+            const paymentRef = db.collection(`businesses/${businessId}/tenants/${tenantDocId}/payments`).doc();
+            tx.set(paymentRef, {
+                id: paymentRef.id,
+                tenantId: tenantDocId,
+                amount: totalFirstMonth,
+                month: _getMonthLabel(moveInDate || now),
+                date: now,
+                status: enrollment.transactionId ? 'Paid' : 'Pending',
+                method: enrollment.paymentMode || 'Not specified',
+                transactionId: enrollment.transactionId || null,
+                description: 'First month payment (onboarding)',
+                createdAt: now,
+            });
+            // 8. Mark enrollment as completed
             tx.update(db.doc(`enrollmentRequests/${requestId}`), {
                 tenantDocId,
                 completedAt: now,
             });
         });
         console.log(`✅ Tenant record created: ${tenantDocId}`);
-        // 7. Send notifications (non-blocking)
+        // 9. Send notifications (non-blocking)
         await notifyTenantApproved(enrollment, tenantUserId, roomNumber || roomId, bedNumber || bedId);
     }
     catch (error) {
         console.error('❌ Failed to create tenant:', error);
-        // Update enrollment with error
         await db.doc(`enrollmentRequests/${requestId}`).update({
             approvalError: error.message,
             status: 'approval_failed',
         });
         throw error;
     }
+}
+/**
+ * Helper to generate a month label like "March 2026" from a Firestore Timestamp or Date
+ */
+function _getMonthLabel(dateValue) {
+    const months = ['January', 'February', 'March', 'April', 'May', 'June',
+        'July', 'August', 'September', 'October', 'November', 'December'];
+    let date;
+    if (dateValue && typeof dateValue.toDate === 'function') {
+        date = dateValue.toDate();
+    }
+    else if (dateValue instanceof Date) {
+        date = dateValue;
+    }
+    else {
+        date = new Date();
+    }
+    return `${months[date.getMonth()]} ${date.getFullYear()}`;
 }
 /**
  * Send notification to tenant when approved
@@ -587,12 +767,14 @@ exports.onTenantCreated = functions.firestore
         console.log(`✅ Tenant ${tenantId} already linked to user ${tenant.userId}`);
         return null;
     }
-    // If no phone, can't send invite
-    if (!tenant.phone) {
-        console.warn(`⚠️ Tenant ${tenantId} has no phone number for invitation`);
+    const tenantPhone = tenant.phone || '';
+    const tenantEmail = tenant.email || tenant.tenantEmail || '';
+    // If no phone or email, can't send invite
+    if (!tenantPhone && !tenantEmail) {
+        console.warn(`⚠️ Tenant ${tenantId} has no phone/email for invitation`);
         return null;
     }
-    console.log(`📨 Sending invitation to tenant ${tenant.name} at ${tenant.phone}`);
+    console.log(`📨 Sending invitation to tenant ${tenant.name} at ${tenantPhone || tenantEmail}`);
     try {
         // Get property name
         let propertyName = tenant.propertyName || '';
@@ -600,18 +782,41 @@ exports.onTenantCreated = functions.firestore
             const propSnap = await db.doc(`businesses/${businessId}/properties/${tenant.propertyId}`).get();
             propertyName = propSnap.data()?.name || tenant.propertyId;
         }
+        // Get business name (for email)
+        let businessName = tenant.businessName || '';
+        if (!businessName) {
+            const bizSnap = await db.doc(`businesses/${businessId}`).get();
+            businessName = bizSnap.data()?.name || 'OneStay360';
+        }
+        const roomNumber = tenant.roomNumber || tenant.roomId || 'Assigned';
+        const bedNumber = tenant.bedNumber || tenant.bedId || 'Assigned';
         // Send WhatsApp invitation
-        await (0, sendWhatsApp_1.sendWhatsAppTemplate)({
-            to: tenant.phone,
-            templateName: 'tenant_invitation',
-            templateParams: [
-                tenant.name,
+        if (tenantPhone) {
+            await (0, sendWhatsApp_1.sendWhatsAppTemplate)({
+                to: tenantPhone,
+                templateName: 'tenant_invitation',
+                templateParams: [
+                    tenant.name,
+                    propertyName,
+                    roomNumber,
+                    bedNumber,
+                    APP_DOWNLOAD_LINK,
+                ],
+            });
+        }
+        // Send email invitation
+        if (tenantEmail) {
+            const emailPayload = (0, sendEmail_1.buildTenantInvitationEmail)({
+                tenantName: tenant.name || 'Tenant',
+                businessName,
                 propertyName,
-                tenant.roomNumber || tenant.roomId || 'Assigned',
-                tenant.bedNumber || tenant.bedId || 'Assigned',
-                APP_DOWNLOAD_LINK,
-            ],
-        });
+                roomNumber,
+                bedNumber,
+                appLink: APP_DOWNLOAD_LINK,
+                to: tenantEmail,
+            });
+            await (0, sendEmail_1.sendEmail)(emailPayload);
+        }
         // Mark invitation sent
         await snap.ref.update({
             inviteSentAt: admin.firestore.Timestamp.now(),
@@ -691,14 +896,23 @@ exports.onTenantUserCreated = functions.firestore
                 });
             }
             // Update user doc with tenant info
-            tx.update(snap.ref, {
-                tenantId: matchedTenant.id,
-                currentPropertyId: tenant.propertyId,
-                currentBusinessId: tenant.businessId,
+            // Only update tenantId if it doesn't already have a friendly one
+            const userUpdate = {
                 isTenant: true,
                 linkedAt: now,
                 updatedAt: now,
-            });
+            };
+            if (!user.tenantId || !user.tenantId.startsWith('TEN')) {
+                userUpdate.tenantId = matchedTenant.id;
+            }
+            tx.update(snap.ref, userUpdate);
+            // Also update the business-scoped tenant record to have the user's tenantId if it's better
+            if (user.tenantId && user.tenantId.startsWith('TEN')) {
+                tx.update(matchedTenant.ref, {
+                    tenantId: user.tenantId,
+                    updatedAt: now,
+                });
+            }
         });
         console.log(`🎉 Tenant ${tenant.name} linked to user ${userId}`);
         // Send welcome notification
@@ -746,8 +960,10 @@ exports.resendTenantInvitation = functions.https.onCall(async (data, context) =>
     if (tenant.userId) {
         throw new functions.https.HttpsError('failed-precondition', 'Tenant already has app installed');
     }
-    if (!tenant.phone) {
-        throw new functions.https.HttpsError('failed-precondition', 'Tenant has no phone number');
+    const tenantPhone = tenant.phone || '';
+    const tenantEmail = tenant.email || tenant.tenantEmail || '';
+    if (!tenantPhone && !tenantEmail) {
+        throw new functions.https.HttpsError('failed-precondition', 'Tenant has no phone/email');
     }
     // Get property name
     let propertyName = tenant.propertyName || '';
@@ -755,21 +971,329 @@ exports.resendTenantInvitation = functions.https.onCall(async (data, context) =>
         const propSnap = await db.doc(`businesses/${businessId}/properties/${tenant.propertyId}`).get();
         propertyName = propSnap.data()?.name || tenant.propertyId;
     }
-    await (0, sendWhatsApp_1.sendWhatsAppTemplate)({
-        to: tenant.phone,
-        templateName: 'tenant_invitation',
-        templateParams: [
-            tenant.name,
+    const roomNumber = tenant.roomNumber || tenant.roomId || 'Assigned';
+    const bedNumber = tenant.bedNumber || tenant.bedId || 'Assigned';
+    if (tenantPhone) {
+        await (0, sendWhatsApp_1.sendWhatsAppTemplate)({
+            to: tenantPhone,
+            templateName: 'tenant_invitation',
+            templateParams: [
+                tenant.name,
+                propertyName,
+                roomNumber,
+                bedNumber,
+                APP_DOWNLOAD_LINK,
+            ],
+        });
+    }
+    if (tenantEmail) {
+        let businessName = tenant.businessName || '';
+        if (!businessName) {
+            const bizSnap = await db.doc(`businesses/${businessId}`).get();
+            businessName = bizSnap.data()?.name || 'OneStay360';
+        }
+        const emailPayload = (0, sendEmail_1.buildTenantInvitationEmail)({
+            tenantName: tenant.name || 'Tenant',
+            businessName,
             propertyName,
-            tenant.roomNumber || tenant.roomId || 'Assigned',
-            tenant.bedNumber || tenant.bedId || 'Assigned',
-            APP_DOWNLOAD_LINK,
-        ],
-    });
+            roomNumber,
+            bedNumber,
+            appLink: APP_DOWNLOAD_LINK,
+            to: tenantEmail,
+        });
+        await (0, sendEmail_1.sendEmail)(emailPayload);
+    }
     await tenantRef.update({
         inviteSentAt: admin.firestore.Timestamp.now(),
         inviteCount: admin.firestore.FieldValue.increment(1),
     });
     return { success: true, message: 'Invitation sent' };
+});
+/**
+ * =====================================================
+ * CALLABLE: Create tenant invitation (server-side write)
+ * =====================================================
+ */
+exports.createTenantInvitation = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Login required');
+    }
+    const uid = context.auth.uid;
+    const { tenantId, tenantName, tenantPhone, tenantEmail, businessId, propertyId, propertyName, floor, roomId, roomNumber, bedIndex, bedNumber, moveInDate, moveOutDate, monthlyRent, deposit, maintenance, maintenanceDeductedFromDeposit, proratedRent, billingDay, lockInPeriodMonths, noticePeriodDays, paymentCycle, tenantDetails, gender, } = data || {};
+    if (!tenantName || !tenantPhone || !businessId || !propertyId || !roomId || !roomNumber) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required invitation fields');
+    }
+    const memberSnap = await db.doc(`businesses/${businessId}/members/${uid}`).get();
+    const member = memberSnap.data();
+    if (!memberSnap.exists || member?.status !== 'active' || member?.role !== 'owner') {
+        throw new functions.https.HttpsError('permission-denied', 'Only business owners can create invitations');
+    }
+    const moveInMs = typeof moveInDate === 'number' ? moveInDate : Date.parse(moveInDate || '');
+    if (!moveInMs || Number.isNaN(moveInMs)) {
+        throw new functions.https.HttpsError('invalid-argument', 'Invalid moveInDate');
+    }
+    const moveOutMs = moveOutDate ? (typeof moveOutDate === 'number' ? moveOutDate : Date.parse(moveOutDate)) : null;
+    let resolvedTenantId = tenantId || '';
+    if (!resolvedTenantId) {
+        const existingTenantSnap = await db
+            .collection('tenants')
+            .where('phone', '==', tenantPhone)
+            .limit(1)
+            .get();
+        if (!existingTenantSnap.empty) {
+            resolvedTenantId = existingTenantSnap.docs[0].id;
+        }
+    }
+    if (!resolvedTenantId) {
+        resolvedTenantId = await generateTenantId();
+    }
+    const tenantRef = db.doc(`tenants/${resolvedTenantId}`);
+    const tenantSnap = await tenantRef.get();
+    if (!tenantSnap.exists) {
+        await tenantRef.set({
+            tenantId: resolvedTenantId,
+            name: tenantName,
+            phone: tenantPhone,
+            email: tenantEmail || null,
+            businessId,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    }
+    const invitationRef = db.collection('tenant_invitations').doc();
+    const invitationData = {
+        tenantId: resolvedTenantId,
+        tenantName,
+        tenantPhone,
+        tenantEmail: tenantEmail || null,
+        businessId,
+        propertyId,
+        propertyName: propertyName || '',
+        floor: floor || '',
+        roomId,
+        roomNumber,
+        bedIndex: typeof bedIndex === 'number' ? bedIndex : 0,
+        bedNumber: bedNumber || '1',
+        moveInDate: admin.firestore.Timestamp.fromMillis(moveInMs),
+        moveOutDate: moveOutMs ? admin.firestore.Timestamp.fromMillis(moveOutMs) : null,
+        monthlyRent: typeof monthlyRent === 'number' ? monthlyRent : 0,
+        deposit: typeof deposit === 'number' ? deposit : null,
+        maintenance: typeof maintenance === 'number' ? maintenance : null,
+        maintenanceDeductedFromDeposit: typeof maintenanceDeductedFromDeposit === 'boolean'
+            ? maintenanceDeductedFromDeposit
+            : null,
+        proratedRent: typeof proratedRent === 'number' ? proratedRent : null,
+        billingDay: typeof billingDay === 'number' ? billingDay : null,
+        lockInPeriodMonths: typeof lockInPeriodMonths === 'number' ? lockInPeriodMonths : null,
+        noticePeriodDays: typeof noticePeriodDays === 'number' ? noticePeriodDays : null,
+        paymentCycle: paymentCycle || 'Monthly',
+        status: 'pending',
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        tenantDetails: tenantDetails || null,
+        gender: gender || null,
+    };
+    await invitationRef.set(invitationData);
+    // Best-effort notification for tenant app
+    try {
+        await db.collection('tenants').doc(resolvedTenantId).collection('notifications').add({
+            type: 'tenant_invitation',
+            invitationId: invitationRef.id,
+            title: 'New PG Invitation',
+            message: `You have been invited to join ${propertyName || 'a PG'}, Room ${roomNumber}, Bed ${bedNumber}`,
+            read: false,
+            createdAt: admin.firestore.FieldValue.serverTimestamp(),
+        });
+    }
+    catch (err) {
+        functions.logger.warn('tenant_invite_notification_failed', err);
+    }
+    return { success: true, invitationId: invitationRef.id, tenantId: resolvedTenantId };
+});
+/**
+ * =====================================================
+ * TRIGGER: When tenant invitation is created
+ * Path: /tenant_invitations/{invitationId}
+ * =====================================================
+ */
+exports.onTenantInvitationCreated = functions.firestore
+    .document('tenant_invitations/{invitationId}')
+    .onCreate(async (snap) => {
+    const invitation = snap.data();
+    if (!invitation)
+        return null;
+    if (invitation.inviteNotificationSentAt) {
+        return null;
+    }
+    const tenantName = invitation.tenantName || 'Tenant';
+    const tenantPhone = invitation.tenantPhone || '';
+    const tenantEmail = invitation.tenantEmail
+        || invitation.email
+        || invitation.tenantDetails?.email
+        || '';
+    const businessId = invitation.businessId || '';
+    const propertyId = invitation.propertyId || '';
+    const roomNumber = invitation.roomNumber || invitation.roomId || 'Assigned';
+    const bedNumber = invitation.bedNumber || 'Assigned';
+    try {
+        let propertyName = invitation.propertyName || '';
+        if (!propertyName && businessId && propertyId) {
+            const propSnap = await db.doc(`businesses/${businessId}/properties/${propertyId}`).get();
+            propertyName = propSnap.data()?.name || propertyId;
+        }
+        let businessName = 'OneStay360';
+        if (businessId) {
+            const bizSnap = await db.doc(`businesses/${businessId}`).get();
+            businessName = bizSnap.data()?.name || businessName;
+        }
+        if (tenantPhone) {
+            try {
+                await (0, sendWhatsApp_1.sendWhatsAppTemplate)({
+                    to: tenantPhone,
+                    templateName: 'tenant_invitation',
+                    templateParams: [
+                        tenantName,
+                        propertyName || businessName,
+                        roomNumber,
+                        bedNumber,
+                        APP_DOWNLOAD_LINK,
+                    ],
+                });
+            }
+            catch (err) {
+                functions.logger.warn('tenant_invitation_whatsapp_failed', err);
+            }
+        }
+        if (tenantEmail) {
+            try {
+                const emailPayload = (0, sendEmail_1.buildTenantInvitationEmail)({
+                    tenantName,
+                    businessName,
+                    propertyName: propertyName || businessName,
+                    roomNumber,
+                    bedNumber,
+                    appLink: APP_DOWNLOAD_LINK,
+                    to: tenantEmail,
+                });
+                await (0, sendEmail_1.sendEmail)(emailPayload);
+            }
+            catch (err) {
+                functions.logger.warn('tenant_invitation_email_failed', err);
+            }
+        }
+        await snap.ref.update({
+            inviteNotificationSentAt: admin.firestore.Timestamp.now(),
+        });
+    }
+    catch (err) {
+        functions.logger.warn('tenant_invitation_notify_failed', err);
+    }
+    return null;
+});
+/**
+ * =====================================================
+ * CALLABLE: Vacate Tenant
+ * =====================================================
+ */
+exports.vacateTenant = functions.https.onCall(async (data, context) => {
+    if (!context.auth) {
+        throw new functions.https.HttpsError('unauthenticated', 'Login required');
+    }
+    const { tenantId, businessId, propertyId, roomId, bedId } = data;
+    if (!tenantId || !businessId || !propertyId || !roomId || !bedId) {
+        throw new functions.https.HttpsError('invalid-argument', 'Missing required fields: tenantId, businessId, propertyId, roomId, bedId');
+    }
+    console.log(`🚪 Vacating tenant ${tenantId} from property ${propertyId}, room ${roomId}, bed ${bedId}`);
+    try {
+        const now = admin.firestore.Timestamp.now();
+        const globalTenantRef = db.doc(`tenants/${tenantId}`);
+        // Query active stay to mark as vacated
+        const activeStaysQuery = await globalTenantRef.collection('stays')
+            .where('status', '==', 'active')
+            .where('propertyId', '==', propertyId)
+            .limit(1)
+            .get();
+        const activeStayRef = activeStaysQuery.empty ? null : activeStaysQuery.docs[0].ref;
+        await db.runTransaction(async (tx) => {
+            // ── ALL READS FIRST (Firestore requires reads before writes) ──
+            const bedRef = db.doc(`businesses/${businessId}/properties/${propertyId}/rooms/${roomId}/beds/${bedId}`);
+            const propertyRef = db.doc(`businesses/${businessId}/properties/${propertyId}`);
+            const bizTenantRef = db.doc(`businesses/${businessId}/tenants/${tenantId}`);
+            const globalSnap = await tx.get(globalTenantRef);
+            // ── ALL WRITES AFTER ──
+            // 1. Update bed status
+            tx.set(bedRef, {
+                occupied: false,
+                isOccupied: false,
+                tenantId: null,
+                tenantName: null,
+                occupiedAt: null,
+                updatedAt: now,
+            }, { merge: true });
+            // 2. Decrement property occupancy count
+            tx.update(propertyRef, {
+                occupiedBeds: admin.firestore.FieldValue.increment(-1),
+                updatedAt: now,
+            });
+            // 3. Update business-scoped tenant status
+            tx.update(bizTenantRef, {
+                status: 'vacated',
+                vacatedAt: now,
+                updatedAt: now,
+            });
+            // 4. Update global tenant status (with safety check)
+            if (globalSnap.exists) {
+                const globalData = globalSnap.data();
+                // Only clear residency info if it matches the property being vacated
+                // This prevents clearing info if the tenant has already moved into a new PG
+                if (globalData?.propertyId === propertyId) {
+                    tx.update(globalTenantRef, {
+                        status: 'vacated',
+                        currentPropertyId: null,
+                        propertyId: null,
+                        roomId: null,
+                        roomNumber: null,
+                        bedId: null,
+                        bedNumber: null,
+                        vacatedAt: now,
+                        updatedAt: now,
+                    });
+                    if (activeStayRef) {
+                        tx.update(activeStayRef, {
+                            status: 'vacated',
+                            vacatedAt: now,
+                            updatedAt: now,
+                        });
+                    }
+                }
+                else {
+                    console.log(`⚠️ Global tenant doc for ${tenantId} points to different property (${globalData?.propertyId}), skipping residency clear.`);
+                    tx.update(globalTenantRef, {
+                        updatedAt: now,
+                    });
+                }
+            }
+        });
+        // 5. After the transaction: check if all beds in the room are now empty.
+        //    If yes, reset the room gender lock to null.
+        //    (Cannot do collection query inside a Firestore transaction.)
+        const bedsSnap = await db
+            .collection(`businesses/${businessId}/properties/${propertyId}/rooms/${roomId}/beds`)
+            .get();
+        const anyOccupied = bedsSnap.docs.some((doc) => doc.data()?.isOccupied === true);
+        if (!anyOccupied) {
+            await db
+                .doc(`businesses/${businessId}/properties/${propertyId}/rooms/${roomId}`)
+                .update({ gender: null, updatedAt: admin.firestore.Timestamp.now() });
+            console.log(`🔓 Room ${roomId} is now fully vacant — gender lock reset.`);
+        }
+        else {
+            console.log(`🔒 Room ${roomId} still has occupied beds — gender lock preserved.`);
+        }
+        console.log(`✅ Successfully vacated tenant ${tenantId}`);
+        return { success: true };
+    }
+    catch (err) {
+        console.error('❌ Failed to vacate tenant:', err);
+        throw new functions.https.HttpsError('internal', err instanceof Error ? err.message : 'Unknown error during vacate');
+    }
 });
 //# sourceMappingURL=tenantOnboarding.js.map

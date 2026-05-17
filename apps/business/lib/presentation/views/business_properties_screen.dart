@@ -14,6 +14,7 @@ import '../view_models/add_property_viewmodel.dart';
 import 'package:firebase_services/services/image_service.dart';
 import 'widgets/business_scaffold.dart';
 import '../../data/providers/business_state_provider.dart';
+import 'package:common_ui/common_ui.dart';
 
 class BusinessPropertiesScreen extends StatelessWidget {
   const BusinessPropertiesScreen({super.key});
@@ -179,22 +180,34 @@ class _BusinessPropertiesViewState extends State<BusinessPropertiesView> {
             const SizedBox(height: 16),
 
             if (viewModel.hasError)
-              _ErrorState(
-                error: viewModel.error ?? 'Unknown error',
+              ErrorStateWidget(
+                message: viewModel.error ?? 'Failed to load properties',
                 onRetry: () => viewModel.refreshProperties(businessState.businessId),
               )
             else if (viewModel.isLoading && filteredProperties.isEmpty)
-              const Center(child: CircularProgressIndicator())
+              ListView.separated(
+                itemCount: 4,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                separatorBuilder: (_, __) => const SizedBox(height: 16),
+                itemBuilder: (_, __) => const LoadingSkeleton(height: 300, borderRadius: BorderRadius.all(Radius.circular(16))),
+              )
             else if (filteredProperties.isEmpty)
-                _EmptyState(onAdd: widget.onAddProperty)
-              else
-                ListView.separated(
-                  itemCount: filteredProperties.length,
-                  shrinkWrap: true,
-                  physics: const NeverScrollableScrollPhysics(),
-                  separatorBuilder: (_, __) => const SizedBox(height: 16),
-                  itemBuilder: (_, i) => _buildPropertyCard(filteredProperties[i], viewModel),
-                ),
+              EmptyStateWidget(
+                title: 'No properties yet',
+                message: 'Add your first property to start managing listings, rooms, and tenants.',
+                icon: Icons.home_work_outlined,
+                actionLabel: 'Add Property',
+                onAction: widget.onAddProperty,
+              )
+            else
+              ListView.separated(
+                itemCount: filteredProperties.length,
+                shrinkWrap: true,
+                physics: const NeverScrollableScrollPhysics(),
+                separatorBuilder: (_, __) => const SizedBox(height: 16),
+                itemBuilder: (_, i) => _buildPropertyCard(filteredProperties[i], viewModel),
+              ),
           ],
         ),
       ),
@@ -642,119 +655,4 @@ class _StatChip extends StatelessWidget {
     );
   }
 }
-
-class _EmptyState extends StatelessWidget {
-  final VoidCallback onAdd;
-
-  const _EmptyState({required this.onAdd});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-        padding: const EdgeInsets.fromLTRB(24, 40, 24, 40),
-        decoration: BoxDecoration(
-          color: Colors.white,
-          borderRadius: BorderRadius.circular(16),
-        ),
-        child: Column(
-          children: [
-            Icon(Icons.home_work_outlined, size: 56, color: Colors.grey.shade400),
-            const SizedBox(height: 12),
-            const Text(
-              'No properties yet',
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w700,
-              ),
-            ),
-            const SizedBox(height: 6),
-            Text(
-              'Add your first property to start managing listings, rooms, and tenants.',
-              textAlign: TextAlign.center,
-              style: TextStyle(
-                color: Colors.grey.shade600,
-              ),
-            ),
-            const SizedBox(height: 16),
-            ElevatedButton.icon(
-              onPressed: onAdd,
-              icon: const Icon(Icons.add),
-              label: const Text('Add Property'),
-            ),
-          ],
-        )
-    );
-  }
-}
-
-class _ErrorState extends StatelessWidget {
-  final String error;
-  final VoidCallback onRetry;
-
-  const _ErrorState({required this.error, required this.onRetry});
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      padding: const EdgeInsets.fromLTRB(24, 40, 24, 40),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-      ),
-      child: Column(
-        children: [
-          Icon(Icons.error_outline, size: 56, color: Colors.red.shade400),
-          const SizedBox(height: 12),
-          const Text(
-            'Failed to load properties',
-            style: TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.w700,
-            ),
-          ),
-          const SizedBox(height: 6),
-          Text(
-            error.length > 100 ? '${error.substring(0, 100)}...' : error,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-              color: Colors.grey.shade600,
-            ),
-          ),
-          const SizedBox(height: 16),
-          Row(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              ElevatedButton.icon(
-                onPressed: onRetry,
-                icon: const Icon(Icons.refresh),
-                label: const Text('Retry'),
-              ),
-              const SizedBox(width: 12),
-              TextButton(
-                onPressed: () {
-                  // Show full error in dialog
-                  showDialog(
-                    context: context,
-                    builder: (context) => AlertDialog(
-                      title: const Text('Error Details'),
-                      content: SelectableText(error),
-                      actions: [
-                        TextButton(
-                          onPressed: () => Navigator.pop(context),
-                          child: const Text('Close'),
-                        ),
-                      ],
-                    ),
-                  );
-                },
-                child: const Text('Details'),
-              ),
-            ],
-          ),
-        ],
-      ),
-    );
-  }
-}
-
 

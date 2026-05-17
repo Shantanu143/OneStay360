@@ -1,4 +1,5 @@
 // lib/screens/add_payment_method_screen.dart
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -32,7 +33,8 @@ const List<String> indianBanks = [
 // -------------------- Screen --------------------
 class AddPaymentMethodScreen extends StatefulWidget {
   final String businessId;
-  const AddPaymentMethodScreen({super.key, required this.businessId});
+  final String? initialMethodType;
+  const AddPaymentMethodScreen({super.key, required this.businessId, this.initialMethodType});
 
   @override
   State<AddPaymentMethodScreen> createState() => _AddPaymentMethodScreenState();
@@ -42,7 +44,7 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
     with SingleTickerProviderStateMixin {
   final _formKey = GlobalKey<FormState>();
 
-  // Segmented: 0 = UPI, 1 = Bank, 2 = Cash
+  // Segmented: 0 = UPI, 1 = Bank, 2 = Cash, 3 = Razorpay
   int _selectedIndex = 0;
 
   // Controllers - UPI
@@ -55,6 +57,11 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
   final _accountNumberController = TextEditingController();
   final _confirmAccountNumberController = TextEditingController();
   final _ifscCodeController = TextEditingController();
+
+  // Controllers - Razorpay
+  final _razorpayKeyIdController = TextEditingController();
+  final _razorpayKeySecretController = TextEditingController();
+  final _razorpayWebhookSecretController = TextEditingController();
 
   String _accountType = 'Savings';
   List<String> _bankSuggestions = [];
@@ -71,6 +78,7 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
       vsync: this,
       duration: const Duration(milliseconds: 250),
     );
+    _selectedIndex = _indexForMethodType(widget.initialMethodType);
   }
 
   @override
@@ -83,6 +91,9 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
     _accountNumberController.dispose();
     _confirmAccountNumberController.dispose();
     _ifscCodeController.dispose();
+    _razorpayKeyIdController.dispose();
+    _razorpayKeySecretController.dispose();
+    _razorpayWebhookSecretController.dispose();
     super.dispose();
   }
 
@@ -142,6 +153,11 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
       return;
     }
 
+    if (_selectedIndex == 3) {
+      final confirm = await _showRazorpayCautionDialog();
+      if (!confirm) return;
+    }
+
     setState(() => _isSubmitting = true);
 
     try {
@@ -179,12 +195,39 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
           createdAt: now,
           updatedAt: now,
         );
-      } else {
+      } else if (_selectedIndex == 2) {
         // Cash
         method = PaymentMethod(
           id: now.millisecondsSinceEpoch.toString(),
           businessId: widget.businessId,
           type: 'cash',
+          isActive: true,
+          isPreferred: false,
+          createdAt: now,
+          updatedAt: now,
+        );
+      } else {
+        // Razorpay
+        await FirebaseFirestore.instance
+            .doc('businesses/${widget.businessId}/settings/razorpay_private')
+            .set({
+          'keyId': _razorpayKeyIdController.text.trim(),
+          'keySecret': _razorpayKeySecretController.text.trim(),
+          'webhookSecret': _razorpayWebhookSecretController.text.trim(),
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        await FirebaseFirestore.instance
+            .doc('businesses/${widget.businessId}/settings/razorpay')
+            .set({
+          'paymentsEnabled': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        method = PaymentMethod(
+          id: now.millisecondsSinceEpoch.toString(),
+          businessId: widget.businessId,
+          type: 'razorpay',
           isActive: true,
           isPreferred: false,
           createdAt: now,
@@ -240,6 +283,20 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
         .where((b) => b.toLowerCase().contains(query.toLowerCase()))
         .toList();
     setState(() => _bankSuggestions = filtered);
+  }
+
+  int _indexForMethodType(String? type) {
+    switch (type?.toLowerCase()) {
+      case 'bank':
+        return 1;
+      case 'cash':
+        return 2;
+      case 'razorpay':
+        return 3;
+      case 'upi':
+      default:
+        return 0;
+    }
   }
 
   // -------------------- Build --------------------
@@ -311,6 +368,7 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
           _segmentedButton('UPI', 0),
           _segmentedButton('Bank', 1),
           _segmentedButton('Cash', 2),
+          _segmentedButton('Razorpay', 3),
         ],
       ),
     );
@@ -350,8 +408,10 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
       case 1:
         return _buildBankForm(context);
       case 2:
-      default:
         return _buildCashForm(context);
+      case 3:
+      default:
+        return _buildRazorpayForm(context);
     }
   }
 
@@ -512,6 +572,51 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
     ]);
   }
 
+  // -------------------- Razorpay --------------------
+  Widget _buildRazorpayForm(BuildContext context) {
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Razorpay Integration', style: Theme.of(context).textTheme.titleMedium),
+        const SizedBox(height: 12),
+        _buildInfoCard(
+          title: 'Important',
+          content:
+              'Razorpay applies its own processing fees (as per your plan) and settles to your bank on its settlement cycle (typically T+2 business days, varies by account).',
+          icon: Icons.warning_amber_outlined,
+          color: Colors.orange.shade50,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _razorpayKeyIdController,
+          decoration: _in('Razorpay Key ID', icon: Icons.key, hint: 'rzp_test_...'),
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) return 'Key ID is required';
+            return null;
+          },
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _razorpayKeySecretController,
+          decoration: _in('Razorpay Key Secret', icon: Icons.lock_outline),
+          obscureText: true,
+          validator: (value) {
+            if (value == null || value.trim().isEmpty) return 'Key Secret is required';
+            return null;
+          },
+          textInputAction: TextInputAction.next,
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _razorpayWebhookSecretController,
+          decoration: _in('Webhook Secret', icon: Icons.link, hint: 'Optional but recommended'),
+          textInputAction: TextInputAction.done,
+        ),
+      ],
+    );
+  }
+
   Widget _buildInfoCard({
     required String title,
     required String content,
@@ -545,7 +650,13 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
 
   // -------------------- Sticky submit bar --------------------
   Widget _buildStickyBar(BuildContext context) {
-    final label = _selectedIndex == 0 ? 'Add UPI' : _selectedIndex == 1 ? 'Add Bank' : 'Add Cash';
+    final label = _selectedIndex == 0
+      ? 'Add UPI'
+      : _selectedIndex == 1
+        ? 'Add Bank'
+        : _selectedIndex == 2
+          ? 'Add Cash'
+          : 'Enable Razorpay';
     return SafeArea(
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
@@ -577,6 +688,29 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
         ),
       ),
     );
+  }
+
+  Future<bool> _showRazorpayCautionDialog() async {
+    final result = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Before you continue'),
+        content: const Text(
+          'Razorpay charges processing fees and follows its own settlement cycle. Your bank settlement timing and fee rates depend on your Razorpay plan and account settings.',
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('I understand'),
+          ),
+        ],
+      ),
+    );
+    return result == true;
   }
 }
 

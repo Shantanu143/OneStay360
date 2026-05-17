@@ -15,6 +15,7 @@ import 'checkout_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:intl/intl.dart';
 import 'package:url_launcher/url_launcher.dart';
+import 'package:common_ui/common_ui.dart';
 
 class ViewPropertyScreen extends StatefulWidget {
   final String propertyId;
@@ -133,7 +134,7 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
             const Tab(text: 'Overview'),
             const Tab(text: 'Layout'),
             const Tab(text: 'Tenants'),
-            const Tab(text: 'Financials'),
+            const Tab(text: 'Analytics'),
             const Tab(text: 'Payment History'),
             Tab(
               child: Row(
@@ -187,7 +188,7 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
         _buildOverviewTab(viewModel),
         _buildLayoutTab(viewModel),
         _buildTenantsTab(viewModel),
-        _buildFinancialsTab(viewModel),
+        _buildAnalyticsTab(viewModel),
         _buildPaymentHistoryTab(viewModel),
         _buildRequestsTab(viewModel),
         _buildQrTab(viewModel),
@@ -1556,29 +1557,21 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
           ),
         ),
         Expanded(
-          child: viewModel.filteredTenants.isEmpty
-              ? Center(
-            child: Column(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                Icon(
-                  viewModel.searchQuery.isEmpty
-                      ? Icons.people_outline
-                      : Icons.search_off,
-                  size: 64,
-                  color: Colors.grey.shade400,
-                ),
-                const SizedBox(height: 16),
-                Text(
-                  viewModel.searchQuery.isEmpty
-                      ? 'No tenants found'
-                      : 'No tenants match your search',
-                  style: TextStyle(
-                      fontSize: 18, color: Colors.grey.shade600),
-                ),
-              ],
-            ),
-          )
+          child: viewModel.isLoading
+              ? ListView.separated(
+                  padding: const EdgeInsets.all(16),
+                  itemCount: 4,
+                  separatorBuilder: (_, __) => const SizedBox(height: 12),
+                  itemBuilder: (_, __) => const LoadingSkeleton(height: 80, borderRadius: BorderRadius.all(Radius.circular(12))),
+                )
+              : viewModel.filteredTenants.isEmpty
+              ? EmptyStateWidget(
+                  title: viewModel.searchQuery.isEmpty ? 'No tenants' : 'No matches',
+                  message: viewModel.searchQuery.isEmpty 
+                    ? 'There are no active tenants in this property yet.' 
+                    : 'No tenants match your search query.',
+                  icon: viewModel.searchQuery.isEmpty ? Icons.people_outline : Icons.search_off,
+                )
               : ListView.builder(
             padding: const EdgeInsets.all(16),
             itemCount: viewModel.filteredTenants.length,
@@ -1597,13 +1590,9 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
     // Format the join date properly
     String formatDate(dynamic dateValue) {
       if (dateValue == null) return 'Not recorded';
-      
       DateTime? dateTime;
-      
-      // Handle Firestore Timestamp objects
       if (dateValue.runtimeType.toString().contains('Timestamp')) {
         try {
-          // Timestamp has toDate() method
           dateTime = dateValue.toDate() as DateTime;
         } catch (e) {
           return dateValue.toString();
@@ -1612,34 +1601,34 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
         try {
           dateTime = DateTime.parse(dateValue);
         } catch (e) {
-          return dateValue; // Return as-is if can't parse
+          return dateValue;
         }
       } else if (dateValue is DateTime) {
         dateTime = dateValue;
       } else {
         return dateValue.toString();
       }
-      
-      // Format as: "10 Dec 2024"
       final months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
       return '${dateTime.day} ${months[dateTime.month - 1]} ${dateTime.year}';
     }
 
-    return Container(
+    final String rawId = tenant['tenantId'] ?? tenant['id'] ?? 'N/A';
+    String displayId = rawId;
+    if (displayId.contains('_')) {
+      displayId = displayId.split('_').last;
+    }
+    if (displayId.length > 15 && !displayId.startsWith('TEN')) {
+      displayId = '${displayId.substring(0, 8)}...';
+    }
+
+    return Card(
       margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
+      elevation: 0,
+      shape: RoundedRectangleBorder(
         borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.grey.shade200,
-            blurRadius: 8,
-            offset: const Offset(0, 2),
-          ),
-        ],
+        side: BorderSide(color: Colors.grey.shade200),
       ),
-      child: GestureDetector(
+      child: InkWell(
         onTap: () {
           print('🔘 Tenant card tapped - Tenant: ${tenant['name']}');
           HapticFeedback.lightImpact();
@@ -1649,114 +1638,122 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
               builder: (context) => TenantDetailScreen(
                 tenant: tenant,
                 propertyName: propertyName,
+                businessId: tenant['businessId'] ?? '',
               ),
             ),
           );
         },
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Row(
-              mainAxisAlignment: MainAxisAlignment.spaceBetween,
-              children: [
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        tenant['name'] ?? 'Unknown Tenant',
-                        style: const TextStyle(
-                          fontSize: 18,
-                          fontWeight: FontWeight.bold,
-                        ),
-                      ),
-                      if (tenant['id'] != null)
+        borderRadius: BorderRadius.circular(12),
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
                         Text(
-                          'ID: ${tenant['id']}',
+                          tenant['name'] ?? 'Unknown Tenant',
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
+                        ),
+                        Text(
+                          'ID: $displayId',
                           style: TextStyle(
                             fontSize: 12,
                             color: Colors.grey.shade600,
                           ),
                         ),
-                    ],
-                  ),
-                ),
-                Container(
-                  padding:
-                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green.shade100,
-                    borderRadius: BorderRadius.circular(12),
-                  ),
-                  child: Text(
-                    tenant['status'] ?? 'Unknown',
-                    style: TextStyle(
-                      color: Colors.green.shade700,
-                      fontWeight: FontWeight.w600,
-                      fontSize: 12,
+                      ],
                     ),
                   ),
-                ),
-              ],
-            ),
-            const SizedBox(height: 8),
-            Row(
-              children: [
-                const Icon(Icons.meeting_room, size: 16),
-                const SizedBox(width: 4),
-                Text('Room: ${tenant['room'] ?? 'Not specified'}'),
-                if (tenant['bed'] != null) ...[
-                  const SizedBox(width: 16),
-                  const Icon(Icons.bed, size: 16),
-                  const SizedBox(width: 4),
-                  Text('Bed: ${tenant['bed']}'),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade100,
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Text(
+                      tenant['status'] ?? 'Unknown',
+                      style: TextStyle(
+                        color: Colors.green.shade700,
+                        fontWeight: FontWeight.w600,
+                        fontSize: 12,
+                      ),
+                    ),
+                  ),
                 ],
-                const SizedBox(width: 16),
-                const Icon(Icons.currency_rupee, size: 16),
-                const SizedBox(width: 4),
-                Text('Rent: ₹${tenant['rent'] ?? '0'}'),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.phone, size: 16),
-                const SizedBox(width: 4),
-                Text('Phone: ${tenant['phone'] ?? 'Not provided'}'),
-              ],
-            ),
-            const SizedBox(height: 4),
-            Row(
-              children: [
-                const Icon(Icons.calendar_today, size: 16),
-                const SizedBox(width: 4),
-                Text('Joined: ${formatDate(tenant['joinDate'])}'),
-                const SizedBox(width: 16),
-                const Icon(Icons.payment, size: 16),
-                const SizedBox(width: 4),
-                Text('Last: ${formatDate(tenant['lastPayment'])}'),
-              ],
-            ),
-            const SizedBox(height: 12),
-            Row(
-              mainAxisAlignment: MainAxisAlignment.end,
-              children: [
-                Icon(
-                  Icons.arrow_forward_ios,
-                  size: 16,
-                  color: Colors.grey.shade400,
-                ),
-              ],
-            ),
-          ],
+              ),
+              const SizedBox(height: 8),
+              Row(
+                children: [
+                  const Icon(Icons.meeting_room, size: 16),
+                  const SizedBox(width: 4),
+                  Text('Room: ${tenant['room'] ?? 'Not specified'}'),
+                  if (tenant['bed'] != null) ...[
+                    const SizedBox(width: 16),
+                    const Icon(Icons.bed, size: 16),
+                    const SizedBox(width: 4),
+                    Text('Bed: ${tenant['bed']}'),
+                  ],
+                  const SizedBox(width: 16),
+                  const Icon(Icons.currency_rupee, size: 16),
+                  const SizedBox(width: 4),
+                  Text('Rent: ₹${tenant['rent'] ?? '0'}'),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.phone, size: 16),
+                  const SizedBox(width: 4),
+                  Text('Phone: ${tenant['phone'] ?? 'Not provided'}'),
+                ],
+              ),
+              const SizedBox(height: 4),
+              Row(
+                children: [
+                  const Icon(Icons.calendar_today, size: 16),
+                  const SizedBox(width: 4),
+                  Text('Joined: ${formatDate(tenant['joinDate'])}'),
+                  const SizedBox(width: 16),
+                  const Icon(Icons.payment, size: 16),
+                  const SizedBox(width: 4),
+                  Text('Last: ${formatDate(tenant['lastPayment'])}'),
+                ],
+              ),
+              const SizedBox(height: 12),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.end,
+                children: [
+                  Icon(
+                    Icons.arrow_forward_ios,
+                    size: 16,
+                    color: Colors.grey.shade400,
+                  ),
+                ],
+              ),
+            ],
+          ),
         ),
       ),
     );
   }
 
-  Widget _buildFinancialsTab(ViewPropertyViewModel viewModel) {
-    final financials = viewModel.financials;
-    final totalRooms = (viewModel.propertyStats['totalRooms'] as int?) ?? 0;
+  Widget _buildAnalyticsTab(ViewPropertyViewModel viewModel) {
+    final stats = viewModel.propertyStats;
+    final totalRooms = (stats['totalRooms'] as int?) ?? 0;
+    final totalBeds = (stats['totalBeds'] as int?) ?? 0;
+    final occupiedBeds = (stats['occupiedBeds'] as int?) ?? 0;
+    final occupancyRate = (stats['occupancyRate'] as double?) ?? 0.0;
+    final collectedRent = viewModel.collectedRentCurrentMonth;
+    final potentialRevenue = (stats['monthlyRevenue'] as double?) ?? 0.0;
 
     // Show empty state if no rooms are configured
     if (totalRooms == 0) {
@@ -1764,16 +1761,16 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.trending_up_outlined,
+            Icon(Icons.analytics_outlined,
                 size: 64, color: Colors.grey.shade400),
             const SizedBox(height: 16),
             const Text(
-              'No financial data',
+              'No analytics data',
               style: TextStyle(fontSize: 18, fontWeight: FontWeight.w600),
             ),
             const SizedBox(height: 8),
             Text(
-              'Add rooms to this property to see financial metrics',
+              'Add rooms to this property to see analytics',
               style: TextStyle(color: Colors.grey.shade600),
               textAlign: TextAlign.center,
             ),
@@ -1787,7 +1784,7 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Financial Overview',
+          const Text('Property Analytics',
               style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
           const SizedBox(height: 16),
           GridView.count(
@@ -1799,31 +1796,32 @@ class _ViewPropertyScreenState extends State<ViewPropertyScreen>
             childAspectRatio: 1.5,
             children: [
               _buildStatCard(
-                  'Monthly Revenue',
-                  '₹ ${(financials['monthlyRevenue'] / 1000).toStringAsFixed(0)}K',
-                  Icons.trending_up,
-                  Colors.green.shade600),
-              _buildStatCard(
-                  'Yearly Revenue',
-                  '₹ ${(financials['yearlyRevenue'] / 100000).toStringAsFixed(1)}L',
-                  Icons.account_balance,
+                  'Total Capacity',
+                  '$totalBeds beds',
+                  Icons.bed,
                   Colors.blue.shade600),
               _buildStatCard(
-                  'Pending Payments',
-                  '₹ ${(financials['pendingPayments'] / 1000).toStringAsFixed(0)}K',
-                  Icons.pending_actions,
-                  Colors.red.shade600),
-              _buildStatCard('Net Income',
-                  '₹ ${(financials['netIncome'] / 1000).toStringAsFixed(0)}K',
-                  Icons.savings, Colors.purple.shade600),
+                  'Current Occupancy',
+                  '$occupiedBeds tenants',
+                  Icons.groups,
+                  Colors.orange.shade600),
+              _buildStatCard(
+                  'Occupancy Rate',
+                  '${(occupancyRate * 100).toStringAsFixed(1)}%',
+                  Icons.pie_chart,
+                  Colors.teal.shade600),
+              _buildStatCard(
+                  'Rent Collected',
+                  '₹ ${(collectedRent / 1000).toStringAsFixed(1)}K',
+                  Icons.payments_outlined,
+                  Colors.green.shade600),
             ],
           ),
           const SizedBox(height: 24),
-          _buildInfoCard('Monthly Breakdown', [
-            _buildInfoRow('Total Revenue', '₹ ${financials['monthlyRevenue'].toStringAsFixed(0)}'),
-            _buildInfoRow('Expenses', '₹ ${financials['expenses'].toStringAsFixed(0)}'),
-            _buildInfoRow('Net Income', '₹ ${financials['netIncome'].toStringAsFixed(0)}'),
-            _buildInfoRow('Pending Payments', '₹ ${financials['pendingPayments'].toStringAsFixed(0)}'),
+          _buildInfoCard('Monthly Overview', [
+            _buildInfoRow('Est. Montly Revenue (if full)', '₹ ${(potentialRevenue).toStringAsFixed(0)}'),
+            _buildInfoRow('Rent Collected This Month', '₹ ${(collectedRent).toStringAsFixed(0)}'),
+            _buildInfoRow('Active Rooms', '$totalRooms rooms'),
           ]),
         ],
       ),

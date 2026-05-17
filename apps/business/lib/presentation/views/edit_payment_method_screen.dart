@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
@@ -57,6 +58,15 @@ class _EditPaymentMethodScreenState extends State<EditPaymentMethodScreen> {
   late TextEditingController _ifscCodeController;
   late String _accountType;
 
+  // Razorpay fields
+  late TextEditingController _razorpayKeyIdController;
+  late TextEditingController _razorpayKeySecretController;
+  late TextEditingController _razorpayWebhookSecretController;
+
+  String _existingKeyIdLast4 = '';
+  String _existingKeySecretLast4 = '';
+  String _existingWebhookLast4 = '';
+
   // Loading state
   bool _isSubmitting = false;
 
@@ -64,6 +74,7 @@ class _EditPaymentMethodScreenState extends State<EditPaymentMethodScreen> {
   void initState() {
     super.initState();
     _initializeControllers();
+    _loadRazorpayPrivate();
   }
 
   void _initializeControllers() {
@@ -74,6 +85,27 @@ class _EditPaymentMethodScreenState extends State<EditPaymentMethodScreen> {
     _accountNumberController = TextEditingController(text: widget.method.accountNumber ?? '');
     _ifscCodeController = TextEditingController(text: widget.method.ifscCode ?? '');
     _accountType = widget.method.accountType ?? 'Savings';
+    _razorpayKeyIdController = TextEditingController();
+    _razorpayKeySecretController = TextEditingController();
+    _razorpayWebhookSecretController = TextEditingController();
+  }
+
+  Future<void> _loadRazorpayPrivate() async {
+    if (widget.method.type != 'razorpay') return;
+    try {
+      final snap = await FirebaseFirestore.instance
+          .doc('businesses/${widget.businessId}/settings/razorpay_private')
+          .get();
+      if (!snap.exists) return;
+      final data = snap.data() ?? {};
+      setState(() {
+        _existingKeyIdLast4 = _last4((data['keyId'] ?? data['key_id'] ?? '').toString());
+        _existingKeySecretLast4 = _last4((data['keySecret'] ?? data['key_secret'] ?? '').toString());
+        _existingWebhookLast4 = _last4((data['webhookSecret'] ?? data['webhook_secret'] ?? '').toString());
+      });
+    } catch (e) {
+      // Ignore loading errors to avoid blocking edit flow.
+    }
   }
 
   @override
@@ -84,6 +116,9 @@ class _EditPaymentMethodScreenState extends State<EditPaymentMethodScreen> {
     _accountHolderController.dispose();
     _accountNumberController.dispose();
     _ifscCodeController.dispose();
+    _razorpayKeyIdController.dispose();
+    _razorpayKeySecretController.dispose();
+    _razorpayWebhookSecretController.dispose();
     super.dispose();
   }
 
@@ -141,6 +176,7 @@ class _EditPaymentMethodScreenState extends State<EditPaymentMethodScreen> {
                 if (widget.method.type == 'upi') _buildUPIForm(context),
                 if (widget.method.type == 'bank') _buildBankForm(context),
                 if (widget.method.type == 'cash') _buildCashForm(context),
+                if (widget.method.type == 'razorpay') _buildRazorpayForm(context),
 
                 const SizedBox(height: 24),
 
@@ -415,6 +451,95 @@ class _EditPaymentMethodScreenState extends State<EditPaymentMethodScreen> {
     );
   }
 
+  Widget _buildRazorpayForm(BuildContext context) {
+    final keyIdHelper = _existingKeyIdLast4.isNotEmpty ? 'Current: ****$_existingKeyIdLast4' : null;
+    final keySecretHelper = _existingKeySecretLast4.isNotEmpty ? 'Current: ****$_existingKeySecretLast4' : null;
+    final webhookHelper = _existingWebhookLast4.isNotEmpty ? 'Current: ****$_existingWebhookLast4' : null;
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Razorpay Integration',
+          style: Theme.of(context).textTheme.titleMedium,
+        ),
+        const SizedBox(height: 12),
+        Container(
+          padding: const EdgeInsets.all(12),
+          decoration: BoxDecoration(
+            color: Colors.orange.shade50,
+            border: Border.all(color: Colors.orange.shade200),
+            borderRadius: BorderRadius.circular(8),
+          ),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const Icon(Icons.warning_amber_outlined),
+              const SizedBox(width: 12),
+              Expanded(
+                child: Text(
+                  'Razorpay charges processing fees and settles to your bank on its settlement cycle (typically T+2 business days, varies by account).',
+                  style: Theme.of(context).textTheme.bodySmall,
+                ),
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _razorpayKeyIdController,
+          decoration: InputDecoration(
+            labelText: 'Razorpay Key ID',
+            hintText: 'rzp_test_...',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            prefixIcon: const Icon(Icons.key),
+            helperText: keyIdHelper,
+          ),
+          validator: (value) {
+            if ((value?.isEmpty ?? true) && _existingKeyIdLast4.isEmpty) {
+              return 'Key ID is required';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _razorpayKeySecretController,
+          decoration: InputDecoration(
+            labelText: 'Razorpay Key Secret',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            prefixIcon: const Icon(Icons.lock_outline),
+            helperText: keySecretHelper,
+          ),
+          obscureText: true,
+          validator: (value) {
+            if ((value?.isEmpty ?? true) && _existingKeySecretLast4.isEmpty) {
+              return 'Key Secret is required';
+            }
+            return null;
+          },
+        ),
+        const SizedBox(height: 12),
+        TextFormField(
+          controller: _razorpayWebhookSecretController,
+          decoration: InputDecoration(
+            labelText: 'Webhook Secret',
+            hintText: 'Optional but recommended',
+            border: OutlineInputBorder(
+              borderRadius: BorderRadius.circular(8),
+            ),
+            prefixIcon: const Icon(Icons.link),
+            helperText: webhookHelper,
+          ),
+        ),
+      ],
+    );
+  }
+
   Future<void> _submitForm(BuildContext context) async {
     if (!_formKey.currentState!.validate()) {
       return;
@@ -440,6 +565,35 @@ class _EditPaymentMethodScreenState extends State<EditPaymentMethodScreen> {
           accountNumber: _accountNumberController.text.trim(),
           ifscCode: _ifscCodeController.text.trim(),
           accountType: _accountType,
+          updatedAt: DateTime.now(),
+        );
+      } else if (widget.method.type == 'razorpay') {
+        final updates = <String, dynamic>{
+          'updatedAt': FieldValue.serverTimestamp(),
+        };
+
+        if (_razorpayKeyIdController.text.trim().isNotEmpty) {
+          updates['keyId'] = _razorpayKeyIdController.text.trim();
+        }
+        if (_razorpayKeySecretController.text.trim().isNotEmpty) {
+          updates['keySecret'] = _razorpayKeySecretController.text.trim();
+        }
+        if (_razorpayWebhookSecretController.text.trim().isNotEmpty) {
+          updates['webhookSecret'] = _razorpayWebhookSecretController.text.trim();
+        }
+
+        await FirebaseFirestore.instance
+            .doc('businesses/${widget.businessId}/settings/razorpay_private')
+            .set(updates, SetOptions(merge: true));
+
+        await FirebaseFirestore.instance
+            .doc('businesses/${widget.businessId}/settings/razorpay')
+            .set({
+          'paymentsEnabled': true,
+          'updatedAt': FieldValue.serverTimestamp(),
+        }, SetOptions(merge: true));
+
+        updatedMethod = widget.method.copyWith(
           updatedAt: DateTime.now(),
         );
       } else {
@@ -496,6 +650,8 @@ class _EditPaymentMethodScreenState extends State<EditPaymentMethodScreen> {
         return Icons.account_balance;
       case 'cash':
         return Icons.local_atm;
+      case 'razorpay':
+        return Icons.language;
       default:
         return Icons.payment;
     }
@@ -509,6 +665,8 @@ class _EditPaymentMethodScreenState extends State<EditPaymentMethodScreen> {
         return Colors.orange;
       case 'cash':
         return Colors.green;
+      case 'razorpay':
+        return Colors.purple;
       default:
         return Colors.grey;
     }
@@ -522,9 +680,17 @@ class _EditPaymentMethodScreenState extends State<EditPaymentMethodScreen> {
         return 'Bank Transfer';
       case 'cash':
         return 'Cash';
+      case 'razorpay':
+        return 'Razorpay';
       default:
         return 'Payment Method';
     }
+  }
+
+  String _last4(String value) {
+    if (value.isEmpty) return '';
+    if (value.length <= 4) return value;
+    return value.substring(value.length - 4);
   }
 
   void _showBankSuggestions(BuildContext context, List<String> suggestions) {

@@ -1,16 +1,21 @@
 // lib/presentation/views/business/tenant_detail_screen.dart
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'record_payment_screen.dart';
 import 'widgets/business_scaffold.dart';
 
 class TenantDetailScreen extends StatefulWidget {
   final Map<String, dynamic> tenant;
   final String propertyName;
+  final String businessId;
 
   const TenantDetailScreen({
     super.key,
     required this.tenant,
     required this.propertyName,
+    this.businessId = '',
   });
 
   @override
@@ -18,12 +23,13 @@ class TenantDetailScreen extends StatefulWidget {
 }
 
 class _TenantDetailScreenState extends State<TenantDetailScreen> {
+  bool _isRemoving = false;
+
   String formatDate(dynamic dateValue) {
     if (dateValue == null) return 'Not recorded';
 
     DateTime? dateTime;
 
-    // Handle Firestore Timestamp objects
     if (dateValue.runtimeType.toString().contains('Timestamp')) {
       try {
         dateTime = dateValue.toDate() as DateTime;
@@ -50,14 +56,24 @@ class _TenantDetailScreenState extends State<TenantDetailScreen> {
   Widget build(BuildContext context) {
     final tenant = widget.tenant;
     final name = tenant['name'] ?? 'Unknown Tenant';
-    final id = tenant['id'] ?? 'N/A';
+    final String rawId = tenant['tenantId'] ?? tenant['id'] ?? 'N/A';
+    // Format ID for display: strip businessId prefix if present (e.g. BUS0000001_UID -> UID)
+    String displayId = rawId;
+    if (displayId.contains('_')) {
+      displayId = displayId.split('_').last;
+    }
+    // Truncate long UIDs for cleaner display if it's not a TEN id
+    if (displayId.length > 15 && !displayId.startsWith('TEN')) {
+      displayId = '${displayId.substring(0, 8)}...';
+    }
     final phone = tenant['phone'] ?? 'Not provided';
-    final room = tenant['room'] ?? 'Not specified';
-    final bed = tenant['bed'] ?? 'Not specified';
-    final rent = tenant['rent'] ?? 'N/A';
+    final room = tenant['room'] ?? tenant['roomNumber'] ?? 'Not specified';
+    final bed = tenant['bed'] ?? tenant['bedNumber'] ?? 'Not specified';
+    final rent = tenant['rent'] ?? tenant['monthlyRent'] ?? 'N/A';
     final status = tenant['status'] ?? 'Unknown';
-    final joinDate = tenant['joinDate'] ?? 'Not recorded';
+    final joinDate = tenant['joinDate'] ?? tenant['checkInDate'] ?? tenant['createdAt'] ?? 'Not recorded';
     final lastPayment = tenant['lastPayment'] ?? 'No payment';
+    final tenantDocId = tenant['tenantId'] ?? tenant['id'] ?? '';
 
     return BusinessScaffold(
       currentTab: BusinessTab.properties,
@@ -118,7 +134,7 @@ class _TenantDetailScreenState extends State<TenantDetailScreen> {
                             ),
                             const SizedBox(height: 8),
                             Text(
-                              'ID: $id',
+                              'ID: $displayId',
                               style: TextStyle(
                                 fontSize: 14,
                                 color: Colors.white.withOpacity(0.9),
@@ -243,10 +259,10 @@ class _TenantDetailScreenState extends State<TenantDetailScreen> {
             ),
             const SizedBox(height: 24),
 
-            // Payment History Section
+            // Payment History Section (LIVE from Firestore)
             _buildSectionTitle('Payment History'),
             const SizedBox(height: 12),
-            _buildPaymentTimeline(),
+            _buildLivePaymentTimeline(tenantDocId),
             const SizedBox(height: 24),
 
             // Action Buttons
@@ -303,6 +319,36 @@ class _TenantDetailScreenState extends State<TenantDetailScreen> {
             SizedBox(
               width: double.infinity,
               child: ElevatedButton.icon(
+                onPressed: () async {
+                  final result = await Navigator.push<bool>(
+                    context,
+                    MaterialPageRoute(
+                      builder: (_) => RecordPaymentScreen(
+                        tenant: widget.tenant,
+                        businessId: widget.businessId,
+                      ),
+                    ),
+                  );
+                  if (result == true && mounted) {
+                    setState(() {}); // refresh payment timeline
+                  }
+                },
+                icon: const Icon(Icons.payments_outlined),
+                label: const Text('Record Payment'),
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: const Color(0xFF0D7377),
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 12),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
                 onPressed: () {
                   ScaffoldMessenger.of(context).showSnackBar(
                     const SnackBar(
@@ -326,22 +372,27 @@ class _TenantDetailScreenState extends State<TenantDetailScreen> {
             SizedBox(
               width: double.infinity,
               child: OutlinedButton.icon(
-                onPressed: () {
-                  _showConfirmDialog(
-                    context,
-                    'Remove Tenant',
-                    'Are you sure you want to remove this tenant? This action cannot be undone.',
-                    () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text('Tenant removal feature coming soon'),
+                onPressed: _isRemoving
+                    ? null
+                    : () {
+                        _showConfirmDialog(
+                          context,
+                          'Remove Tenant',
+                          'Are you sure you want to remove this tenant from this room? This will free up the bed and update occupancy counts.',
+                          _removeTenant,
+                        );
+                      },
+                icon: _isRemoving
+                    ? const SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.red,
                         ),
-                      );
-                    },
-                  );
-                },
-                icon: const Icon(Icons.delete_outline),
-                label: const Text('Remove Tenant'),
+                      )
+                    : const Icon(Icons.delete_outline),
+                label: Text(_isRemoving ? 'Removing...' : 'Remove Tenant'),
                 style: OutlinedButton.styleFrom(
                   foregroundColor: Colors.red,
                   side: const BorderSide(color: Colors.red),
@@ -359,179 +410,192 @@ class _TenantDetailScreenState extends State<TenantDetailScreen> {
     );
   }
 
-  Widget _buildPaymentTimeline() {
-    // Sample payment history data
-    final payments = [
-      {
-        'month': 'December 2024',
-        'amount': 8000,
-        'date': DateTime.now(),
-        'status': 'Paid',
-        'method': 'Bank Transfer',
-      },
-      {
-        'month': 'November 2024',
-        'amount': 8000,
-        'date': DateTime.now().subtract(const Duration(days: 30)),
-        'status': 'Paid',
-        'method': 'UPI',
-      },
-      {
-        'month': 'October 2024',
-        'amount': 8000,
-        'date': DateTime.now().subtract(const Duration(days: 60)),
-        'status': 'Paid',
-        'method': 'Cash',
-      },
-      {
-        'month': 'September 2024',
-        'amount': 8000,
-        'date': DateTime.now().subtract(const Duration(days: 90)),
-        'status': 'Pending',
-        'method': 'Awaiting',
-      },
-    ];
+  /// Live payment timeline from Firestore
+  Widget _buildLivePaymentTimeline(String tenantDocId) {
+    final bid = widget.businessId;
+    if (bid.isEmpty || tenantDocId.isEmpty) {
+      return Center(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(vertical: 24),
+          child: Column(
+            children: [
+              Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey.shade300),
+              const SizedBox(height: 12),
+              Text('No payment history yet', style: TextStyle(color: Colors.grey.shade500)),
+            ],
+          ),
+        ),
+      );
+    }
 
-    return Column(
-      children: List.generate(payments.length, (index) {
-        final payment = payments[index];
-        final isPaid = payment['status'] == 'Paid';
-        
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('businesses')
+          .doc(bid)
+          .collection('tenants')
+          .doc(tenantDocId)
+          .collection('payments')
+          .orderBy('date', descending: true)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return const Center(child: CircularProgressIndicator());
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+        if (docs.isEmpty) {
+          return Center(
+            child: Padding(
+              padding: const EdgeInsets.symmetric(vertical: 24),
+              child: Column(
+                children: [
+                  Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey.shade300),
+                  const SizedBox(height: 12),
+                  Text('No payment history yet', style: TextStyle(color: Colors.grey.shade500)),
+                ],
+              ),
+            ),
+          );
+        }
+
         return Column(
-          children: [
-            // Timeline item
-            Row(
+          children: List.generate(docs.length, (index) {
+            final payment = docs[index].data() as Map<String, dynamic>;
+            final isPaid = payment['status'] == 'Paid';
+            
+            return Column(
               children: [
-                // Timeline circle and line
-                Column(
+                Row(
                   children: [
-                    // Circle
-                    Container(
-                      width: 20,
-                      height: 20,
-                      decoration: BoxDecoration(
-                        shape: BoxShape.circle,
-                        color: isPaid ? Colors.green : Colors.orange,
-                        border: Border.all(
-                          color: Colors.white,
-                          width: 2,
-                        ),
-                        boxShadow: [
-                          BoxShadow(
-                            color: (isPaid ? Colors.green : Colors.orange)
-                                .withOpacity(0.3),
-                            blurRadius: 8,
-                            spreadRadius: 2,
-                          ),
-                        ],
-                      ),
-                      child: Center(
-                        child: Icon(
-                          isPaid ? Icons.check : Icons.schedule,
-                          color: Colors.white,
-                          size: 12,
-                        ),
-                      ),
-                    ),
-                    // Line to next item
-                    if (index < payments.length - 1)
-                      Container(
-                        width: 2,
-                        height: 100,
-                        color: Colors.grey.shade300,
-                      ),
-                  ],
-                ),
-                const SizedBox(width: 16),
-                // Payment details
-                Expanded(
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: isPaid ? Colors.green.shade50 : Colors.orange.shade50,
-                      borderRadius: BorderRadius.circular(12),
-                      border: Border.all(
-                        color: isPaid ? Colors.green.shade200 : Colors.orange.shade200,
-                        width: 1,
-                      ),
-                    ),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
+                    Column(
                       children: [
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                          children: [
-                            Text(
-                              payment['month'].toString(),
-                              style: const TextStyle(
-                                fontSize: 14,
-                                fontWeight: FontWeight.bold,
-                                color: Colors.black87,
+                        Container(
+                          width: 20,
+                          height: 20,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: isPaid ? Colors.green : Colors.orange,
+                            border: Border.all(color: Colors.white, width: 2),
+                            boxShadow: [
+                              BoxShadow(
+                                color: (isPaid ? Colors.green : Colors.orange).withOpacity(0.3),
+                                blurRadius: 8,
+                                spreadRadius: 2,
                               ),
+                            ],
+                          ),
+                          child: Center(
+                            child: Icon(
+                              isPaid ? Icons.check : Icons.schedule,
+                              color: Colors.white,
+                              size: 12,
                             ),
-                            Container(
-                              padding:
-                                  const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                              decoration: BoxDecoration(
-                                color: isPaid ? Colors.green : Colors.orange,
-                                borderRadius: BorderRadius.circular(6),
-                              ),
-                              child: Text(
-                                payment['status'].toString(),
-                                style: const TextStyle(
-                                  fontSize: 11,
-                                  fontWeight: FontWeight.bold,
-                                  color: Colors.white,
-                                ),
-                              ),
-                            ),
-                          ],
+                          ),
                         ),
-                        const SizedBox(height: 8),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                        if (index < docs.length - 1)
+                          Container(width: 2, height: 100, color: Colors.grey.shade300),
+                      ],
+                    ),
+                    const SizedBox(width: 16),
+                    Expanded(
+                      child: Container(
+                        padding: const EdgeInsets.all(12),
+                        decoration: BoxDecoration(
+                          color: _getPaymentStatusColor(payment['status']).shade50,
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: _getPaymentStatusColor(payment['status']).shade200,
+                          ),
+                        ),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
                               children: [
                                 Text(
-                                  '₹${payment['amount']}',
-                                  style: const TextStyle(
-                                    fontSize: 16,
-                                    fontWeight: FontWeight.bold,
-                                    color: Colors.black87,
-                                  ),
+                                  payment['month'] ?? 'Unknown',
+                                  style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87),
                                 ),
-                                const SizedBox(height: 4),
-                                Text(
-                                  'via ${payment['method'].toString()}',
-                                  style: TextStyle(
-                                    fontSize: 12,
-                                    color: Colors.grey.shade600,
+                                Container(
+                                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                                  decoration: BoxDecoration(
+                                    color: _getPaymentStatusColor(payment['status']),
+                                    borderRadius: BorderRadius.circular(6),
+                                  ),
+                                  child: Text(
+                                    _formatPaymentStatus(payment['status']),
+                                    style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
                                   ),
                                 ),
                               ],
                             ),
-                            Text(
-                              formatDate(payment['date']),
-                              style: TextStyle(
-                                fontSize: 12,
-                                color: Colors.grey.shade600,
-                              ),
+                            const SizedBox(height: 8),
+                            Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                              children: [
+                                Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    Text(
+                                      '₹${payment['amount'] ?? 0}',
+                                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+                                    ),
+                                    const SizedBox(height: 4),
+                                    Text(
+                                      'via ${payment['method'] ?? 'N/A'}',
+                                      style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                    ),
+                                  ],
+                                ),
+                                Text(
+                                  formatDate(payment['date']),
+                                  style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                ),
+                              ],
                             ),
+                            if (payment['status'] == 'rejected' && payment['rejectionReason'] != null) ...[
+                              const SizedBox(height: 8),
+                              Text(
+                                'Reason: ${payment['rejectionReason']}',
+                                style: const TextStyle(fontSize: 12, color: Colors.red, fontStyle: FontStyle.italic),
+                              ),
+                            ],
                           ],
                         ),
-                      ],
+                      ),
                     ),
-                  ),
+                  ],
                 ),
+                if (index < docs.length - 1) const SizedBox(height: 0),
               ],
-            ),
-            if (index < payments.length - 1) const SizedBox(height: 0),
-          ],
+            );
+          }),
         );
-      }),
+      },
     );
+  }
+
+  MaterialColor _getPaymentStatusColor(String? status) {
+    if (status == null) return Colors.grey;
+    switch (status.toLowerCase()) {
+      case 'paid':
+        return Colors.green;
+      case 'pending_verification':
+        return Colors.orange;
+      case 'rejected':
+        return Colors.red;
+      default:
+        return Colors.blue;
+    }
+  }
+
+  String _formatPaymentStatus(String? status) {
+    if (status == null) return 'Unknown';
+    if (status == 'pending_verification') return 'Pending';
+    if (status.toLowerCase() == 'paid') return 'Paid';
+    if (status.toLowerCase() == 'rejected') return 'Rejected';
+    return status;
   }
 
   Widget _buildSectionTitle(String title) {
@@ -686,6 +750,56 @@ class _TenantDetailScreenState extends State<TenantDetailScreen> {
         ],
       ),
     );
+  }
+
+  Future<void> _removeTenant() async {
+    final tenant = widget.tenant;
+    final tenantId = tenant['tenantId'] ?? tenant['id'];
+    final businessId = widget.businessId;
+    final propertyId = tenant['propertyId'];
+    final roomId = tenant['roomId'] ?? tenant['room'];
+    final bedId = tenant['bedId'] ?? tenant['bed'];
+
+    if (tenantId == null || businessId.isEmpty || propertyId == null || roomId == null || bedId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Error: Missing required IDs to remove tenant.')),
+      );
+      print('DEBUG: Missing info for vacate: tenantId=$tenantId, businessId=$businessId, propertyId=$propertyId, roomId=$roomId, bedId=$bedId');
+      return;
+    }
+
+    setState(() => _isRemoving = true);
+
+    try {
+      final HttpsCallable callable = FirebaseFunctions.instance.httpsCallable('vacateTenant');
+      
+      final result = await callable.call({
+        'tenantId': tenantId,
+        'businessId': businessId,
+        'propertyId': propertyId,
+        'roomId': roomId.toString(),
+        'bedId': bedId.toString(),
+      });
+
+      if (result.data['success'] == true) {
+        if (!mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Tenant removed successfully.')),
+        );
+        Navigator.pop(context, true); // Return true to indicate change
+      } else {
+        throw Exception(result.data['message'] ?? 'Unknown error');
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to remove tenant: ${e.toString()}')),
+      );
+    } finally {
+      if (mounted) {
+        setState(() => _isRemoving = false);
+      }
+    }
   }
 
   void _showConfirmDialog(

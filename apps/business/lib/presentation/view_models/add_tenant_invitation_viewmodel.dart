@@ -260,29 +260,7 @@ class AddTenantInvitationViewModel extends ChangeNotifier {
           (tenantDetails as Map<String, dynamic>)['foodPreference'] = _foodPreference;
         }
 
-        // If tenantId is empty, we'll create one
-        if (tenantId.isEmpty) {
-          // Check if tenant exists by phone
-          final existingTenants = await _firestore
-              .collection('tenants')
-              .where('phone', isEqualTo: tenantPhone)
-              .limit(1)
-              .get();
-
-          if (existingTenants.docs.isNotEmpty) {
-            tenantId = existingTenants.docs.first.id;
-          } else {
-            // Create new tenant document
-            final tenantDocRef = _firestore.collection('tenants').doc();
-            tenantId = tenantDocRef.id;
-            await tenantDocRef.set({
-              'name': tenantName,
-              'phone': tenantPhone,
-              'email': tenantEmail,
-              'createdAt': FieldValue.serverTimestamp(),
-            });
-          }
-        }
+        // Tenant record creation happens server-side in createTenantInvitation
       } else {
         throw Exception('Invalid mode or missing tenant data');
       }

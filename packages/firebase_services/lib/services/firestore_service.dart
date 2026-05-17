@@ -76,6 +76,10 @@ class FirestoreService {
     }
   }
 
+  /// Generates a sequential tenant ID (TEN0000001, TEN0000002, ...)
+  /// Delegates to IdGenerationService for consistency with cloud functions.
+  Future<String> generateTenantId() => _idService.generateTenantId();
+
   // Get user data from Firestore
   Future<Map<String, dynamic>?> getUserData(String uid) async {
     try {

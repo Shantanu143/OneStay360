@@ -89,6 +89,157 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
     }
   }
 
+  Future<void> _confirmPayment(TenantRequest r, Map<String, dynamic>? data) async {
+    final transactionId = data?['transactionId'] ?? 'N/A';
+    final totalAmount = data?['totalBillAmount']?.toString() ?? 'Unknown';
+
+    final confirmed = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Confirm Payment'),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text('Tenant: ${r.tenantName}'),
+            const SizedBox(height: 8),
+            Text('Transaction ID: $transactionId'),
+            const SizedBox(height: 8),
+            Text('Amount: ₹$totalAmount'),
+            const SizedBox(height: 16),
+            const Text(
+              'Have you verified this payment in your bank account?',
+              style: TextStyle(fontWeight: FontWeight.bold),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(context, true),
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.green),
+            child: const Text('Yes, Confirm', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirmed != true) return;
+
+    setState(() => _isUpdating = true);
+
+    try {
+      await _firestore
+          .collection('enrollmentRequests')
+          .doc(r.id)
+          .update({
+        'status': 'confirmed',
+        'confirmedAt': FieldValue.serverTimestamp(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Payment confirmed! Tenant record will be created.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to confirm: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUpdating = false);
+    }
+  }
+
+  Future<void> _rejectPayment(TenantRequest r) async {
+    final reason = await showDialog<String>(
+      context: context,
+      builder: (context) {
+        final controller = TextEditingController();
+        return AlertDialog(
+          title: const Text('Reject Payment'),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Please provide a reason for rejection:'),
+              const SizedBox(height: 16),
+              TextField(
+                controller: controller,
+                decoration: const InputDecoration(
+                  labelText: 'Reason',
+                  hintText: 'e.g., Payment not received, Wrong amount',
+                  border: OutlineInputBorder(),
+                ),
+                maxLines: 2,
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context, null),
+              child: const Text('Cancel'),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(context, controller.text),
+              style: ElevatedButton.styleFrom(backgroundColor: Colors.red),
+              child: const Text('Reject', style: TextStyle(color: Colors.white)),
+            ),
+          ],
+        );
+      },
+    );
+
+    if (reason == null) return;
+
+    setState(() => _isUpdating = true);
+
+    try {
+      await _firestore
+          .collection('enrollmentRequests')
+          .doc(r.id)
+          .update({
+        'status': 'bill_sent', // Revert to bill_sent so tenant can retry
+        'paymentRejectionReason': reason,
+        'paymentRejectedAt': FieldValue.serverTimestamp(),
+        'transactionId': FieldValue.delete(),
+        'paymentSubmittedAt': FieldValue.delete(),
+        'updatedAt': FieldValue.serverTimestamp(),
+      });
+
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Payment rejected. Tenant will be notified to retry.'),
+            backgroundColor: Colors.orange,
+          ),
+        );
+      }
+    } catch (e) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Failed to reject: $e'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+    } finally {
+      if (mounted) setState(() => _isUpdating = false);
+    }
+  }
+
   String _formatDate(DateTime date) {
     return '${date.day}/${date.month}/${date.year} ${date.hour}:${date.minute.toString().padLeft(2, '0')}';
   }
@@ -110,9 +261,10 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
         builder: (context, snapshot) {
           // Use stream data if available, otherwise fall back to initial data
           TenantRequest r;
+          Map<String, dynamic>? rawData;
           if (snapshot.hasData && snapshot.data!.exists) {
-            final data = snapshot.data!.data() as Map<String, dynamic>;
-            r = TenantRequest.fromMap(data, snapshot.data!.id);
+            rawData = snapshot.data!.data() as Map<String, dynamic>;
+            r = TenantRequest.fromMap(rawData, snapshot.data!.id);
           } else {
             r = widget.request;
           }
@@ -226,6 +378,16 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
 
                 // Action Buttons - Only show for pending requests
                 if (r.status == 'pending') ...[
+                  const SizedBox(height: 16),
+                  if (rawData != null && rawData.containsKey('transactionId')) ...[
+                    _infoCard('Payment Information', [
+                      _row('Transaction ID', rawData['transactionId']?.toString() ?? 'N/A'),
+                      if (rawData.containsKey('totalBillAmount'))
+                        _row('Amount Paid', '₹${rawData['totalBillAmount']}'),
+                      if (rawData.containsKey('paymentSubmittedAt'))
+                        _row('Submitted On', _formatDate((rawData['paymentSubmittedAt'] as Timestamp).toDate())),
+                    ]),
+                  ],
                   Text(
                     'Manage Request',
                     style: TextStyle(
@@ -337,6 +499,64 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
                       ],
                     ),
                   ),
+                ] else if (r.status == 'payment_submitted') ...[
+                  Text(
+                    'Confirm Payment',
+                    style: TextStyle(
+                      fontSize: 18,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.grey.shade800,
+                    ),
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: ElevatedButton.icon(
+                          onPressed: _isUpdating
+                              ? null
+                              : () => _confirmPayment(r, rawData),
+                          icon: const Icon(
+                            Icons.check_circle,
+                            size: 20,
+                          ),
+                          label: Text(
+                            _isUpdating ? 'Confirming...' : 'Confirm Payment',
+                            style: const TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          style: ElevatedButton.styleFrom(
+                            backgroundColor: Colors.green,
+                            foregroundColor: Colors.white,
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: OutlinedButton.icon(
+                          onPressed: _isUpdating
+                              ? null
+                              : () => _rejectPayment(r),
+                          icon: const Icon(Icons.cancel_outlined, size: 20),
+                          label: const Text(
+                            'Reject',
+                            style: TextStyle(fontWeight: FontWeight.w600),
+                          ),
+                          style: OutlinedButton.styleFrom(
+                            foregroundColor: Colors.red,
+                            side: const BorderSide(color: Colors.red),
+                            padding: const EdgeInsets.symmetric(vertical: 16),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
                 ],
 
                 const SizedBox(height: 20),
@@ -351,9 +571,14 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
   Color _getStatusColor(String status) {
     switch (status) {
       case 'approved':
+      case 'confirmed':
         return Colors.green;
       case 'rejected':
         return Colors.red;
+      case 'payment_submitted':
+        return Colors.blue;
+      case 'bill_sent':
+        return Colors.purple;
       case 'pending':
       default:
         return Colors.orange;
@@ -363,9 +588,14 @@ class _RequestDetailScreenState extends State<RequestDetailScreen> {
   IconData _getStatusIcon(String status) {
     switch (status) {
       case 'approved':
+      case 'confirmed':
         return Icons.check_circle;
       case 'rejected':
         return Icons.cancel;
+      case 'payment_submitted':
+        return Icons.payments;
+      case 'bill_sent':
+        return Icons.receipt;
       case 'pending':
       default:
         return Icons.pending;
@@ -497,6 +727,7 @@ class _ApprovalDialogState extends State<_ApprovalDialog> {
   bool _foodAddon = true;
   bool _maintenanceDeductedFromDeposit = false;
   DateTime? _moveInDate;
+  int _billingDate = 1;
 
   // Payment methods
   List<Map<String, dynamic>> _paymentMethods = [];
@@ -822,6 +1053,7 @@ class _ApprovalDialogState extends State<_ApprovalDialog> {
             'foodDeduction': foodDeduction,
             'paySecurityDepositNow': _paySecurityDepositNow,
             'totalFirstMonth': totalFirstMonth,
+            'billingDate': _billingDate,
             'moveInDate': _moveInDate != null
                 ? Timestamp.fromDate(_moveInDate!)
                 : null,
@@ -944,6 +1176,7 @@ class _ApprovalDialogState extends State<_ApprovalDialog> {
             'paySecurityDepositNow': _paySecurityDepositNow,
             'totalFirstMonth': totalFirstMonth,
             'totalBillAmount': totalFirstMonth,
+            'billingDate': _billingDate,
             'moveInDate': _moveInDate != null
                 ? Timestamp.fromDate(_moveInDate!)
                 : null,
@@ -1189,6 +1422,39 @@ class _ApprovalDialogState extends State<_ApprovalDialog> {
                               : 'Select date',
                         ),
                       ),
+                    ),
+                    const SizedBox(height: 16),
+
+                    // Billing Date Dropdown
+                    Row(
+                      children: [
+                        const Icon(Icons.event_repeat, color: Colors.grey),
+                        const SizedBox(width: 8),
+                        Expanded(
+                          child: DropdownButtonFormField<int>(
+                            decoration: const InputDecoration(
+                              labelText: 'Monthly Billing Date *',
+                              border: OutlineInputBorder(),
+                              helperText: 'Date to pay next rent cycle',
+                            ),
+                            value: _billingDate,
+                            items: List.generate(31, (index) => index + 1)
+                                .map((day) => DropdownMenuItem(
+                                      value: day,
+                                      child: Text(
+                                          '$day${day == 1 || day == 21 || day == 31 ? 'st' : day == 2 || day == 22 ? 'nd' : day == 3 || day == 23 ? 'rd' : 'th'} of every month'),
+                                    ))
+                                .toList(),
+                            onChanged: (value) {
+                              if (value != null) {
+                                setState(() {
+                                  _billingDate = value;
+                                });
+                              }
+                            },
+                          ),
+                        ),
+                      ],
                     ),
                     const SizedBox(height: 12),
 

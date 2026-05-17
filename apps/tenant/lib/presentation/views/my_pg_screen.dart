@@ -4,6 +4,7 @@ import 'package:provider/provider.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'widgets/tenant_scaffold.dart';
 import 'pg_detail_screen.dart';
+import 'rent_payment_screen.dart';
 import '../../data/providers/tenant_state_provider.dart';
 
 class MyPGScreen extends StatelessWidget {
@@ -81,13 +82,13 @@ class MyPGScreen extends StatelessWidget {
                     ],
                   ),
                   const SizedBox(height: 20),
-                  FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                  FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
                     future: tenantState.tenantId.isNotEmpty
-                        ? FirebaseFirestore.instance.collection('tenants').doc(tenantState.tenantId).get()
+                        ? FirebaseFirestore.instance.collection('tenants').doc(tenantState.tenantId).collection('stays').where('status', isEqualTo: 'active').limit(1).get()
                         : null,
                     builder: (context, snapshot) {
-                      final data = snapshot.hasData && (snapshot.data?.exists ?? false)
-                          ? snapshot.data!.data()!
+                      final data = snapshot.hasData && snapshot.data!.docs.isNotEmpty
+                          ? snapshot.data!.docs.first.data()
                           : null;
                       final rent = (data != null ? (data['monthlyRent'] as num?)?.toInt() : null);
                       final checkInTs = data != null ? data['checkInDate'] : null;
@@ -242,16 +243,19 @@ class MyPGScreen extends StatelessWidget {
                   ),
                 ],
               ),
-              child: FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+              child: FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
                 future: tenantState.tenantId.isNotEmpty
                     ? FirebaseFirestore.instance
                         .collection('tenants')
                         .doc(tenantState.tenantId)
+                        .collection('stays')
+                        .where('status', isEqualTo: 'active')
+                        .limit(1)
                         .get()
                     : null,
                 builder: (context, snapshot) {
-                  final tenantData = snapshot.hasData && (snapshot.data?.exists ?? false)
-                      ? snapshot.data!.data()
+                  final tenantData = snapshot.hasData && snapshot.data!.docs.isNotEmpty
+                      ? snapshot.data!.docs.first.data()
                       : null;
                   final roomId = tenantData != null ? (tenantData['roomId']?.toString() ?? '') : '';
                   final bedId = tenantData != null ? (tenantData['bedId']?.toString() ?? '') : '';
@@ -560,6 +564,202 @@ class MyPGScreen extends StatelessWidget {
 
             const SizedBox(height: 24),
 
+            // ── Rent Invoice Status (Dynamic) ──
+            if (tenantState.businessId.isNotEmpty && tenantState.tenantId.isNotEmpty)
+              StreamBuilder<QuerySnapshot>(
+                stream: FirebaseFirestore.instance
+                    .collection('businesses')
+                    .doc(tenantState.businessId)
+                    .collection('tenants')
+                    .doc(tenantState.tenantId)
+                    .collection('rent_invoices')
+                    .where('status', whereIn: ['unpaid', 'overdue'])
+                    .snapshots(),
+                builder: (context, invoiceSnap) {
+                  if (invoiceSnap.connectionState == ConnectionState.waiting) {
+                    return const SizedBox.shrink();
+                  }
+
+                  final invoiceDocs = invoiceSnap.data?.docs ?? [];
+
+                  if (invoiceDocs.isEmpty) {
+                    // All caught up!
+                    return Container(
+                      width: double.infinity,
+                      margin: const EdgeInsets.only(bottom: 24),
+                      padding: const EdgeInsets.all(16),
+                      decoration: BoxDecoration(
+                        gradient: LinearGradient(
+                          colors: [Color(0xFF10b981), Color(0xFF059669)],
+                          begin: Alignment.topLeft,
+                          end: Alignment.bottomRight,
+                        ),
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Color(0xFF10b981).withAlpha(60),
+                            blurRadius: 12,
+                            offset: const Offset(0, 4),
+                          ),
+                        ],
+                      ),
+                      child: Row(
+                        children: [
+                          Container(
+                            padding: const EdgeInsets.all(10),
+                            decoration: BoxDecoration(
+                              color: Colors.white.withAlpha(40),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: const Icon(Icons.check_circle_rounded, color: Colors.white, size: 28),
+                          ),
+                          const SizedBox(width: 14),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: const [
+                                Text(
+                                  'All Caught Up! ✅',
+                                  style: TextStyle(
+                                    fontSize: 16,
+                                    fontWeight: FontWeight.bold,
+                                    color: Colors.white,
+                                    fontFamily: 'Geist',
+                                  ),
+                                ),
+                                SizedBox(height: 4),
+                                Text(
+                                  'No pending rent payments',
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    color: Colors.white70,
+                                    fontFamily: 'Manrope',
+                                  ),
+                                ),
+                              ],
+                            ),
+                          ),
+                        ],
+                      ),
+                    );
+                  }
+
+                  // There is an unpaid or overdue invoice
+                  final invoiceData = invoiceDocs.first.data() as Map<String, dynamic>;
+                  final invoiceId = invoiceDocs.first.id;
+                  final amount = (invoiceData['amount'] as num?)?.toInt() ?? 0;
+                  final month = invoiceData['month'] ?? '';
+                  final isOverdue = invoiceData['status'] == 'overdue';
+
+                  return Container(
+                    width: double.infinity,
+                    margin: const EdgeInsets.only(bottom: 24),
+                    padding: const EdgeInsets.all(16),
+                    decoration: BoxDecoration(
+                      gradient: LinearGradient(
+                        colors: isOverdue
+                            ? [Color(0xFFef4444), Color(0xFFdc2626)]
+                            : [Color(0xFFf97316), Color(0xFFea580c)],
+                        begin: Alignment.topLeft,
+                        end: Alignment.bottomRight,
+                      ),
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: (isOverdue ? Color(0xFFef4444) : Color(0xFFf97316)).withAlpha(60),
+                          blurRadius: 12,
+                          offset: const Offset(0, 4),
+                        ),
+                      ],
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Container(
+                              padding: const EdgeInsets.all(10),
+                              decoration: BoxDecoration(
+                                color: Colors.white.withAlpha(40),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(
+                                isOverdue ? Icons.warning_rounded : Icons.payment_rounded,
+                                color: Colors.white,
+                                size: 28,
+                              ),
+                            ),
+                            const SizedBox(width: 14),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(
+                                    isOverdue ? '⚠️ Rent Overdue!' : '💰 Rent Due',
+                                    style: const TextStyle(
+                                      fontSize: 16,
+                                      fontWeight: FontWeight.bold,
+                                      color: Colors.white,
+                                      fontFamily: 'Geist',
+                                    ),
+                                  ),
+                                  const SizedBox(height: 4),
+                                  Text(
+                                    '₹$amount for $month',
+                                    style: const TextStyle(
+                                      fontSize: 20,
+                                      fontWeight: FontWeight.w800,
+                                      color: Colors.white,
+                                      fontFamily: 'Geist',
+                                    ),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ],
+                        ),
+                        const SizedBox(height: 14),
+                        SizedBox(
+                          width: double.infinity,
+                          child: ElevatedButton(
+                            onPressed: () {
+                              HapticFeedback.lightImpact();
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => RentPaymentScreen(
+                                    prefilledAmount: amount,
+                                    prefilledMonth: month,
+                                    rentInvoiceId: invoiceId,
+                                  ),
+                                ),
+                              );
+                            },
+                            style: ElevatedButton.styleFrom(
+                              backgroundColor: Colors.white,
+                              foregroundColor: isOverdue ? Color(0xFFef4444) : Color(0xFFf97316),
+                              padding: const EdgeInsets.symmetric(vertical: 14),
+                              shape: RoundedRectangleBorder(
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              elevation: 0,
+                            ),
+                            child: Text(
+                              isOverdue ? 'Pay Now — Overdue!' : 'Pay Rent',
+                              style: const TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.bold,
+                                fontFamily: 'Geist',
+                              ),
+                            ),
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+
             // Recent Payments
             const Text(
               'Recent Payments',
@@ -572,9 +772,56 @@ class MyPGScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
-            _buildPaymentItem('November 2024', '₹12,000', 'Paid', true),
-            _buildPaymentItem('October 2024', '₹12,000', 'Paid', true),
-            _buildPaymentItem('September 2024', '₹12,000', 'Paid', true),
+            StreamBuilder<QuerySnapshot>(
+              stream: tenantState.businessId.isNotEmpty && tenantState.tenantId.isNotEmpty
+                  ? FirebaseFirestore.instance
+                      .collection('businesses')
+                      .doc(tenantState.businessId)
+                      .collection('tenants')
+                      .doc(tenantState.tenantId)
+                      .collection('payments')
+                      .orderBy('date', descending: true)
+                      .limit(5)
+                      .snapshots()
+                  : null,
+              builder: (context, snapshot) {
+                if (snapshot.connectionState == ConnectionState.waiting) {
+                  return const Center(child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 20),
+                    child: CircularProgressIndicator(),
+                  ));
+                }
+
+                final docs = snapshot.data?.docs ?? [];
+                if (docs.isEmpty) {
+                  return Center(
+                    child: Padding(
+                      padding: const EdgeInsets.symmetric(vertical: 24),
+                      child: Column(
+                        children: [
+                          Icon(Icons.receipt_long_outlined, size: 48, color: Colors.grey.shade300),
+                          const SizedBox(height: 12),
+                          Text(
+                            'No payment history yet',
+                            style: TextStyle(
+                              color: Colors.grey.shade500,
+                              fontFamily: 'Manrope',
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  );
+                }
+
+                return Column(
+                  children: List.generate(docs.length, (index) {
+                    final data = docs[index].data() as Map<String, dynamic>;
+                    return _buildPaymentItem(data, index, docs.length);
+                  }),
+                );
+              },
+            ),
           ],
         ),
       ),
@@ -711,74 +958,142 @@ class MyPGScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildPaymentItem(String month, String amount, String status, bool isPaid) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 12),
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 10,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Row(
-        children: [
-          Container(
-            padding: const EdgeInsets.all(8),
-            decoration: BoxDecoration(
-              color: isPaid
-                  ? const Color(0xFF34d399).withOpacity(0.1)
-                  : const Color(0xFFf97316).withOpacity(0.1),
-              borderRadius: BorderRadius.circular(8),
-            ),
-            child: Icon(
-              isPaid ? Icons.check_circle_rounded : Icons.pending_rounded,
-              color: isPaid ? const Color(0xFF34d399) : const Color(0xFFf97316),
-              size: 20,
-            ),
-          ),
-          const SizedBox(width: 12),
-          Expanded(
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
+  Widget _buildPaymentItem(Map<String, dynamic> payment, int index, int totalCount) {
+    final isPaid = payment['status'] == 'Paid' || payment['status'] == 'paid';
+    final status = payment['status'] ?? 'pending';
+
+    Color getStatusColor() {
+      if (isPaid) return Colors.green;
+      if (status.toLowerCase() == 'pending_verification') return Colors.orange;
+      if (status.toLowerCase() == 'rejected') return Colors.red;
+      return Colors.blue;
+    }
+
+    String formatStatus() {
+      if (status == 'pending_verification') return 'Pending';
+      if (isPaid) return 'Paid';
+      if (status.toLowerCase() == 'rejected') return 'Rejected';
+      return status.toString()[0].toUpperCase() + status.toString().substring(1);
+    }
+
+    String formattedDate = '';
+    if (payment['date'] != null) {
+      if (payment['date'] is Timestamp) {
+        final date = (payment['date'] as Timestamp).toDate();
+        final List<String> months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+        formattedDate = '${date.day} ${months[date.month - 1]} ${date.year}';
+      }
+    }
+
+    return Column(
+      children: [
+        Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Column(
               children: [
-                Text(
-                  month,
-                  style: const TextStyle(
-                    fontSize: 14,
-                    fontWeight: FontWeight.w600,
-                    color: Color(0xFF164e63),
-                    fontFamily: 'Geist',
+                Container(
+                  width: 20,
+                  height: 20,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: isPaid ? Colors.green : Colors.orange,
+                    border: Border.all(color: Colors.white, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (isPaid ? Colors.green : Colors.orange).withOpacity(0.3),
+                        blurRadius: 8,
+                        spreadRadius: 2,
+                      ),
+                    ],
+                  ),
+                  child: Center(
+                    child: Icon(
+                      isPaid ? Icons.check : Icons.schedule,
+                      color: Colors.white,
+                      size: 12,
+                    ),
                   ),
                 ),
-                const SizedBox(height: 2),
-                Text(
-                  status,
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: isPaid ? const Color(0xFF34d399) : const Color(0xFFf97316),
-                    fontFamily: 'Manrope',
-                  ),
-                ),
+                if (index < totalCount - 1)
+                  Container(width: 2, height: 100, color: Colors.grey.shade300),
               ],
             ),
-          ),
-          Text(
-            amount,
-            style: const TextStyle(
-              fontSize: 16,
-              fontWeight: FontWeight.bold,
-              color: Color(0xFF164e63),
-              fontFamily: 'Geist',
+            const SizedBox(width: 16),
+            Expanded(
+              child: Container(
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: getStatusColor().withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(
+                    color: getStatusColor().withOpacity(0.3),
+                  ),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      children: [
+                        Text(
+                          payment['month'] ?? 'Unknown',
+                          style: const TextStyle(fontSize: 14, fontWeight: FontWeight.bold, color: Colors.black87),
+                        ),
+                        Container(
+                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          decoration: BoxDecoration(
+                            color: getStatusColor(),
+                            borderRadius: BorderRadius.circular(6),
+                          ),
+                          child: Text(
+                            formatStatus(),
+                            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.white),
+                          ),
+                        ),
+                      ],
+                    ),
+                    const SizedBox(height: 8),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                      crossAxisAlignment: CrossAxisAlignment.end,
+                      children: [
+                        Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              '₹${payment['amount'] ?? 0}',
+                              style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.black87),
+                            ),
+                            const SizedBox(height: 4),
+                            Text(
+                              'via ${payment['method'] ?? 'N/A'}',
+                              style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                            ),
+                          ],
+                        ),
+                        if (formattedDate.isNotEmpty)
+                          Text(
+                            formattedDate,
+                            style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                          ),
+                      ],
+                    ),
+                    if (payment['status'] == 'rejected' && payment['rejectionReason'] != null) ...[
+                      const SizedBox(height: 8),
+                      Text(
+                        'Reason: ${payment['rejectionReason']}',
+                        style: const TextStyle(fontSize: 12, color: Colors.red, fontStyle: FontStyle.italic),
+                      ),
+                    ],
+                  ],
+                ),
+              ),
             ),
-          ),
-        ],
-      ),
+          ],
+        ),
+      ],
     );
   }
 }

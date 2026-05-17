@@ -58,6 +58,10 @@ class ViewPropertyViewModel extends ChangeNotifier {
   bool get paymentsLoading => _paymentsLoading;
   String? get paymentsError => _paymentsError;
 
+  // Analytics properties
+  double _collectedRentCurrentMonth = 0.0;
+  double get collectedRentCurrentMonth => _collectedRentCurrentMonth;
+
   // Request-related getters
   int get pendingRequestsCount => _requests.where((r) => r.status == 'pending').length;
   bool get requestsLoading => _requestsLoading;
@@ -185,6 +189,7 @@ class ViewPropertyViewModel extends ChangeNotifier {
         _updateFilteredTenants();
         await _loadUnpaidInvoiceIfNeeded();
         await _loadPaymentHistory();
+        await _calculateAnalytics();
       }
     } catch (e, stack) {
       debugPrint('❌ Error loading property: $e');
@@ -248,6 +253,34 @@ class ViewPropertyViewModel extends ChangeNotifier {
     } finally {
       _paymentsLoading = false;
       notifyListeners();
+    }
+  }
+
+  Future<void> _calculateAnalytics() async {
+    if (_property == null) return;
+    final businessId = _property!.businessId;
+    final propertyId = _property!.id;
+    if (businessId.isEmpty || propertyId == null) return;
+
+    try {
+      final now = DateTime.now();
+      final monthString = '${now.month.toString().padLeft(2, '0')}-${now.year}';
+      
+      final paymentsSnap = await FirebaseFirestore.instance
+          .collectionGroup('payments')
+          .where('businessId', isEqualTo: businessId)
+          .where('propertyId', isEqualTo: propertyId)
+          .where('status', isEqualTo: 'paid')
+          .where('month', isEqualTo: monthString)
+          .get();
+
+      _collectedRentCurrentMonth = paymentsSnap.docs.fold(0.0, (sum, doc) {
+        final amount = (doc.data()['amount'] as num?)?.toDouble() ?? 0.0;
+        return sum + amount;
+      });
+      notifyListeners();
+    } catch (e) {
+      debugPrint('Error calculating analytics: $e');
     }
   }
 
@@ -465,6 +498,11 @@ class ViewPropertyViewModel extends ChangeNotifier {
                 final tenantData = tenantDoc.data()!;
                 tenants.add({
                   'id': tenantData['id'] ?? bedMap['tenantId'] ?? 'unknown',
+                  'tenantId': tenantData['tenantId'] ?? bedMap['tenantId'] ?? 'unknown',
+                  'businessId': _property!.businessId,
+                  'propertyId': _property!.id,
+                  'roomId': room['id'],
+                  'bedId': bedMap['id'] ?? bedMap['bedNumber'],
                   'name': tenantData['name'] ?? bedMap['tenantName'] ?? 'Unknown Tenant',
                   'phone': tenantData['phone'] ?? 'Not provided',
                   'email': tenantData['email'] ?? 'Not provided',
@@ -481,6 +519,11 @@ class ViewPropertyViewModel extends ChangeNotifier {
               // Fallback to bed data if fetch fails
               tenants.add({
                 'id': bedMap['tenantId'] ?? 'unknown',
+                'tenantId': bedMap['tenantId'] ?? 'unknown',
+                'businessId': _property!.businessId,
+                'propertyId': _property!.id,
+                'roomId': room['id'],
+                'bedId': bedMap['id'] ?? bedMap['bedNumber'],
                 'name': bedMap['tenantName'] ?? 'Unknown Tenant',
                 'phone': 'Not provided',
                 'room': room['number'],
@@ -496,47 +539,6 @@ class ViewPropertyViewModel extends ChangeNotifier {
       }
     }
 
-    // If no tenants found, add sample data for testing/debugging
-    if (tenants.isEmpty) {
-      tenants.addAll([
-        {
-          'id': 'TENT001',
-          'name': 'Rajesh Kumar',
-          'phone': '+91 98765 43210',
-          'email': 'rajesh.kumar@email.com',
-          'room': '101',
-          'bed': '1',
-          'rent': 8500,
-          'joinDate': DateTime.now().subtract(const Duration(days: 45)),
-          'lastPayment': DateTime.now().subtract(const Duration(days: 5)),
-          'status': 'Active',
-        },
-        {
-          'id': 'TENT002',
-          'name': 'Priya Sharma',
-          'phone': '+91 87654 32109',
-          'email': 'priya.sharma@email.com',
-          'room': '101',
-          'bed': '2',
-          'rent': 8500,
-          'joinDate': DateTime.now().subtract(const Duration(days: 30)),
-          'lastPayment': DateTime.now().subtract(const Duration(days: 10)),
-          'status': 'Active',
-        },
-        {
-          'id': 'TENT003',
-          'name': 'Aditya Patel',
-          'phone': '+91 76543 21098',
-          'email': 'aditya.patel@email.com',
-          'room': '201',
-          'bed': '1',
-          'rent': 7500,
-          'joinDate': DateTime.now().subtract(const Duration(days: 15)),
-          'lastPayment': DateTime.now(),
-          'status': 'Active',
-        },
-      ]);
-    }
 
     return tenants;
   }
@@ -558,6 +560,11 @@ class ViewPropertyViewModel extends ChangeNotifier {
           if (bedMap['isOccupied'] == true && bedMap['tenantId'] != null) {
             tenants.add({
               'id': bedMap['tenantId'] ?? 'unknown',
+              'tenantId': bedMap['tenantId'] ?? 'unknown',
+              'businessId': _property!.businessId,
+              'propertyId': _property!.id,
+              'roomId': room['id'],
+              'bedId': bedMap['id'] ?? bedMap['bedNumber'],
               'name': bedMap['tenantName'] ?? 'Unknown Tenant',
               'phone': bedMap['tenantPhone'] ?? 'Not provided',
               'email': bedMap['tenantEmail'] ?? 'Not provided',
@@ -573,47 +580,6 @@ class ViewPropertyViewModel extends ChangeNotifier {
       }
     }
 
-    // If no tenants found, add sample data for testing/debugging
-    if (tenants.isEmpty) {
-      tenants.addAll([
-        {
-          'id': 'TENT001',
-          'name': 'Rajesh Kumar',
-          'phone': '+91 98765 43210',
-          'email': 'rajesh.kumar@email.com',
-          'room': '101',
-          'bed': '1',
-          'rent': 8500,
-          'joinDate': DateTime.now().subtract(const Duration(days: 45)),
-          'lastPayment': DateTime.now().subtract(const Duration(days: 5)),
-          'status': 'Active',
-        },
-        {
-          'id': 'TENT002',
-          'name': 'Priya Sharma',
-          'phone': '+91 87654 32109',
-          'email': 'priya.sharma@email.com',
-          'room': '101',
-          'bed': '2',
-          'rent': 8500,
-          'joinDate': DateTime.now().subtract(const Duration(days: 30)),
-          'lastPayment': DateTime.now().subtract(const Duration(days: 10)),
-          'status': 'Active',
-        },
-        {
-          'id': 'TENT003',
-          'name': 'Aditya Patel',
-          'phone': '+91 76543 21098',
-          'email': 'aditya.patel@email.com',
-          'room': '201',
-          'bed': '1',
-          'rent': 7500,
-          'joinDate': DateTime.now().subtract(const Duration(days: 15)),
-          'lastPayment': DateTime.now(),
-          'status': 'Active',
-        },
-      ]);
-    }
 
     return tenants;
   }

@@ -4,6 +4,7 @@ import 'package:flutter/foundation.dart';
 import 'package:models/business/tenant_invitation_model.dart';
 import 'package:models/business/tenant_model.dart';
 import 'package:firebase_services/services/approval_function_client.dart';
+import 'package:cloud_functions/cloud_functions.dart';
 
 class TenantInvitationService {
   final FirebaseFirestore _firestore;
@@ -14,41 +15,48 @@ class TenantInvitationService {
   /// Create a tenant invitation
   Future<String> createInvitation(TenantInvitation invitation) async {
     try {
-      // Verify businessId is set
       if (invitation.businessId.isEmpty) {
         throw Exception('Business ID is required to create an invitation');
       }
 
-      final docRef = _firestore
-          .collection('tenant_invitations')
-          .doc();
-      
-      final invitationData = invitation.toMap();
-      
-      // Ensure businessId is in the data being written
-      invitationData['businessId'] = invitation.businessId;
-      
-      // Debug logging
-      debugPrint('[DEBUG] Creating invitation with data:');
-      debugPrint('[DEBUG] - businessId: ${invitationData['businessId']}');
-      debugPrint('[DEBUG] - tenantId: ${invitationData['tenantId']}');
-      debugPrint('[DEBUG] - tenantName: ${invitationData['tenantName']}');
-      debugPrint('[DEBUG] - Full data keys: ${invitationData.keys.toList()}');
-      
-      await docRef.set(invitationData);
-      
-      debugPrint('[DEBUG] Invitation created successfully with ID: ${docRef.id}');
-      
-      // Create notification for tenant
-      await _createNotification(
-        tenantId: invitation.tenantId,
-        invitationId: docRef.id,
-        propertyName: invitation.propertyName,
-        roomNumber: invitation.roomNumber,
-        bedNumber: invitation.bedNumber,
-      );
-      
-      return docRef.id;
+      final callable = FirebaseFunctions.instanceFor(region: 'us-central1')
+          .httpsCallable('createTenantInvitation');
+
+      final payload = {
+        'tenantId': invitation.tenantId.isEmpty ? null : invitation.tenantId,
+        'tenantName': invitation.tenantName,
+        'tenantPhone': invitation.tenantPhone,
+        'tenantEmail': invitation.tenantEmail,
+        'businessId': invitation.businessId,
+        'propertyId': invitation.propertyId,
+        'propertyName': invitation.propertyName,
+        'floor': invitation.floor,
+        'roomId': invitation.roomId,
+        'roomNumber': invitation.roomNumber,
+        'bedIndex': invitation.bedIndex,
+        'bedNumber': invitation.bedNumber,
+        'moveInDate': invitation.moveInDate.millisecondsSinceEpoch,
+        'moveOutDate': invitation.moveOutDate?.millisecondsSinceEpoch,
+        'monthlyRent': invitation.monthlyRent,
+        'deposit': invitation.deposit,
+        'maintenance': invitation.maintenance,
+        'maintenanceDeductedFromDeposit': invitation.maintenanceDeductedFromDeposit,
+        'proratedRent': invitation.proratedRent,
+        'billingDay': invitation.billingDay,
+        'lockInPeriodMonths': invitation.lockInPeriodMonths,
+        'noticePeriodDays': invitation.noticePeriodDays,
+        'paymentCycle': invitation.paymentCycle,
+        'tenantDetails': invitation.tenantDetails,
+        'gender': invitation.gender,
+      };
+
+      final resp = await callable.call(payload);
+      final data = resp.data;
+      if (data is Map && data['invitationId'] != null) {
+        return data['invitationId'].toString();
+      }
+
+      throw Exception('Invitation function returned unexpected response');
     } catch (e) {
       debugPrint('Error creating invitation: $e');
       rethrow;

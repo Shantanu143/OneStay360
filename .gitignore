@@ -1,0 +1,40 @@
+# IDE
+.vscode/
+.idea/
+
+# Flutter/Dart
+.dart_tool/
+.packages
+.pub/
+build/
+
+# Logs
+*.log
+logs.txt
+build_log.txt
+analyze_output.txt
+analyze_output_utf8.txt
+analyze_output_utf16.txt
+
+# Generated JS maps
+*.js.map
+
+# Firebase / Sensitive
+functions/out.json
+functions/rzp.json
+functions/stay_data.json
+functions/user_data.json
+
+# Temporary/Test Files
+rzptest.txt
+functions/test.js
+functions/fix_tenant.js
+
+# OS
+.DS_Store
+Thumbs.db
+
+*_utf8.txt
+*_utf16.txt
+deploy_log.txt
+build_log.txt

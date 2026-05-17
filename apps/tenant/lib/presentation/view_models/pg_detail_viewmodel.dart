@@ -3,6 +3,10 @@ import 'package:flutter/services.dart';
 import 'package:url_launcher/url_launcher.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'dart:io';
+import 'package:image_picker/image_picker.dart';
+import 'package:firebase_storage/firebase_storage.dart';
+import 'package:path/path.dart' as path;
 import 'package:models/business/property/property_model.dart';
 import 'package:firebase_services/repositories/property_repository.dart';
 import 'package:firebase_services/repositories/enrollment_repository.dart';
@@ -22,13 +26,16 @@ class PGDetailViewModel extends ChangeNotifier {
   int _currentImageIndex = 0;
   int _currentTabIndex = 0;
   bool _isSubmittingEnrollment = false;
+  XFile? _kycDocument;
 
   // UPDATED CONSTRUCTOR
   PGDetailViewModel({required this.propertyRepository});
 
   // Getters
+  // Getters
   Property? get property => _property;
   bool get isSubmittingEnrollment => _isSubmittingEnrollment;
+  XFile? get kycDocument => _kycDocument;
   bool get isLoading => _isLoading;
   bool get hasError => _hasError;
   String get errorMessage => _errorMessage;
@@ -624,6 +631,16 @@ Find your perfect PG with OneStay360!
         throw Exception('Tenant name or phone is missing');
       }
 
+      String? kycUrl;
+      if (_kycDocument != null) {
+        final storageRef = FirebaseStorage.instance.ref();
+        final ext = path.extension(_kycDocument!.path);
+        final fileName = '${DateTime.now().millisecondsSinceEpoch}$ext';
+        final kycRef = storageRef.child('enrollments/${_auth.currentUser!.uid}/$fileName');
+        await kycRef.putFile(File(_kycDocument!.path));
+        kycUrl = await kycRef.getDownloadURL();
+      }
+
       // Submit enrollment request
       await enrollmentRepository.submitEnrollmentRequest(
         propertyId: _property!.id!,
@@ -635,8 +652,10 @@ Find your perfect PG with OneStay360!
         roomType: roomType,
         sharingType: sharingType,
         notes: notes,
+        kycDocumentUrl: kycUrl,
       );
 
+      _kycDocument = null; // reset
       debugPrint('✅ Enrollment request submitted successfully');
       return true;
     } catch (e) {
@@ -647,6 +666,29 @@ Find your perfect PG with OneStay360!
       _isSubmittingEnrollment = false;
       notifyListeners();
     }
+  }
+
+  Future<void> pickKycDocument() async {
+    try {
+      final ImagePicker picker = ImagePicker();
+      final XFile? image = await picker.pickImage(
+        source: ImageSource.gallery,
+        imageQuality: 70,
+      );
+      if (image != null) {
+        _kycDocument = image;
+        notifyListeners();
+      }
+    } catch (e) {
+      debugPrint('❌ Error picking KYC document: $e');
+      _errorMessage = 'Failed to pick image';
+      notifyListeners();
+    }
+  }
+
+  void removeKycDocument() {
+    _kycDocument = null;
+    notifyListeners();
   }
 }
 

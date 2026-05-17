@@ -290,6 +290,31 @@ service cloud.firestore {
           && request.resource.data.updatedBy == request.auth.uid;
 
         allow delete: if isBusinessOwner(businessId) && resource.data.updatedBy == request.auth.uid;
+
+        // Payments subcollection for tenant payment history
+        match /payments/{paymentId} {
+          // Business members can read all payments
+          allow read: if isBusinessMember(businessId);
+          // Tenants can read their own payments
+          allow read: if isAuth()
+            && exists(/databases/$(database)/documents/tenants/$(tenantId))
+            && get(/databases/$(database)/documents/tenants/$(tenantId)).data.userId == request.auth.uid;
+          // Business owner can create/update payments
+          allow create, update: if isBusinessOwner(businessId);
+          allow delete: if false;
+        }
+
+        // Rent invoices subcollection (Razorpay automated rent collection)
+        match /rent_invoices/{invoiceId} {
+          // Business members can read all rent invoices
+          allow read: if isBusinessMember(businessId);
+          // Tenants can read their own rent invoices
+          allow read: if isAuth()
+            && exists(/databases/$(database)/documents/tenants/$(tenantId))
+            && get(/databases/$(database)/documents/tenants/$(tenantId)).data.userId == request.auth.uid;
+          // Only server (Cloud Functions) can create/update/delete
+          allow create, update, delete: if false;
+        }
       }
 
       // AUDIT LOGS (SERVER-OWNED)
@@ -321,6 +346,22 @@ service cloud.firestore {
       match /payments_to_onestay360/{paymentId} {
         allow read: if isBusinessOwner(businessId);
         allow create, update, delete: if false;
+      }
+      
+      // ───────────────────────────────
+      // BUSINESS SETTINGS
+      // ───────────────────────────────
+      // Private Razorpay secrets (API keys, webhook secret)
+      match /settings/razorpay_private {
+        allow read: if false;
+        allow create, update, delete: if isBusinessOwner(businessId);
+      }
+
+      match /settings/{settingId} {
+        // Business members can read all settings.
+        // Any authenticated user (e.g. tenants) can read the razorpay settings to check if online payments are enabled.
+        allow read: if isBusinessMember(businessId) || (isAuth() && settingId == 'razorpay');
+        allow create, update, delete: if isBusinessOwner(businessId);
       }
     }
 
@@ -355,6 +396,13 @@ service cloud.firestore {
       match /documents/{documentId} {
         allow read, write: if tenantDocOwnedByCaller(tenantId)
           || tenantBusinessOwnerAllowed(tenantId);
+        allow delete: if false;
+      }
+
+      match /stays/{stayId} {
+        allow read: if tenantDocOwnedByCaller(tenantId)
+          || tenantBusinessOwnerAllowed(tenantId);
+        allow create, update: if tenantBusinessOwnerAllowed(tenantId);
         allow delete: if false;
       }
 

@@ -10,7 +10,9 @@ import 'package:firebase_services/repositories/property_repository.dart';
 import './add_property_screen.dart';
 import './business_properties_screen.dart' as props_view;
 import '../view_models/business_properties_viewmodel.dart';
+import '../view_models/business_dashboard_viewmodel.dart';
 import './view_property_screen.dart';
+import './reports_screen.dart';
 import './add_tenant_screen.dart';
 import './business_profile_screen.dart';
 import './pending_payments_screen.dart';
@@ -146,7 +148,7 @@ class _BusinessHomeScreenState extends State<BusinessHomeScreen>
           _dashboardBody(),
           _propertiesBody(),
           _tenantsPlaceholder(),
-          _reportsPlaceholder(),
+          _reportsBody(),
           const BusinessProfileScreen(),
         ],
       ),
@@ -154,49 +156,58 @@ class _BusinessHomeScreenState extends State<BusinessHomeScreen>
   }
 
   Widget _dashboardBody() {
-    return FadeTransition(
-      opacity: _fadeAnimation,
-      child: SlideTransition(
-        position: _slideAnimation,
-        child: SingleChildScrollView(
-          padding: const EdgeInsets.all(24),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              GridView.count(
-                shrinkWrap: true,
-                physics: const NeverScrollableScrollPhysics(),
-                crossAxisCount: 2,
-                crossAxisSpacing: 16,
-                mainAxisSpacing: 16,
-                childAspectRatio: 1.3,
-                children: [
-                  _buildStatCard(
-                    title: 'Total Properties',
-                    value: '12',
-                    icon: Icons.apartment_outlined,
-                    color: Colors.teal.shade600,
-                  ),
-                  _buildStatCard(
-                    title: 'Occupancy Rate',
-                    value: '85%',
-                    icon: Icons.people_outline,
-                    color: Colors.orange.shade600,
-                  ),
-                  _buildStatCard(
-                    title: 'Pending Payments',
-                    value: '₹ 15,000',
-                    icon: Icons.account_balance_wallet_outlined,
-                    color: Colors.red.shade600,
-                  ),
-                  _buildStatCard(
-                    title: 'Active Tenants',
-                    value: '98',
-                    icon: Icons.person_outline,
-                    color: Colors.blue.shade600,
-                  ),
-                ],
-              ),
+    final propertyRepository = context.read<PropertyRepository>();
+    final businessState = context.watch<BusinessStateProvider>();
+
+    return ChangeNotifierProvider(
+      create: (_) => BusinessDashboardViewModel(propertyRepository: propertyRepository),
+      child: _DashboardLoader(
+        businessId: businessState.businessId,
+        child: Consumer<BusinessDashboardViewModel>(
+          builder: (context, viewModel, _) {
+            return FadeTransition(
+              opacity: _fadeAnimation,
+              child: SlideTransition(
+                position: _slideAnimation,
+                child: SingleChildScrollView(
+                  padding: const EdgeInsets.all(24),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      GridView.count(
+                        shrinkWrap: true,
+                        physics: const NeverScrollableScrollPhysics(),
+                        crossAxisCount: 2,
+                        crossAxisSpacing: 16,
+                        mainAxisSpacing: 16,
+                        childAspectRatio: 1.3,
+                        children: [
+                          _buildStatCard(
+                            title: 'Total Properties',
+                            value: viewModel.isLoading ? '...' : viewModel.totalProperties.toString(),
+                            icon: Icons.apartment_outlined,
+                            color: Colors.teal.shade600,
+                          ),
+                          _buildStatCard(
+                            title: 'Occupancy Rate',
+                            value: viewModel.isLoading ? '...' : viewModel.occupancyRateString,
+                            icon: Icons.people_outline,
+                            color: Colors.orange.shade600,
+                          ),
+                          _buildStatCard(
+                            title: 'Pending Payments',
+                            value: viewModel.isLoading ? '...' : viewModel.pendingRentString,
+                            icon: Icons.account_balance_wallet_outlined,
+                            color: Colors.red.shade600,
+                          ),
+                          _buildStatCard(
+                            title: 'Active Tenants',
+                            value: viewModel.isLoading ? '...' : viewModel.activeTenants.toString(),
+                            icon: Icons.person_outline,
+                            color: Colors.blue.shade600,
+                          ),
+                        ],
+                      ),
               const SizedBox(height: 32),
               Text(
                 'Quick Actions',
@@ -298,6 +309,10 @@ class _BusinessHomeScreenState extends State<BusinessHomeScreen>
           ),
         ),
       ),
+            );
+          },
+        ),
+      ),
     );
   }
 
@@ -346,15 +361,15 @@ class _BusinessHomeScreenState extends State<BusinessHomeScreen>
     );
   }
 
-  Widget _reportsPlaceholder() {
-    return Center(
-      child: Text(
-        'Reports coming soon',
-        style: TextStyle(
-            color: Colors.grey.shade600,
-            fontSize: 16,
-            fontWeight: FontWeight.w600
-        ),
+  Widget _reportsBody() {
+    final propertyRepository = context.read<PropertyRepository>();
+    final businessState = context.watch<BusinessStateProvider>();
+
+    return ChangeNotifierProvider(
+      create: (_) => BusinessPropertiesViewModel(propertyRepository: propertyRepository),
+      child: _PropertiesLoader(
+        businessId: businessState.businessId,
+        child: const ReportsScreen(),
       ),
     );
   }
@@ -541,5 +556,59 @@ class _PropertiesLoaderState extends State<_PropertiesLoader> {
     return widget.child;
   }
 }
+
+// Helper widget that loads dashboard metrics only when businessId changes
+class _DashboardLoader extends StatefulWidget {
+  final String? businessId;
+  final Widget child;
+
+  const _DashboardLoader({
+    required this.businessId,
+    required this.child,
+  });
+
+  @override
+  State<_DashboardLoader> createState() => _DashboardLoaderState();
+}
+
+class _DashboardLoaderState extends State<_DashboardLoader> {
+  String? _lastLoadedBusinessId;
+
+  @override
+  void didUpdateWidget(_DashboardLoader oldWidget) {
+    super.didUpdateWidget(oldWidget);
+    if (oldWidget.businessId != widget.businessId && 
+        widget.businessId != null && 
+        widget.businessId!.isNotEmpty) {
+      _lastLoadedBusinessId = widget.businessId;
+      Future.microtask(() {
+        if (mounted) {
+          final viewModel = context.read<BusinessDashboardViewModel>();
+          viewModel.loadDashboardMetrics(widget.businessId);
+        }
+      });
+    }
+  }
+
+  @override
+  void initState() {
+    super.initState();
+    if (widget.businessId != null && widget.businessId!.isNotEmpty) {
+      _lastLoadedBusinessId = widget.businessId;
+      Future.microtask(() {
+        if (mounted) {
+          final viewModel = context.read<BusinessDashboardViewModel>();
+          viewModel.loadDashboardMetrics(widget.businessId);
+        }
+      });
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return widget.child;
+  }
+}
+
 
 

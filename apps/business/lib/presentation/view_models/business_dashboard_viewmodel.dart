@@ -1,11 +1,10 @@
 import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
-import 'package:models/business/property/property_model.dart';
 import 'package:firebase_services/repositories/property_repository.dart';
 
 class BusinessDashboardViewModel extends ChangeNotifier {
   final PropertyRepository _propertyRepository;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+  final FirebaseFirestore _firestore;
 
   bool _isDisposed = false;
   String? _lastBusinessId;
@@ -19,8 +18,11 @@ class BusinessDashboardViewModel extends ChangeNotifier {
   double _occupancyRate = 0.0;
   double _pendingRentAmount = 0.0;
 
-  BusinessDashboardViewModel({required PropertyRepository propertyRepository})
-      : _propertyRepository = propertyRepository;
+  BusinessDashboardViewModel({
+    required PropertyRepository propertyRepository,
+    FirebaseFirestore? firestore,
+  })  : _propertyRepository = propertyRepository,
+        _firestore = firestore ?? FirebaseFirestore.instance;
 
   // Getters
   bool get isLoading => _isLoading;
@@ -117,6 +119,7 @@ class BusinessDashboardViewModel extends ChangeNotifier {
 
   @override
   void dispose() {
+    if (_isDisposed) return;
     _isDisposed = true;
     super.dispose();
   }

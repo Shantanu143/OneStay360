@@ -13,6 +13,9 @@ dependencies:
   cloud_firestore: ^5.6.0
   firebase_auth: ^5.7.0
   cloud_functions: ^5.6.0
+  firebase_storage: ^12.4.10
+  google_sign_in: ^6.3.0
+  image_picker: ^0.8.7+3
   models:
     path: ../models
 
@@ -20,6 +23,7 @@ dev_dependencies:
   flutter_test:
     sdk: flutter
   flutter_lints: ^6.0.0
+  fake_cloud_firestore: ^3.1.0
 
 # For information on the generic Dart part of this file, see the
 # following page: https://dart.dev/tools/pub/pubspec

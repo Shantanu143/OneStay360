@@ -237,7 +237,7 @@ class _RecordPaymentScreenState extends State<RecordPaymentScreen> {
             _SectionLabel(label: 'For Month *'),
             const SizedBox(height: 8),
             DropdownButtonFormField<String>(
-              value: _selectedMonth,
+              initialValue: _selectedMonth,
               decoration: _inputDecoration(hint: ''),
               items: _monthOptions()
                   .map((m) => DropdownMenuItem(value: m, child: Text(m)))

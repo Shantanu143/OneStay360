@@ -217,10 +217,14 @@ class _AddPaymentMethodScreenState extends State<AddPaymentMethodScreen>
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 
+        final keyIdVal = _razorpayKeyIdController.text.trim();
         await FirebaseFirestore.instance
             .doc('businesses/${widget.businessId}/settings/razorpay')
             .set({
           'paymentsEnabled': true,
+          'keyIdHint': keyIdVal.length >= 4 ? '••••${keyIdVal.substring(keyIdVal.length - 4)}' : 'configured',
+          'hasSecret': _razorpayKeySecretController.text.trim().isNotEmpty,
+          'hasWebhookSecret': _razorpayWebhookSecretController.text.trim().isNotEmpty,
           'updatedAt': FieldValue.serverTimestamp(),
         }, SetOptions(merge: true));
 

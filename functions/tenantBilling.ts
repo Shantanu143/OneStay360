@@ -258,45 +258,63 @@ export const markOverdueInvoices = functions
     const now = admin.firestore.Timestamp.now();
     let markedOverdue = 0;
 
-    // Query all unpaid invoices where dueDate has passed
-    const overdueSnap = await db
-      .collectionGroup('rent_invoices')
-      .where('status', '==', 'unpaid')
-      .where('dueDate', '<', now)
-      .limit(500)
-      .get();
+    // Paginate in chunks of 400 (safely under the 500 Firestore batch limit)
+    // to handle any number of overdue invoices without hitting batch limits.
+    const PAGE_SIZE = 400;
+    let lastDoc: FirebaseFirestore.QueryDocumentSnapshot | null = null;
+    let hasMore = true;
 
-    if (overdueSnap.empty) {
-      functions.logger.info('✅ No overdue invoices found');
-      return null;
-    }
+    while (hasMore) {
+      let query = db
+        .collectionGroup('rent_invoices')
+        .where('status', '==', 'unpaid')
+        .where('dueDate', '<', now)
+        .orderBy('dueDate')
+        .limit(PAGE_SIZE);
 
-    const batch = db.batch();
-
-    for (const doc of overdueSnap.docs) {
-      batch.update(doc.ref, {
-        status: 'overdue',
-        updatedAt: now,
-      });
-
-      // Send reminder notification
-      const invoice = doc.data() as any;
-      if (invoice.tenantId) {
-        // Fire-and-forget notification
-        sendPushToTenant(invoice.tenantId, {
-          title: '⚠️ Rent Overdue!',
-          body: `Your rent of ₹${Number(invoice.amount).toLocaleString('en-IN')} for ${invoice.month || ''} is overdue. Please pay immediately.`,
-        }, {
-          type: 'rent_overdue',
-          businessId: invoice.businessId || '',
-          amount: String(invoice.amount),
-        }).catch(() => {});
+      if (lastDoc) {
+        query = query.startAfter(lastDoc);
       }
 
-      markedOverdue++;
-    }
+      const overdueSnap = await query.get();
 
-    await batch.commit();
+      if (overdueSnap.empty) {
+        hasMore = false;
+        break;
+      }
+
+      const batch = db.batch();
+
+      for (const doc of overdueSnap.docs) {
+        batch.update(doc.ref, {
+          status: 'overdue',
+          updatedAt: now,
+        });
+
+        // Send reminder notification (fire-and-forget)
+        const invoice = doc.data() as any;
+        if (invoice.tenantId) {
+          sendPushToTenant(invoice.tenantId, {
+            title: '⚠️ Rent Overdue!',
+            body: `Your rent of ₹${Number(invoice.amount).toLocaleString('en-IN')} for ${invoice.month || ''} is overdue. Please pay immediately.`,
+          }, {
+            type: 'rent_overdue',
+            businessId: invoice.businessId || '',
+            amount: String(invoice.amount),
+          }).catch(() => {});
+        }
+
+        markedOverdue++;
+      }
+
+      await batch.commit();
+
+      if (overdueSnap.docs.length < PAGE_SIZE) {
+        hasMore = false;
+      } else {
+        lastDoc = overdueSnap.docs[overdueSnap.docs.length - 1];
+      }
+    }
 
     functions.logger.info(`✅ Marked ${markedOverdue} invoices as overdue`);
     return null;

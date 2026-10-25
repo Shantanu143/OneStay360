@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:url_launcher/url_launcher.dart';
 
 import '../../data/providers/tenant_state_provider.dart';
+import 'explore_screen.dart';
 
 class RentPaymentScreen extends StatefulWidget {
   final int? prefilledAmount;
@@ -37,6 +38,8 @@ class _RentPaymentScreenState extends State<RentPaymentScreen> {
   bool _isGeneratingLink = false;
   bool _paymentsEnabled = false;
   bool _checkingPaymentStatus = true;
+  // UPI ID fetched from business Razorpay settings
+  String _businessUpiId = '';
 
   @override
   void initState() {
@@ -82,6 +85,8 @@ class _RentPaymentScreenState extends State<RentPaymentScreen> {
         final data = configSnap.data()!;
         setState(() {
           _paymentsEnabled = data['paymentsEnabled'] == true;
+          // Read UPI ID from the same settings document
+          _businessUpiId = (data['upiId'] as String? ?? '').trim();
           _checkingPaymentStatus = false;
         });
       } else {
@@ -232,6 +237,9 @@ class _RentPaymentScreenState extends State<RentPaymentScreen> {
         'month': _selectedMonth,
         'paymentMode': _paymentMode,
         'transactionId': transactionId,
+        // Pass the invoice ID so the backend can link this payment to the invoice
+        if (widget.rentInvoiceId != null && widget.rentInvoiceId!.isNotEmpty)
+          'rentInvoiceId': widget.rentInvoiceId,
       });
 
       if (mounted) {
@@ -271,18 +279,23 @@ class _RentPaymentScreenState extends State<RentPaymentScreen> {
       body: Consumer<TenantStateProvider>(
         builder: (context, tenantState, child) {
           if (tenantState.businessId.isEmpty) {
-            return const Center(
-              child: Padding(
-                padding: EdgeInsets.all(24),
-                child: Text('You are not assigned to a property yet.', textAlign: TextAlign.center),
-              ),
+            return _AnimatedRentEmptyState(
+              onExplore: () {
+                Navigator.of(context).pushAndRemoveUntil(
+                  MaterialPageRoute(builder: (_) => const ExploreScreen()),
+                  (route) => false,
+                );
+              },
+              onGoBack: () {
+                Navigator.pop(context);
+              },
             );
           }
 
           final rent = (tenantState.tenantData['monthlyRent'] as num?)?.toDouble() ?? 0.0;
           final propertyName = tenantState.currentPG;
-          final upiId = tenantState.tenantData['propertyUpiId'] as String? ??
-                        tenantState.tenantData['businessUpiId'] as String? ?? '';
+          // UPI ID is fetched from businesses/{id}/settings/razorpay in _checkOnlinePayments()
+          final upiId = _businessUpiId;
 
           if (_amountController.text.isEmpty && rent > 0) {
             _amountController.text = rent.toInt().toString();
@@ -436,18 +449,43 @@ class _RentPaymentScreenState extends State<RentPaymentScreen> {
 
                 // ── UPI Flow ──
                 if (_paymentMode == 'UPI') ...[
+                  // If opened from an invoice, show the amount as read-only
+                  if (widget.rentInvoiceId != null && widget.rentInvoiceId!.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        border: Border.all(color: Colors.blue.shade200),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.blue.shade700, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Amount is fixed to your invoice. Pay exactly ₹${_amountController.text} for ${widget.prefilledMonth ?? _selectedMonth}.',
+                              style: TextStyle(fontSize: 13, color: Colors.blue.shade800),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   // Amount and Month
                   Row(
                     children: [
                       Expanded(
                         child: DropdownButtonFormField<String>(
-                          value: _selectedMonth,
+                          initialValue: _selectedMonth,
                           decoration: const InputDecoration(
                             labelText: 'Rent Month',
                             border: OutlineInputBorder(),
                           ),
                           items: _monthOptions.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                          onChanged: (val) {
+                          // Lock month when opened from an invoice
+                          onChanged: widget.rentInvoiceId != null ? null : (val) {
                             if (val != null) setState(() => _selectedMonth = val);
                           },
                         ),
@@ -456,10 +494,14 @@ class _RentPaymentScreenState extends State<RentPaymentScreen> {
                       Expanded(
                         child: TextField(
                           controller: _amountController,
-                          decoration: const InputDecoration(
-                            labelText: 'Amount Paid (₹)',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Icon(Icons.currency_rupee, size: 18),
+                          // Lock amount when opened from an invoice
+                          readOnly: widget.rentInvoiceId != null && widget.rentInvoiceId!.isNotEmpty,
+                          decoration: InputDecoration(
+                            labelText: 'Amount (₹)',
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Icon(Icons.currency_rupee, size: 18),
+                            filled: widget.rentInvoiceId != null && widget.rentInvoiceId!.isNotEmpty,
+                            fillColor: widget.rentInvoiceId != null ? Colors.grey.shade100 : null,
                           ),
                           keyboardType: TextInputType.number,
                           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -559,17 +601,41 @@ class _RentPaymentScreenState extends State<RentPaymentScreen> {
 
                 // ── Cash Flow ──
                 if (_paymentMode == 'Cash') ...[
+                  // If opened from an invoice, show the amount as read-only
+                  if (widget.rentInvoiceId != null && widget.rentInvoiceId!.isNotEmpty) ...[
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: Colors.blue.shade50,
+                        border: Border.all(color: Colors.blue.shade200),
+                        borderRadius: BorderRadius.circular(10),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(Icons.info_outline, color: Colors.blue.shade700, size: 18),
+                          const SizedBox(width: 8),
+                          Expanded(
+                            child: Text(
+                              'Amount is fixed to your invoice. Pay exactly ₹${_amountController.text} for ${widget.prefilledMonth ?? _selectedMonth}.',
+                              style: TextStyle(fontSize: 13, color: Colors.blue.shade800),
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                    const SizedBox(height: 12),
+                  ],
                   Row(
                     children: [
                       Expanded(
                         child: DropdownButtonFormField<String>(
-                          value: _selectedMonth,
+                          initialValue: _selectedMonth,
                           decoration: const InputDecoration(
                             labelText: 'Rent Month',
                             border: OutlineInputBorder(),
                           ),
                           items: _monthOptions.map((m) => DropdownMenuItem(value: m, child: Text(m))).toList(),
-                          onChanged: (val) {
+                          onChanged: widget.rentInvoiceId != null ? null : (val) {
                             if (val != null) setState(() => _selectedMonth = val);
                           },
                         ),
@@ -578,10 +644,13 @@ class _RentPaymentScreenState extends State<RentPaymentScreen> {
                       Expanded(
                         child: TextField(
                           controller: _amountController,
-                          decoration: const InputDecoration(
-                            labelText: 'Amount Paid (₹)',
-                            border: OutlineInputBorder(),
-                            prefixIcon: Icon(Icons.currency_rupee, size: 18),
+                          readOnly: widget.rentInvoiceId != null && widget.rentInvoiceId!.isNotEmpty,
+                          decoration: InputDecoration(
+                            labelText: 'Amount (₹)',
+                            border: const OutlineInputBorder(),
+                            prefixIcon: const Icon(Icons.currency_rupee, size: 18),
+                            filled: widget.rentInvoiceId != null && widget.rentInvoiceId!.isNotEmpty,
+                            fillColor: widget.rentInvoiceId != null ? Colors.grey.shade100 : null,
                           ),
                           keyboardType: TextInputType.number,
                           inputFormatters: [FilteringTextInputFormatter.digitsOnly],
@@ -694,6 +763,225 @@ class _RentPaymentScreenState extends State<RentPaymentScreen> {
             ),
             if (isSelected)
               Icon(Icons.check_circle_rounded, color: color, size: 24),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+class _AnimatedRentEmptyState extends StatefulWidget {
+  final VoidCallback onExplore;
+  final VoidCallback onGoBack;
+
+  const _AnimatedRentEmptyState({
+    required this.onExplore,
+    required this.onGoBack,
+  });
+
+  @override
+  State<_AnimatedRentEmptyState> createState() => _AnimatedRentEmptyStateState();
+}
+
+class _AnimatedRentEmptyStateState extends State<_AnimatedRentEmptyState>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _pulseAnimation;
+  late Animation<double> _floatAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat(reverse: true);
+
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.5, curve: Curves.easeInOut),
+      ),
+    );
+
+    _floatAnimation = Tween<double>(begin: 0.0, end: -12.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeInOut,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primaryColor = theme.primaryColor;
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Animated Illustration
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, child) {
+                return SizedBox(
+                  height: 180,
+                  width: 180,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Outer Pulsing Circle 2
+                      Transform.scale(
+                        scale: _pulseAnimation.value * 1.1,
+                        child: Container(
+                          width: 140,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: primaryColor.withAlpha((0.05 * 255).round()),
+                          ),
+                        ),
+                      ),
+                      // Pulsing Circle 1
+                      Transform.scale(
+                        scale: _pulseAnimation.value,
+                        child: Container(
+                          width: 110,
+                          height: 110,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: primaryColor.withAlpha((0.1 * 255).round()),
+                          ),
+                        ),
+                      ),
+                      // Floating Core Card/Icon
+                      Transform.translate(
+                        offset: Offset(0, _floatAnimation.value),
+                        child: Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: primaryColor,
+                            boxShadow: [
+                              BoxShadow(
+                                color: primaryColor.withAlpha((0.3 * 255).round()),
+                                blurRadius: 15,
+                                offset: const Offset(0, 5),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.receipt_long_rounded,
+                            size: 38,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      // Small Floating Accent Element (e.g. Coin)
+                      Transform.translate(
+                        offset: Offset(35, _floatAnimation.value - 25),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.amber,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black12,
+                                blurRadius: 4,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.currency_rupee_rounded,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'No Pending Dues',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF1E293B),
+                letterSpacing: -0.5,
+                fontFamily: 'Geist',
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              'You are not currently checked into any PG stay, so there are no rent invoices or monthly dues to pay.',
+              style: TextStyle(
+                fontSize: 15,
+                color: Colors.grey[600],
+                height: 1.5,
+                fontFamily: 'Manrope',
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 40),
+            // Primary Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: widget.onExplore,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 0,
+                ),
+                icon: const Icon(Icons.explore_outlined, size: 20, color: Colors.white),
+                label: const Text(
+                  'Explore PG Stays',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Geist'),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Secondary Button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: widget.onGoBack,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.grey[700],
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  side: BorderSide(color: Colors.grey[300]!, width: 1.5),
+                ),
+                icon: Icon(Icons.arrow_back_rounded, size: 20, color: Colors.grey[600]),
+                label: const Text(
+                  'Go Back',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Geist'),
+                ),
+              ),
+            ),
           ],
         ),
       ),

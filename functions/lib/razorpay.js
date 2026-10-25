@@ -776,36 +776,60 @@ exports.getPaymentDashboard = functions.https.onCall(async (data, context) => {
     let pendingAmount = 0;
     let manualAmount = 0;
     let unpaidInvoices = 0;
-    for (const tenantDoc of tenantsSnap.docs) {
-        const tenantId = tenantDoc.id;
-        // Get unpaid invoices
-        const unpaidSnap = await db
-            .collection(`businesses/${businessId}/tenants/${tenantId}/rent_invoices`)
-            .where('status', 'in', ['unpaid', 'overdue'])
-            .get();
-        unpaidInvoices += unpaidSnap.size;
-        // Get this month's payments
-        const now = new Date();
-        const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
-        const paymentsSnap = await db
-            .collection(`businesses/${businessId}/tenants/${tenantId}/payments`)
-            .where('date', '>=', admin.firestore.Timestamp.fromDate(monthStart))
-            .get();
-        for (const payDoc of paymentsSnap.docs) {
-            const pay = payDoc.data();
-            const amount = pay.amount || 0;
-            if (pay.status === 'Paid' || pay.status === 'paid') {
-                totalCollected += amount;
-                if (pay.verification === 'verified' || pay.mode === 'razorpay') {
-                    verifiedAmount += amount;
-                }
-                else if (pay.status === 'pending_verification') {
-                    pendingAmount += amount;
-                }
-                else {
-                    manualAmount += amount;
+    const now = new Date();
+    const monthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const monthStartTs = admin.firestore.Timestamp.fromDate(monthStart);
+    // Process tenants in concurrent chunks of 20 to eliminate sequential N+1 query lag
+    const BATCH_SIZE = 20;
+    for (let i = 0; i < tenantsSnap.docs.length; i += BATCH_SIZE) {
+        const chunk = tenantsSnap.docs.slice(i, i + BATCH_SIZE);
+        const results = await Promise.all(chunk.map(async (tenantDoc) => {
+            const tenantId = tenantDoc.id;
+            // Fetch unpaid invoices and payments concurrently for this tenant
+            const [unpaidSnap, paymentsSnap] = await Promise.all([
+                db
+                    .collection(`businesses/${businessId}/tenants/${tenantId}/rent_invoices`)
+                    .where('status', 'in', ['unpaid', 'overdue'])
+                    .get(),
+                db
+                    .collection(`businesses/${businessId}/tenants/${tenantId}/payments`)
+                    .where('date', '>=', monthStartTs)
+                    .get(),
+            ]);
+            let localTotal = 0;
+            let localVerified = 0;
+            let localPending = 0;
+            let localManual = 0;
+            for (const payDoc of paymentsSnap.docs) {
+                const pay = payDoc.data();
+                const amount = pay.amount || 0;
+                if (pay.status === 'Paid' || pay.status === 'paid') {
+                    localTotal += amount;
+                    if (pay.verification === 'verified' || pay.mode === 'razorpay') {
+                        localVerified += amount;
+                    }
+                    else if (pay.status === 'pending_verification') {
+                        localPending += amount;
+                    }
+                    else {
+                        localManual += amount;
+                    }
                 }
             }
+            return {
+                unpaidCount: unpaidSnap.size,
+                totalCollected: localTotal,
+                verifiedAmount: localVerified,
+                pendingAmount: localPending,
+                manualAmount: localManual,
+            };
+        }));
+        for (const res of results) {
+            unpaidInvoices += res.unpaidCount;
+            totalCollected += res.totalCollected;
+            verifiedAmount += res.verifiedAmount;
+            pendingAmount += res.pendingAmount;
+            manualAmount += res.manualAmount;
         }
     }
     return {

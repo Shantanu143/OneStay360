@@ -525,9 +525,16 @@ service cloud.firestore {
     // COUNTERS
     // ───────────────────────────────
     // Used for generating sequential IDs (business, tenant, property)
-    // SECURITY: Only authenticated users can read/write (service-layer controlled)
+    // SECURITY: Strictly enforces monotonic increment by 1; no arbitrary overwrite or deletion
     match /counters/{counterId} {
-      allow read, write: if isAuth();
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.count is int
+        && request.resource.data.count == 1;
+      allow update: if isAuth()
+        && request.resource.data.count is int
+        && request.resource.data.count == resource.data.count + 1;
+      allow delete: if false;
     }
 
     // ───────────────────────────────
@@ -549,9 +556,12 @@ service cloud.firestore {
     // Tenants submit enrollment requests to properties
     // ───────────────────────────────
     match /enrollmentRequests/{requestId} {
-      // Temporarily allow any authenticated business user to read
-      // (tighten once all requests reliably store businessId)
-      allow read: if isAuth();
+      // Strictly restricted: only the prospective tenant or members of the target business can read PII
+      allow read: if isAuth() && (
+        request.auth.uid == resource.data.tenantId
+        || (resource.data.businessId is string
+            && isBusinessMember(resource.data.businessId))
+      );
 
       // Any authenticated user (tenant) can create an enrollment request
       allow create: if isAuth()
@@ -573,6 +583,18 @@ service cloud.firestore {
 
       // Only the tenant who created it can delete
       allow delete: if isAuth() && request.auth.uid == resource.data.tenantId;
+    }
+
+    // ───────────────────────────────
+    // PINBOARD NOTES
+    // ───────────────────────────────
+    match /pinboard/{noteId} {
+      allow read: if isAuth();
+      allow create: if isAuth()
+        && request.resource.data.authorId == request.auth.uid
+        && request.resource.data.propertyId is string;
+      allow update, delete: if isAuth()
+        && resource.data.authorId == request.auth.uid;
     }
   }
 }

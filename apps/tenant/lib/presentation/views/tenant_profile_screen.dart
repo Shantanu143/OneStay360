@@ -3,9 +3,15 @@ import 'package:flutter/services.dart';
 import 'widgets/tenant_scaffold.dart';
 import 'package:provider/provider.dart';
 import '../view_models/profile_viewmodel.dart';
+import '../theme/theme_provider.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'auth/login_screen.dart';
 import 'package:models/tenant/tenant_document_model.dart';
 import 'package:firebase_services/services/image_service.dart';
 import 'package:qr_flutter/qr_flutter.dart';
+import 'package:common_ui/common_ui.dart';
 
 class TenantProfileScreen extends StatelessWidget {
   const TenantProfileScreen({super.key});
@@ -22,12 +28,12 @@ class TenantProfileScreen extends StatelessWidget {
             children: [
               Container(
                 color: Colors.white,
-                child: const TabBar(
-                  labelColor: Color(0xFF0891B2),
+                child: TabBar(
+                  labelColor: Theme.of(context).primaryColor,
                   unselectedLabelColor: Colors.grey,
-                  indicatorColor: Color(0xFF0891B2),
+                  indicatorColor: Theme.of(context).primaryColor,
                   isScrollable: true,
-                  tabs: [
+                  tabs: const [
                     Tab(text: 'Overview'),
                     Tab(text: 'KYC'),
                     Tab(text: 'Documents'),
@@ -115,6 +121,15 @@ class _TenantOverviewTab extends StatelessWidget {
                 const SizedBox(height: 16),
                 Consumer<TenantProfileViewModel>(
                   builder: (context, vm, _) {
+                    if (vm.isLoading) {
+                      return const Padding(
+                        padding: EdgeInsets.symmetric(vertical: 4),
+                        child: LoadingSkeleton(
+                          width: 140,
+                          height: 24,
+                        ),
+                      );
+                    }
                     final name = vm.nameController.text.trim();
                     final displayName = name.isEmpty ? 'Tenant' : name;
                     return Text(
@@ -131,6 +146,15 @@ class _TenantOverviewTab extends StatelessWidget {
                 const SizedBox(height: 4),
                 Consumer<TenantProfileViewModel>(
                   builder: (context, vm, _) {
+                    if (vm.isLoading) {
+                      return const Padding(
+                        padding: EdgeInsets.only(top: 8),
+                        child: LoadingSkeleton(
+                          width: 180,
+                          height: 14,
+                        ),
+                      );
+                    }
                     final officeName = vm.officeInstituteNameController.text.trim();
                     if (officeName.isEmpty) {
                       return const SizedBox.shrink();
@@ -268,7 +292,9 @@ class _TenantOverviewTab extends StatelessWidget {
                             fontFamily: 'Geist',
                           ),
                         ),
-                        if (!vm.isOverviewEditMode)
+                        if (vm.isLoading)
+                          const SizedBox.shrink()
+                        else if (!vm.isOverviewEditMode)
                           IconButton(
                             icon: const Icon(Icons.edit_outlined),
                             onPressed: () {
@@ -380,6 +406,19 @@ class _TenantOverviewTab extends StatelessWidget {
                         ],
                       );
                     } else {
+                      if (vm.isLoading) {
+                        return Column(
+                          children: [
+                            _buildSkeletonRow(valueWidth: 120),
+                            _buildSkeletonRow(valueWidth: 100),
+                            _buildSkeletonRow(valueWidth: 140),
+                            _buildSkeletonRow(valueWidth: 110),
+                            _buildSkeletonRow(valueWidth: 130),
+                            _buildSkeletonRow(valueWidth: 160),
+                            _buildSkeletonRow(valueWidth: 90),
+                          ],
+                        );
+                      }
                       return Column(
                         children: [
                           _ViewRow(
@@ -483,7 +522,9 @@ class _TenantKYCTab extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const SizedBox.shrink(),
-                        if (!vm.isKYCEditMode)
+                        if (vm.isLoading)
+                          const SizedBox.shrink()
+                        else if (!vm.isKYCEditMode)
                           IconButton(
                             icon: const Icon(Icons.edit_outlined),
                             onPressed: () {
@@ -522,8 +563,7 @@ class _TenantKYCTab extends StatelessWidget {
                           );
                         }).toList(),
                         onChanged: (newValue) {
-                          vm.selectedGender = newValue;
-                          vm.notifyListeners();
+                          vm.updateGender(newValue);
                         },
                       ),
                       const SizedBox(height: 12),
@@ -570,8 +610,7 @@ class _TenantKYCTab extends StatelessWidget {
                           );
                         }).toList(),
                         onChanged: (newValue) {
-                          vm.selectedNationality = newValue;
-                          vm.notifyListeners();
+                          vm.updateNationality(newValue);
                         },
                       ),
                       const SizedBox(height: 12),
@@ -594,8 +633,7 @@ class _TenantKYCTab extends StatelessWidget {
                           );
                         }).toList(),
                         onChanged: (newValue) {
-                          vm.selectedMotherTongue = newValue;
-                          vm.notifyListeners();
+                          vm.updateMotherTongue(newValue);
                         },
                       ),
                       const SizedBox(height: 12),
@@ -618,8 +656,7 @@ class _TenantKYCTab extends StatelessWidget {
                           );
                         }).toList(),
                         onChanged: (newValue) {
-                          vm.selectedIdType = newValue;
-                          vm.notifyListeners();
+                          vm.updateIdType(newValue);
                         },
                       ),
                       const SizedBox(height: 12),
@@ -678,40 +715,49 @@ class _TenantKYCTab extends StatelessWidget {
                         ),
                       ),
                     ] else ...[
-                      _ViewRow(
-                        icon: Icons.person_outline,
-                        label: 'Gender',
-                        value: vm.selectedGender ?? 'Not provided',
-                      ),
-                      _ViewRow(
-                        icon: Icons.calendar_today_outlined,
-                        label: 'Date of Birth',
-                        value: vm.selectedDateOfBirth != null
-                            ? '${vm.selectedDateOfBirth!.day}/${vm.selectedDateOfBirth!.month}/${vm.selectedDateOfBirth!.year}'
-                            : 'Not provided',
-                      ),
-                      _ViewRow(
-                        icon: Icons.flag_outlined,
-                        label: 'Nationality',
-                        value: vm.selectedNationality ?? 'Not provided',
-                      ),
-                      _ViewRow(
-                        icon: Icons.language_outlined,
-                        label: 'Mother Tongue',
-                        value: vm.selectedMotherTongue ?? 'Not provided',
-                      ),
-                      _ViewRow(
-                        icon: Icons.badge_outlined,
-                        label: 'ID Type',
-                        value: vm.selectedIdType ?? 'Not provided',
-                      ),
-                      _ViewRow(
-                        icon: Icons.credit_card_outlined,
-                        label: 'ID Number',
-                        value: vm.idNumberController.text.trim().isEmpty 
-                            ? 'Not provided' 
-                            : vm.idNumberController.text.trim(),
-                      ),
+                      if (vm.isLoading) ...[
+                        _buildSkeletonRow(valueWidth: 80),
+                        _buildSkeletonRow(valueWidth: 100),
+                        _buildSkeletonRow(valueWidth: 90),
+                        _buildSkeletonRow(valueWidth: 110),
+                        _buildSkeletonRow(valueWidth: 130),
+                        _buildSkeletonRow(valueWidth: 150),
+                      ] else ...[
+                        _ViewRow(
+                          icon: Icons.person_outline,
+                          label: 'Gender',
+                          value: vm.selectedGender ?? 'Not provided',
+                        ),
+                        _ViewRow(
+                          icon: Icons.calendar_today_outlined,
+                          label: 'Date of Birth',
+                          value: vm.selectedDateOfBirth != null
+                              ? '${vm.selectedDateOfBirth!.day}/${vm.selectedDateOfBirth!.month}/${vm.selectedDateOfBirth!.year}'
+                              : 'Not provided',
+                        ),
+                        _ViewRow(
+                          icon: Icons.flag_outlined,
+                          label: 'Nationality',
+                          value: vm.selectedNationality ?? 'Not provided',
+                        ),
+                        _ViewRow(
+                          icon: Icons.language_outlined,
+                          label: 'Mother Tongue',
+                          value: vm.selectedMotherTongue ?? 'Not provided',
+                        ),
+                        _ViewRow(
+                          icon: Icons.badge_outlined,
+                          label: 'ID Type',
+                          value: vm.selectedIdType ?? 'Not provided',
+                        ),
+                        _ViewRow(
+                          icon: Icons.credit_card_outlined,
+                          label: 'ID Number',
+                          value: vm.idNumberController.text.trim().isEmpty 
+                              ? 'Not provided' 
+                              : vm.idNumberController.text.trim(),
+                        ),
+                      ],
                     ],
                   ],
                 );
@@ -731,7 +777,9 @@ class _TenantKYCTab extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.spaceBetween,
                       children: [
                         const SizedBox.shrink(),
-                        if (!vm.isAddressEditMode)
+                        if (vm.isLoading)
+                          const SizedBox.shrink()
+                        else if (!vm.isAddressEditMode)
                           IconButton(
                             icon: const Icon(Icons.edit_outlined),
                             onPressed: () {
@@ -829,27 +877,33 @@ class _TenantKYCTab extends StatelessWidget {
                         ),
                       ),
                     ] else ...[
-                      _ViewRow(
-                        icon: Icons.home_outlined,
-                        label: 'Address Line 1',
-                        value: vm.addressLine1Controller.text.trim().isEmpty 
-                            ? 'Not provided' 
-                            : vm.addressLine1Controller.text.trim(),
-                      ),
-                      _ViewRow(
-                        icon: Icons.location_city_outlined,
-                        label: 'City',
-                        value: vm.cityController.text.trim().isEmpty 
-                            ? 'Not provided' 
-                            : vm.cityController.text.trim(),
-                      ),
-                      _ViewRow(
-                        icon: Icons.pin_outlined,
-                        label: 'Pincode',
-                        value: vm.pincodeController.text.trim().isEmpty 
-                            ? 'Not provided' 
-                            : vm.pincodeController.text.trim(),
-                      ),
+                      if (vm.isLoading) ...[
+                        _buildSkeletonRow(valueWidth: 200),
+                        _buildSkeletonRow(valueWidth: 120),
+                        _buildSkeletonRow(valueWidth: 80),
+                      ] else ...[
+                        _ViewRow(
+                          icon: Icons.home_outlined,
+                          label: 'Address Line 1',
+                          value: vm.addressLine1Controller.text.trim().isEmpty 
+                              ? 'Not provided' 
+                              : vm.addressLine1Controller.text.trim(),
+                        ),
+                        _ViewRow(
+                          icon: Icons.location_city_outlined,
+                          label: 'City',
+                          value: vm.cityController.text.trim().isEmpty 
+                              ? 'Not provided' 
+                              : vm.cityController.text.trim(),
+                        ),
+                        _ViewRow(
+                          icon: Icons.pin_outlined,
+                          label: 'Pincode',
+                          value: vm.pincodeController.text.trim().isEmpty 
+                              ? 'Not provided' 
+                              : vm.pincodeController.text.trim(),
+                        ),
+                      ],
                     ],
                   ],
                 );
@@ -874,18 +928,26 @@ class _TenantDocumentsTab extends StatelessWidget {
           children: [
             _SectionCard(
               title: 'Uploaded Documents',
-              child: vm.documents.isEmpty
-                  ? Padding(
-                      padding: const EdgeInsets.all(16.0),
-                      child: Text(
-                        'No documents uploaded yet',
-                        style: TextStyle(
-                          color: Colors.grey[600],
-                          fontSize: 14,
-                        ),
-                        textAlign: TextAlign.center,
-                      ),
+              child: vm.isLoading
+                  ? Column(
+                      children: [
+                        _buildSkeletonDocTile(),
+                        const Divider(),
+                        _buildSkeletonDocTile(),
+                      ],
                     )
+                  : vm.documents.isEmpty
+                      ? Padding(
+                          padding: const EdgeInsets.all(16.0),
+                          child: Text(
+                            'No documents uploaded yet',
+                            style: TextStyle(
+                              color: Colors.grey[600],
+                              fontSize: 14,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                        )
                   : Column(
                       children: [
                         ...vm.documents.map((doc) {
@@ -1085,8 +1147,121 @@ class _TenantDocumentsTab extends StatelessWidget {
 class _TenantSettingsTab extends StatelessWidget {
   const _TenantSettingsTab();
 
+  void _showThemeSelectorSheet(BuildContext context, ThemeProvider themeProvider) {
+    HapticFeedback.mediumImpact();
+    showModalBottomSheet(
+      context: context,
+      backgroundColor: Colors.white,
+      shape: const RoundedRectangleBorder(
+        borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+      ),
+      builder: (context) {
+        return SafeArea(
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const SizedBox(height: 8),
+              Container(
+                width: 40,
+                height: 4,
+                decoration: BoxDecoration(
+                  color: Colors.grey[300],
+                  borderRadius: BorderRadius.circular(2),
+                ),
+              ),
+              const SizedBox(height: 16),
+              const Text(
+                'Choose App Theme',
+                style: TextStyle(
+                  fontSize: 18,
+                  fontWeight: FontWeight.bold,
+                  color: Color(0xFF1E293B),
+                ),
+              ),
+              const SizedBox(height: 8),
+              const Divider(),
+              _buildThemeOptionTile(context, themeProvider, AppThemeType.indigo, 'Royal Indigo (Premium)', const Color(0xFF4F46E5)),
+              _buildThemeOptionTile(context, themeProvider, AppThemeType.cyan, 'Ocean Cyan (Original)', const Color(0xFF06B6D4)),
+              _buildThemeOptionTile(context, themeProvider, AppThemeType.amber, 'Golden Hour (Warm)', const Color(0xFFD97706)),
+              _buildThemeOptionTile(context, themeProvider, AppThemeType.emerald, 'Forest Premium (Fresh)', const Color(0xFF059669)),
+              _buildThemeOptionTile(context, themeProvider, AppThemeType.plum, 'Sunset Chic (Bold)', const Color(0xFF6D28D9)),
+              const SizedBox(height: 16),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildThemeOptionTile(
+    BuildContext context,
+    ThemeProvider themeProvider,
+    AppThemeType type,
+    String label,
+    Color color,
+  ) {
+    final isSelected = themeProvider.themeType == type;
+    return InkWell(
+      onTap: () {
+        HapticFeedback.selectionClick();
+        themeProvider.updateTheme(type);
+        Navigator.pop(context);
+      },
+      child: Container(
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
+        color: isSelected ? color.withOpacity(0.05) : null,
+        child: Row(
+          children: [
+            Container(
+              width: 24,
+              height: 24,
+              decoration: BoxDecoration(
+                color: color,
+                shape: BoxShape.circle,
+                border: Border.all(
+                  color: Colors.white,
+                  width: 2,
+                ),
+                boxShadow: [
+                  BoxShadow(
+                    color: color.withOpacity(0.3),
+                    blurRadius: 4,
+                    offset: const Offset(0, 2),
+                  ),
+                ],
+              ),
+            ),
+            const SizedBox(width: 16),
+            Text(
+              label,
+              style: TextStyle(
+                fontSize: 14,
+                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
+                color: isSelected ? color : const Color(0xFF1E293B),
+              ),
+            ),
+            const Spacer(),
+            if (isSelected)
+              Icon(
+                Icons.check_circle_rounded,
+                color: color,
+                size: 20,
+              )
+            else
+              Icon(
+                Icons.circle_outlined,
+                color: Colors.grey[300],
+                size: 20,
+              ),
+          ],
+        ),
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
+    final themeProvider = Provider.of<ThemeProvider>(context);
     return ListView(
       padding: const EdgeInsets.all(16),
       children: [
@@ -1104,47 +1279,68 @@ class _TenantSettingsTab extends StatelessWidget {
             ],
           ),
           child: Column(
-            children: const [
+            children: [
+              _SettingItem(
+                icon: Icons.palette_rounded,
+                title: 'App Theme',
+                subtitle: 'Current: ${themeProvider.themeName}',
+                color: themeProvider.primaryColor,
+                onTap: () => _showThemeSelectorSheet(context, themeProvider),
+              ),
+              const _SettingsDivider(),
               _SettingItem(
                 icon: Icons.lock_rounded,
                 title: 'Change Password',
                 subtitle: 'Update your password',
-                color: Color(0xFF3b82f6),
+                color: const Color(0xFF3b82f6),
+                onTap: () {},
               ),
-              _SettingsDivider(),
+              const _SettingsDivider(),
               _SettingItem(
                 icon: Icons.notifications_rounded,
                 title: 'Notifications',
                 subtitle: 'Manage notification preferences',
-                color: Color(0xFFf97316),
+                color: const Color(0xFFf97316),
+                onTap: () {},
               ),
-              _SettingsDivider(),
+              const _SettingsDivider(),
               _SettingItem(
                 icon: Icons.payment_rounded,
                 title: 'Payment Methods',
                 subtitle: 'Manage payment options',
-                color: Color(0xFF34d399),
+                color: const Color(0xFF34d399),
+                onTap: () {},
               ),
-              _SettingsDivider(),
+              const _SettingsDivider(),
               _SettingItem(
                 icon: Icons.help_rounded,
                 title: 'Help & Support',
                 subtitle: 'Get help and contact support',
-                color: Color(0xFFec4899),
+                color: const Color(0xFFec4899),
+                onTap: () {},
               ),
-              _SettingsDivider(),
               _SettingItem(
                 icon: Icons.privacy_tip_rounded,
                 title: 'Privacy Policy',
                 subtitle: 'Read our privacy policy',
-                color: Color(0xFF9333ea),
+                color: const Color(0xFF9333ea),
+                onTap: () => _openPrivacyPolicy(context),
               ),
-              _SettingsDivider(),
+              const _SettingsDivider(),
               _SettingItem(
                 icon: Icons.logout_rounded,
                 title: 'Logout',
                 subtitle: 'Sign out of your account',
-                color: Color(0xFFbe123c),
+                color: const Color(0xFFbe123c),
+                onTap: () => _confirmSignOut(context),
+              ),
+              const _SettingsDivider(),
+              _SettingItem(
+                icon: Icons.delete_forever_rounded,
+                title: 'Delete Account',
+                subtitle: 'Permanently remove your account and personal data',
+                color: Colors.red.shade700,
+                onTap: () => _confirmDeleteAccount(context),
               ),
             ],
           ),
@@ -1165,9 +1361,195 @@ class _TenantSettingsTab extends StatelessWidget {
       ],
     );
   }
+
+  Future<void> _openPrivacyPolicy(BuildContext context) async {
+    final uri = Uri.parse('https://onestay360.brandedpatil.in/privacy');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please visit https://onestay360.brandedpatil.in/privacy')),
+        );
+      }
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open privacy policy.')),
+      );
+    }
+  }
+
+  Future<void> _confirmSignOut(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Sign Out'),
+        content: const Text('Are you sure you want to sign out of your account?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFbe123c)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sign Out', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await FirebaseAuth.instance.signOut();
+      if (!context.mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen(userType: 'tenant')),
+        (route) => false,
+      );
+    }
+  }
+
+  Future<void> _confirmDeleteAccount(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Delete Account?'),
+          ],
+        ),
+        content: const Text(
+          'This action is irreversible. All your profile data, document references, and account credentials will be permanently erased.',
+          style: TextStyle(height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Permanently Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !context.mounted) return;
+
+    // Show loading overlay
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable('deleteUserAccount');
+      await callable.call();
+      await FirebaseAuth.instance.signOut();
+
+      if (!context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen(userType: 'tenant')),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete account: $e'), backgroundColor: Colors.red),
+      );
+    }
+  }
 }
 
 // Reusable widgets
+
+Widget _buildSkeletonRow({double valueWidth = 140}) {
+  return Padding(
+    padding: const EdgeInsets.only(bottom: 16),
+    child: Row(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        const LoadingSkeleton(
+          width: 20,
+          height: 20,
+          borderRadius: BorderRadius.all(Radius.circular(4)),
+        ),
+        const SizedBox(width: 12),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const LoadingSkeleton(
+                width: 80,
+                height: 12,
+              ),
+              const SizedBox(height: 6),
+              LoadingSkeleton(
+                width: valueWidth,
+                height: 16,
+              ),
+            ],
+          ),
+        ),
+      ],
+    ),
+  );
+}
+
+Widget _buildSkeletonDocTile() {
+  return Padding(
+    padding: const EdgeInsets.symmetric(vertical: 8.0),
+    child: Row(
+      children: [
+        const LoadingSkeleton(
+          width: 40,
+          height: 40,
+          borderRadius: BorderRadius.all(Radius.circular(8)),
+        ),
+        const SizedBox(width: 16),
+        Expanded(
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const LoadingSkeleton(
+                width: 120,
+                height: 16,
+              ),
+              const SizedBox(height: 6),
+              const LoadingSkeleton(
+                width: 160,
+                height: 12,
+              ),
+            ],
+          ),
+        ),
+        const SizedBox(width: 16),
+        const LoadingSkeleton(
+          width: 32,
+          height: 32,
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+        ),
+        const SizedBox(width: 8),
+        const LoadingSkeleton(
+          width: 32,
+          height: 32,
+          borderRadius: BorderRadius.all(Radius.circular(16)),
+        ),
+      ],
+    ),
+  );
+}
 
 class _StatItem extends StatelessWidget {
   final String value;
@@ -1413,18 +1795,20 @@ class _SettingItem extends StatelessWidget {
   final String title;
   final String subtitle;
   final Color color;
+  final VoidCallback? onTap;
 
   const _SettingItem({
     required this.icon,
     required this.title,
     required this.subtitle,
     required this.color,
+    this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => HapticFeedback.lightImpact(),
+      onTap: onTap ?? () => HapticFeedback.lightImpact(),
       child: Container(
         padding: const EdgeInsets.all(20),
         child: Row(

@@ -71,7 +71,7 @@ class ReportsScreen extends StatelessWidget {
                 ),
               ),
               const SizedBox(height: 24),
-              ...properties.map((property) => _buildPropertyReportCard(context, property, viewModel)).toList(),
+              ...properties.map((property) => _buildPropertyReportCard(context, property, viewModel)),
             ],
           ),
         );

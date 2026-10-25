@@ -12,9 +12,8 @@ export 'business/property/meal_enum.dart';
 export 'business/business_notification_model.dart';
 
 // Tenant Models
-export 'tenant/tenant_model.dart';
+export 'business/tenant_model.dart';
 export 'tenant/tenant_document_model.dart';
-export 'tenant/tenant_invitation_model.dart';
 export 'tenant_request_model.dart';
 export 'business/tenant_invitation_model.dart';
 

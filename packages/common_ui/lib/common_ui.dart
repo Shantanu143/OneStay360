@@ -1,4 +1,4 @@
-library common_ui;
+library;
 
 export 'widgets/empty_state_widget.dart';
 export 'widgets/error_state_widget.dart';

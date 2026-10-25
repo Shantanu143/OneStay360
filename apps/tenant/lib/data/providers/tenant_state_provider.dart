@@ -15,6 +15,7 @@ class TenantStateProvider with ChangeNotifier {
   String _bedId = '';
   int _unreadNotificationsCount = 0;
   Map<String, dynamic> _tenantData = {};
+  bool _isDisposed = false;
 
   // Getters
   String get fullName => _fullName;
@@ -110,6 +111,8 @@ class TenantStateProvider with ChangeNotifier {
 
   @override
   void dispose() {
+    if (_isDisposed) return;
+    _isDisposed = true;
     _userSub?.cancel();
     _tenantSub?.cancel();
     super.dispose();
@@ -118,7 +121,7 @@ class TenantStateProvider with ChangeNotifier {
   void updateUnreadNotificationsCount(int count) {
     if (count != _unreadNotificationsCount) {
       _unreadNotificationsCount = count;
-      notifyListeners();
+      if (!_isDisposed) notifyListeners();
     }
   }
 }

@@ -26,7 +26,7 @@ class TenantScaffold extends StatefulWidget {
   final List<Widget>? actions;
   final PreferredSizeWidget? appBarBottom;
   final FloatingActionButton? floatingActionButton;
-  final Color primaryColor;
+  final Color? primaryColor;
   final bool showBackButton;
   final String? tenantId;
 
@@ -39,7 +39,7 @@ class TenantScaffold extends StatefulWidget {
     this.actions,
     this.appBarBottom,
     this.floatingActionButton,
-    this.primaryColor = const Color(0xFF06B6D4),
+    this.primaryColor,
     this.showBackButton = false,
     this.tenantId,
   });
@@ -221,9 +221,21 @@ class _TenantScaffoldState extends State<TenantScaffold> {
     return [notificationIcon, supportIcon, settingsIcon];
   }
 
-  Future<void> _openNotifications(BuildContext context) async {
+  /// Get cached tenant ID synchronously
+  String _getTenantId(TenantStateProvider tenantState) {
+    if (widget.tenantId != null && widget.tenantId!.isNotEmpty) {
+      return widget.tenantId!;
+    }
+    if (tenantState.tenantId.isNotEmpty) {
+      return tenantState.tenantId;
+    }
+    return FirebaseAuth.instance.currentUser?.uid ?? 'default_tenant_id';
+  }
+
+  void _openNotifications(BuildContext context) {
     HapticFeedback.lightImpact();
-    final tenantId = await _getTenantId();
+    final tenantState = Provider.of<TenantStateProvider>(context, listen: false);
+    final tenantId = _getTenantId(tenantState);
     Navigator.push(
       context,
       MaterialPageRoute(
@@ -232,82 +244,48 @@ class _TenantScaffoldState extends State<TenantScaffold> {
     );
   }
 
-  String _getDefaultTitle(TenantTab tab) {
-    switch (tab) {
-      case TenantTab.home:
-        return 'Home';
-      case TenantTab.explore:
-        return 'Explore PGs';
-      case TenantTab.mypg:
-        return 'My PG';
-      case TenantTab.profile:
-        return 'Profile';
-    }
-  }
-
-  /// Fetch current tenant ID
-  Future<String> _getTenantId() async {
-    if (widget.tenantId != null && widget.tenantId!.isNotEmpty) {
-      return widget.tenantId!;
-    }
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final userDoc = await FirebaseFirestore.instance.collection('users').doc(user.uid).get();
-      if (userDoc.exists) {
-        final userData = userDoc.data()!;
-        return userData['tenantId'] as String? ?? user.uid;
-      }
-      return user.uid;
-    }
-
-    return 'default_tenant_id';
-  }
-
-  /// ✅ Updated Navigation Handler
-  void _handleNavTap(BuildContext context, int index) async {
+  /// Instantaneous Bottom Navigation Handler
+  void _handleNavTap(BuildContext context, int index) {
     HapticFeedback.lightImpact();
 
     if (index == _currentIndex) return;
 
-    final actualTenantId = await _getTenantId();
     final tenantState = Provider.of<TenantStateProvider>(context, listen: false);
+    final actualTenantId = _getTenantId(tenantState);
 
+    Widget destination;
     switch (index) {
       case 0:
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (_) => TenantHomeScreen(
-              tenantId: actualTenantId,
-              tenantName: tenantState.fullName, // ✅ Added Tenant Name
-            ),
-          ),
-              (route) => false,
+        destination = TenantHomeScreen(
+          tenantId: actualTenantId,
+          tenantName: tenantState.fullName,
         );
         break;
       case 1:
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const ExploreScreen()),
-              (route) => false,
-        );
+        destination = const ExploreScreen();
         break;
       case 2:
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const MyPGScreen()),
-              (route) => false,
-        );
+        destination = const MyPGScreen();
         break;
       case 3:
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const TenantProfileScreen()),
-              (route) => false,
-        );
+      default:
+        destination = const TenantProfileScreen();
         break;
     }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => destination,
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+      (route) => false,
+    );
   }
 
   @override
   Widget build(BuildContext context) {
+    final activePrimaryColor = widget.primaryColor ?? Theme.of(context).primaryColor;
     return Consumer<TenantStateProvider>(
       builder: (context, tenantState, child) {
         return Scaffold(
@@ -333,7 +311,7 @@ class _TenantScaffoldState extends State<TenantScaffold> {
           bottomNavigationBar: BottomNavigationBar(
             currentIndex: _currentIndex,
             backgroundColor: Colors.white,
-            selectedItemColor: widget.primaryColor,
+            selectedItemColor: activePrimaryColor,
             unselectedItemColor: Colors.grey.shade500,
             type: BottomNavigationBarType.fixed,
             selectedLabelStyle: const TextStyle(fontWeight: FontWeight.w600),

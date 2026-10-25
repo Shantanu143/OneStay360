@@ -7,6 +7,9 @@ import 'payment_methods_screen.dart';
 import '../../data/providers/business_state_provider.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:cloud_functions/cloud_functions.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'auth/login_screen.dart';
 import 'member_profile_screen.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 
@@ -168,16 +171,7 @@ class _BusinessOverviewTabState extends State<_BusinessOverviewTab> {
         ),
         const SizedBox(height: 16),
         if (isOwner)
-          const _CardSection(
-            title: 'Business Stats',
-            child: _StatsRow(
-              items: [
-                _Stat(value: '12', label: 'Properties'),
-                _Stat(value: '98', label: 'Tenants'),
-                _Stat(value: '85%', label: 'Occupancy'),
-              ],
-            ),
-          )
+          _LiveBusinessStats(businessId: businessState.businessId)
         else
           _LockedSection(title: 'Business stats', reason: 'Owners see the full analytics.'),
       ],
@@ -1233,18 +1227,140 @@ class _BusinessSettingsTab extends StatelessWidget {
             ),
             const _RowDivider(),
             _SettingRow(
+              icon: Icons.privacy_tip_outlined,
+              title: 'Privacy Policy',
+              subtitle: 'Read our privacy practices',
+              color: const Color(0xFF8b5cf6),
+              onTap: () => _openPrivacyPolicy(context),
+            ),
+            const _RowDivider(),
+            _SettingRow(
               icon: Icons.logout_outlined,
               title: 'Logout',
               subtitle: 'Sign out of this account',
               color: const Color(0xFFef4444),
-              onTap: () {
-                FirebaseAuth.instance.signOut();
-              },
+              onTap: () => _confirmSignOut(context),
+            ),
+            const _RowDivider(),
+            _SettingRow(
+              icon: Icons.delete_forever_outlined,
+              title: 'Delete Account',
+              subtitle: 'Permanently remove your account and data',
+              color: Colors.red.shade700,
+              onTap: () => _confirmDeleteAccount(context),
             ),
           ],
         ),
       ],
     );
+  }
+
+  static Future<void> _openPrivacyPolicy(BuildContext context) async {
+    final uri = Uri.parse('https://onestay360.brandedpatil.in/privacy');
+    try {
+      if (await canLaunchUrl(uri)) {
+        await launchUrl(uri, mode: LaunchMode.externalApplication);
+      } else {
+        if (!context.mounted) return;
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Please visit https://onestay360.brandedpatil.in/privacy')),
+        );
+      }
+    } catch (_) {
+      if (!context.mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Could not open privacy policy.')),
+      );
+    }
+  }
+
+  static Future<void> _confirmSignOut(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Text('Sign Out'),
+        content: const Text('Are you sure you want to sign out?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: const Color(0xFFef4444)),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Sign Out', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await FirebaseAuth.instance.signOut();
+      if (!context.mounted) return;
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen(userType: 'business')),
+        (route) => false,
+      );
+    }
+  }
+
+  static Future<void> _confirmDeleteAccount(BuildContext context) async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.warning_amber_rounded, color: Colors.red),
+            SizedBox(width: 8),
+            Text('Delete Account?'),
+          ],
+        ),
+        content: const Text(
+          'This action is irreversible. Your credentials and profile data will be permanently deleted.',
+          style: TextStyle(height: 1.4),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx, false),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            style: ElevatedButton.styleFrom(backgroundColor: Colors.red.shade700),
+            onPressed: () => Navigator.pop(ctx, true),
+            child: const Text('Permanently Delete', style: TextStyle(color: Colors.white)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm != true || !context.mounted) return;
+
+    showDialog(
+      context: context,
+      barrierDismissible: false,
+      builder: (_) => const Center(child: CircularProgressIndicator()),
+    );
+
+    try {
+      final callable = FirebaseFunctions.instance.httpsCallable('deleteUserAccount');
+      await callable.call();
+      await FirebaseAuth.instance.signOut();
+
+      if (!context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+      Navigator.of(context).pushAndRemoveUntil(
+        MaterialPageRoute(builder: (_) => const LoginScreen(userType: 'business')),
+        (route) => false,
+      );
+    } catch (e) {
+      if (!context.mounted) return;
+      Navigator.of(context, rootNavigator: true).pop(); // dismiss loading
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Failed to delete account: $e'), backgroundColor: Colors.red),
+      );
+    }
   }
 }
 
@@ -1497,6 +1613,91 @@ class _Stat {
   final String value;
   final String label;
   const _Stat({required this.value, required this.label});
+}
+
+/// Fetches live property count, active tenant count, and occupancy rate
+/// from Firestore and renders them in the same style as the old hardcoded stats.
+class _LiveBusinessStats extends StatelessWidget {
+  final String? businessId;
+  const _LiveBusinessStats({required this.businessId});
+
+  @override
+  Widget build(BuildContext context) {
+    if (businessId == null || businessId!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return FutureBuilder<_BusinessStatsData>(
+      future: _fetchStats(businessId!),
+      builder: (context, snapshot) {
+        final data = snapshot.data;
+        final loading = snapshot.connectionState == ConnectionState.waiting;
+
+        final properties = loading ? '…' : data!.properties.toString();
+        final tenants    = loading ? '…' : data!.tenants.toString();
+        final occupancy  = loading
+            ? '…'
+            : data!.totalBeds == 0
+                ? '0%'
+                : '${((data.tenants / data.totalBeds) * 100).clamp(0, 100).toStringAsFixed(0)}%';
+
+        return _CardSection(
+          title: 'Business Stats',
+          child: _StatsRow(
+            items: [
+              _Stat(value: properties, label: 'Properties'),
+              _Stat(value: tenants,    label: 'Tenants'),
+              _Stat(value: occupancy,  label: 'Occupancy'),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Future<_BusinessStatsData> _fetchStats(String businessId) async {
+    final db = FirebaseFirestore.instance;
+
+    // Properties + total bed count
+    final propsSnap = await db
+        .collection('businesses')
+        .doc(businessId)
+        .collection('properties')
+        .get();
+
+    int totalBeds = 0;
+    for (final doc in propsSnap.docs) {
+      totalBeds += ((doc.data()['totalBeds'] as num?)?.toInt() ?? 0);
+    }
+
+    // Active tenants (business-scoped collection)
+    final tenantsSnap = await db
+        .collection('businesses')
+        .doc(businessId)
+        .collection('tenants')
+        .where('status', isEqualTo: 'active')
+        .count()
+        .get();
+
+    final tenantCount = tenantsSnap.count ?? 0;
+
+    return _BusinessStatsData(
+      properties: propsSnap.docs.length,
+      tenants: tenantCount,
+      totalBeds: totalBeds,
+    );
+  }
+}
+
+class _BusinessStatsData {
+  final int properties;
+  final int tenants;
+  final int totalBeds;
+  const _BusinessStatsData({
+    required this.properties,
+    required this.tenants,
+    required this.totalBeds,
+  });
 }
 
 class _SettingsCard extends StatelessWidget {

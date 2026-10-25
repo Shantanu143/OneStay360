@@ -94,14 +94,15 @@ class _EditPaymentMethodScreenState extends State<EditPaymentMethodScreen> {
     if (widget.method.type != 'razorpay') return;
     try {
       final snap = await FirebaseFirestore.instance
-          .doc('businesses/${widget.businessId}/settings/razorpay_private')
+          .doc('businesses/${widget.businessId}/settings/razorpay')
           .get();
       if (!snap.exists) return;
       final data = snap.data() ?? {};
       setState(() {
-        _existingKeyIdLast4 = _last4((data['keyId'] ?? data['key_id'] ?? '').toString());
-        _existingKeySecretLast4 = _last4((data['keySecret'] ?? data['key_secret'] ?? '').toString());
-        _existingWebhookLast4 = _last4((data['webhookSecret'] ?? data['webhook_secret'] ?? '').toString());
+        final hint = (data['keyIdHint'] ?? data['merchantId'] ?? '').toString();
+        _existingKeyIdLast4 = hint.isNotEmpty ? hint : 'configured';
+        _existingKeySecretLast4 = (data['hasSecret'] == true || data['verified'] == true) ? '••••' : '';
+        _existingWebhookLast4 = data['hasWebhookSecret'] == true ? '••••' : '';
       });
     } catch (e) {
       // Ignore loading errors to avoid blocking edit flow.

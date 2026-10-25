@@ -3,6 +3,8 @@
 
 import 'dart:math';
 import 'package:flutter/material.dart';
+import 'package:flutter/gestures.dart';
+import 'package:url_launcher/url_launcher.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:google_sign_in/google_sign_in.dart';
 import 'package:firebase_services/services/firestore_service.dart';
@@ -747,12 +749,51 @@ class _LoginScreenState extends State<LoginScreen>
                         const SizedBox(height: 40),
 
                         // Terms and privacy
-                        Text(
-                          'By continuing, you agree to our Terms of Service and Privacy Policy',
-                          textAlign: TextAlign.center,
-                          style: TextStyle(
-                            fontSize: 12,
-                            color: Colors.grey.shade500,
+                        Center(
+                          child: Text.rich(
+                            TextSpan(
+                              text: 'By continuing, you agree to our ',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.grey.shade600,
+                              ),
+                              children: [
+                                TextSpan(
+                                  text: 'Terms of Service',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: _primaryColor,
+                                    fontWeight: FontWeight.w600,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                  recognizer: TapGestureRecognizer()
+                                    ..onTap = () async {
+                                      final uri = Uri.parse('https://onestay360.brandedpatil.in/terms');
+                                      if (await canLaunchUrl(uri)) {
+                                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                      }
+                                    },
+                                ),
+                                const TextSpan(text: ' and '),
+                                TextSpan(
+                                  text: 'Privacy Policy',
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    color: _primaryColor,
+                                    fontWeight: FontWeight.w600,
+                                    decoration: TextDecoration.underline,
+                                  ),
+                                  recognizer: TapGestureRecognizer()
+                                    ..onTap = () async {
+                                      final uri = Uri.parse('https://onestay360.brandedpatil.in/privacy');
+                                      if (await canLaunchUrl(uri)) {
+                                        await launchUrl(uri, mode: LaunchMode.externalApplication);
+                                      }
+                                    },
+                                ),
+                              ],
+                            ),
+                            textAlign: TextAlign.center,
                           ),
                         ),
                       ],

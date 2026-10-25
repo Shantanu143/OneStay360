@@ -1,8 +1,8 @@
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
+import '../presentation/views/bill_review_screen.dart';
 
 /// Service to handle FCM device token registration and management for tenant app
 class DeviceTokenService {
@@ -166,6 +166,14 @@ class DeviceTokenService {
         case 'enrollment_rejected':
           _handleEnrollmentRejectedNotification(data);
           break;
+        case 'rent_due':
+        case 'rent_overdue':
+          _handleRentDueNotification(data);
+          break;
+        case 'rent_payment_update':
+        case 'rent_payment_verified':
+          _handleRentPaymentUpdateNotification(data);
+          break;
         default:
           debugPrint('Unknown notification type: $type');
       }
@@ -180,11 +188,24 @@ class DeviceTokenService {
     debugPrint('  Property: ${data['propertyName']}');
     debugPrint('  Amount: ${data['totalAmount']}');
 
-    // Navigate to bill payment screen if navigator key is available
-    if (navigatorKey?.currentState != null) {
-      // TODO: Navigate to enrollment payment screen
-      debugPrint('🚀 Would navigate to payment screen');
+    final requestId = data['requestId']?.toString() ?? '';
+    if (requestId.isEmpty) {
+      debugPrint('⚠️ bill_sent notification missing requestId, cannot navigate');
+      return;
     }
+
+    final nav = navigatorKey?.currentState;
+    if (nav == null) {
+      debugPrint('⚠️ Navigator not ready yet for bill_sent navigation');
+      return;
+    }
+
+    nav.push(
+      MaterialPageRoute(
+        builder: (_) => BillReviewScreen(enrollmentRequestId: requestId),
+      ),
+    );
+    debugPrint('🚀 Navigated to BillReviewScreen for request: $requestId');
   }
 
   void _handleEnrollmentApprovedNotification(Map<String, dynamic> data) {
@@ -197,6 +218,30 @@ class DeviceTokenService {
     debugPrint('❌ Enrollment rejected notification:');
     debugPrint('  Request ID: ${data['requestId']}');
     debugPrint('  Property: ${data['propertyName']}');
+  }
+
+  /// Handles rent_due and rent_overdue — navigates to My PG tab so tenant
+  /// sees the invoice banner and can tap Pay Rent.
+  void _handleRentDueNotification(Map<String, dynamic> data) {
+    debugPrint('💰 Rent due/overdue notification received');
+    final nav = navigatorKey?.currentState;
+    if (nav == null) {
+      debugPrint('⚠️ Navigator not ready for rent_due navigation');
+      return;
+    }
+    // Pop to root and let the home screen show the My PG tab with the invoice.
+    // The My PG screen has a real-time StreamBuilder that will show the invoice.
+    nav.pushNamedAndRemoveUntil('/authWrapper', (route) => false);
+    debugPrint('🚀 Navigated to home for rent due notification');
+  }
+
+  /// Handles rent_payment_update / rent_payment_verified — navigates to My PG
+  /// so tenant sees the updated payment status.
+  void _handleRentPaymentUpdateNotification(Map<String, dynamic> data) {
+    debugPrint('✅ Rent payment update notification received');
+    final nav = navigatorKey?.currentState;
+    if (nav == null) return;
+    nav.pushNamedAndRemoveUntil('/authWrapper', (route) => false);
   }
 
   /// Update last seen timestamp

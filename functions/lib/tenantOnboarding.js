@@ -338,6 +338,7 @@ async function handleEnrollmentApproved(requestId, enrollment) {
             tx.set(paymentRef, {
                 id: paymentRef.id,
                 tenantId: tenantDocId,
+                businessId,
                 amount: totalFirstMonth,
                 month: _getMonthLabel(moveInDate || now),
                 date: now,

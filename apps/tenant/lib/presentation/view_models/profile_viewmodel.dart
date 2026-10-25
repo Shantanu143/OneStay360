@@ -50,6 +50,26 @@ class TenantProfileViewModel extends ChangeNotifier {
   String? selectedGender;
   DateTime? selectedDateOfBirth;
 
+  void updateNationality(String? value) {
+    selectedNationality = value;
+    notifyListeners();
+  }
+
+  void updateMotherTongue(String? value) {
+    selectedMotherTongue = value;
+    notifyListeners();
+  }
+
+  void updateIdType(String? value) {
+    selectedIdType = value;
+    notifyListeners();
+  }
+
+  void updateGender(String? value) {
+    selectedGender = value;
+    notifyListeners();
+  }
+
   // Editable fields - Overview Tab
   final TextEditingController nameController = TextEditingController();
   final TextEditingController mobileNumberController = TextEditingController();
@@ -71,6 +91,8 @@ class TenantProfileViewModel extends ChangeNotifier {
   final TextEditingController pincodeController = TextEditingController();
 
   bool isSaving = false;
+  bool _isLoading = true;
+  bool get isLoading => _isLoading;
   String? errorMessage;
   bool isUploadingDocument = false;
 
@@ -149,7 +171,14 @@ class TenantProfileViewModel extends ChangeNotifier {
 
   Future<void> load() async {
     final user = _auth.currentUser;
-    if (user == null) return;
+    if (user == null) {
+      _isLoading = false;
+      notifyListeners();
+      return;
+    }
+
+    _isLoading = true;
+    notifyListeners();
 
     try {
       final userDoc = await _firestore.collection('users').doc(user.uid).get();
@@ -215,11 +244,11 @@ class TenantProfileViewModel extends ChangeNotifier {
       if (tenantIdFromUser != null && tenantIdFromUser.isNotEmpty) {
         await _loadDocuments(user.uid);
       }
-
-      notifyListeners();
     } catch (e) {
       debugPrint('Error loading profile: $e');
       errorMessage = 'Error loading profile: $e';
+    } finally {
+      _isLoading = false;
       notifyListeners();
     }
   }

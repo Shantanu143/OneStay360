@@ -2,11 +2,11 @@ import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:provider/provider.dart';
 import 'widgets/tenant_scaffold.dart';
-import '../../data/providers/tenant_state_provider.dart';
+import 'widgets/pinboard_widget.dart';
 import 'explore_screen.dart';
+import '../../data/providers/tenant_state_provider.dart';
 import 'my_pg_screen.dart';
 import 'tenant_profile_screen.dart';
-import 'enroll_request_screen.dart';
 import 'bill_review_screen.dart';
 import 'rent_payment_screen.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
@@ -60,15 +60,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
     super.dispose();
   }
 
-  void _openEnrollRequest() {
-    HapticFeedback.lightImpact();
-    Navigator.push(
-      context,
-      MaterialPageRoute(
-        builder: (_) => const EnrollRequestScreen(),
-      ),
-    );
-  }
+
 
   void _onBottomNavTap(int index) {
     setState(() {
@@ -444,10 +436,14 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
                     );
                   }
                 ),
-                const SizedBox(height: 32),
+                 if (tenantState.propertyId.isNotEmpty) ...[
+                   const SizedBox(height: 32),
+                   PinboardWidget(propertyId: tenantState.propertyId),
+                 ],
+                 const SizedBox(height: 32),
 
-                const Text(
-                  'Quick Actions',
+                 const Text(
+                   'Quick Actions',
                   style: TextStyle(
                     fontSize: 20,
                     fontWeight: FontWeight.w800,
@@ -476,12 +472,7 @@ class _TenantHomeScreenState extends State<TenantHomeScreen>
                         );
                       },
                     ),
-                    _buildQuickActionCard(
-                      'Enroll Request',
-                      Icons.assignment_turned_in_outlined,
-                      const Color(0xFF3B82F6),
-                      _openEnrollRequest,
-                    ),
+
                     _buildQuickActionCard(
                       'Maintenance',
                       Icons.build_circle_outlined,

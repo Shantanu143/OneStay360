@@ -5,10 +5,38 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 import 'widgets/tenant_scaffold.dart';
 import 'pg_detail_screen.dart';
 import 'rent_payment_screen.dart';
+import 'explore_screen.dart';
+import 'home_screen.dart';
 import '../../data/providers/tenant_state_provider.dart';
 
-class MyPGScreen extends StatelessWidget {
+class MyPGScreen extends StatefulWidget {
   const MyPGScreen({super.key});
+
+  @override
+  State<MyPGScreen> createState() => _MyPGScreenState();
+}
+
+class _MyPGScreenState extends State<MyPGScreen> {
+  Future<QuerySnapshot<Map<String, dynamic>>>? _activeStayFuture;
+  String? _lastTenantId;
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    final tenantState = Provider.of<TenantStateProvider>(context, listen: true);
+    if (_lastTenantId != tenantState.tenantId) {
+      _lastTenantId = tenantState.tenantId;
+      _activeStayFuture = tenantState.tenantId.isNotEmpty
+          ? FirebaseFirestore.instance
+              .collection('tenants')
+              .doc(tenantState.tenantId)
+              .collection('stays')
+              .where('status', isEqualTo: 'active')
+              .limit(1)
+              .get()
+          : null;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -16,11 +44,13 @@ class MyPGScreen extends StatelessWidget {
 
     return TenantScaffold(
       currentTab: TenantTab.mypg,
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
+      body: tenantState.propertyId.isEmpty
+          ? _buildEmptyState(context, tenantState)
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
             // PG Details Card
             Container(
               width: double.infinity,
@@ -83,9 +113,7 @@ class MyPGScreen extends StatelessWidget {
                   ),
                   const SizedBox(height: 20),
                   FutureBuilder<QuerySnapshot<Map<String, dynamic>>>(
-                    future: tenantState.tenantId.isNotEmpty
-                        ? FirebaseFirestore.instance.collection('tenants').doc(tenantState.tenantId).collection('stays').where('status', isEqualTo: 'active').limit(1).get()
-                        : null,
+                    future: _activeStayFuture,
                     builder: (context, snapshot) {
                       final data = snapshot.hasData && snapshot.data!.docs.isNotEmpty
                           ? snapshot.data!.docs.first.data()
@@ -522,7 +550,7 @@ class MyPGScreen extends StatelessWidget {
 
             const SizedBox(height: 24),
 
-            // Amenities
+            // Amenities — loaded from the actual property document
             const Text(
               'Amenities',
               style: TextStyle(
@@ -534,33 +562,104 @@ class MyPGScreen extends StatelessWidget {
             ),
             const SizedBox(height: 16),
 
-            Container(
-              width: double.infinity,
-              padding: const EdgeInsets.all(20),
-              decoration: BoxDecoration(
-                color: Colors.white,
-                borderRadius: BorderRadius.circular(16),
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.05),
-                    blurRadius: 10,
-                    offset: const Offset(0, 2),
-                  ),
-                ],
+            if (tenantState.businessId.isNotEmpty && tenantState.propertyId.isNotEmpty)
+              FutureBuilder<DocumentSnapshot<Map<String, dynamic>>>(
+                future: FirebaseFirestore.instance
+                    .collection('businesses')
+                    .doc(tenantState.businessId)
+                    .collection('properties')
+                    .doc(tenantState.propertyId)
+                    .get(),
+                builder: (context, propSnap) {
+                  if (propSnap.connectionState == ConnectionState.waiting) {
+                    return const Center(child: CircularProgressIndicator(strokeWidth: 2));
+                  }
+
+                  final propData = propSnap.data?.data();
+                  final amenities = propData?['amenities'] as Map<String, dynamic>? ?? {};
+
+                  // Map Firestore amenity keys → display label + icon
+                  final amenityDefs = <Map<String, dynamic>>[
+                    {'key': 'wifi',        'label': 'WiFi',       'icon': Icons.wifi_rounded},
+                    {'key': 'ac',          'label': 'AC',         'icon': Icons.ac_unit_rounded},
+                    {'key': 'meals',       'label': 'Meals',      'icon': Icons.restaurant_rounded},
+                    {'key': 'laundry',     'label': 'Laundry',    'icon': Icons.local_laundry_service_rounded},
+                    {'key': 'parking',     'label': 'Parking',    'icon': Icons.local_parking_rounded},
+                    {'key': 'security',    'label': 'Security',   'icon': Icons.security_rounded},
+                    {'key': 'gym',         'label': 'Gym',        'icon': Icons.fitness_center_rounded},
+                    {'key': 'powerBackup', 'label': 'Power Backup','icon': Icons.bolt_rounded},
+                    {'key': 'cctv',        'label': 'CCTV',       'icon': Icons.videocam_rounded},
+                    {'key': 'hotWater',    'label': 'Hot Water',  'icon': Icons.water_drop_rounded},
+                  ];
+
+                  // Only show amenities that are present in the property doc
+                  final available = amenityDefs.where((a) {
+                    final val = amenities[a['key']];
+                    return val == true || val == 'true';
+                  }).toList();
+
+                  if (available.isEmpty) {
+                    return Container(
+                      width: double.infinity,
+                      padding: const EdgeInsets.all(20),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: BorderRadius.circular(16),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.05),
+                            blurRadius: 10,
+                            offset: const Offset(0, 2),
+                          ),
+                        ],
+                      ),
+                      child: Text(
+                        'No amenities listed for this property.',
+                        style: TextStyle(color: Colors.grey.shade500),
+                      ),
+                    );
+                  }
+
+                  return Container(
+                    width: double.infinity,
+                    padding: const EdgeInsets.all(20),
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(16),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.05),
+                          blurRadius: 10,
+                          offset: const Offset(0, 2),
+                        ),
+                      ],
+                    ),
+                    child: Wrap(
+                      spacing: 12,
+                      runSpacing: 12,
+                      children: available
+                          .map((a) => _buildAmenityChip(
+                                a['label'] as String,
+                                a['icon'] as IconData,
+                              ))
+                          .toList(),
+                    ),
+                  );
+                },
+              )
+            else
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(20),
+                decoration: BoxDecoration(
+                  color: Colors.white,
+                  borderRadius: BorderRadius.circular(16),
+                ),
+                child: Text(
+                  'Amenities will appear once you are assigned to a property.',
+                  style: TextStyle(color: Colors.grey.shade500),
+                ),
               ),
-              child: Wrap(
-                spacing: 12,
-                runSpacing: 12,
-                children: [
-                  _buildAmenityChip('WiFi', Icons.wifi_rounded),
-                  _buildAmenityChip('AC', Icons.ac_unit_rounded),
-                  _buildAmenityChip('Meals', Icons.restaurant_rounded),
-                  _buildAmenityChip('Laundry', Icons.local_laundry_service_rounded),
-                  _buildAmenityChip('Parking', Icons.local_parking_rounded),
-                  _buildAmenityChip('Security', Icons.security_rounded),
-                ],
-              ),
-            ),
 
             const SizedBox(height: 24),
 
@@ -825,6 +924,30 @@ class MyPGScreen extends StatelessWidget {
           ],
         ),
       ),
+    );
+  }
+
+  Widget _buildEmptyState(BuildContext context, TenantStateProvider tenantState) {
+    return _AnimatedMyPGEmptyState(
+      onExplore: () {
+        HapticFeedback.lightImpact();
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(builder: (_) => const ExploreScreen()),
+          (route) => false,
+        );
+      },
+      onGoHome: () {
+        HapticFeedback.lightImpact();
+        Navigator.of(context).pushAndRemoveUntil(
+          MaterialPageRoute(
+            builder: (_) => TenantHomeScreen(
+              tenantId: tenantState.tenantId,
+              tenantName: tenantState.fullName,
+            ),
+          ),
+          (route) => false,
+        );
+      },
     );
   }
 
@@ -1094,6 +1217,225 @@ class MyPGScreen extends StatelessWidget {
           ],
         ),
       ],
+    );
+  }
+}
+
+class _AnimatedMyPGEmptyState extends StatefulWidget {
+  final VoidCallback onExplore;
+  final VoidCallback onGoHome;
+
+  const _AnimatedMyPGEmptyState({
+    required this.onExplore,
+    required this.onGoHome,
+  });
+
+  @override
+  State<_AnimatedMyPGEmptyState> createState() => _AnimatedMyPGEmptyStateState();
+}
+
+class _AnimatedMyPGEmptyStateState extends State<_AnimatedMyPGEmptyState>
+    with SingleTickerProviderStateMixin {
+  late AnimationController _controller;
+  late Animation<double> _pulseAnimation;
+  late Animation<double> _floatAnimation;
+
+  @override
+  void initState() {
+    super.initState();
+    _controller = AnimationController(
+      vsync: this,
+      duration: const Duration(seconds: 3),
+    )..repeat(reverse: true);
+
+    _pulseAnimation = Tween<double>(begin: 1.0, end: 1.2).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: const Interval(0.0, 0.5, curve: Curves.easeInOut),
+      ),
+    );
+
+    _floatAnimation = Tween<double>(begin: 0.0, end: -12.0).animate(
+      CurvedAnimation(
+        parent: _controller,
+        curve: Curves.easeInOut,
+      ),
+    );
+  }
+
+  @override
+  void dispose() {
+    _controller.dispose();
+    super.dispose();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final primaryColor = theme.primaryColor;
+
+    return Center(
+      child: SingleChildScrollView(
+        padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 40),
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          crossAxisAlignment: CrossAxisAlignment.center,
+          children: [
+            // Animated Illustration
+            AnimatedBuilder(
+              animation: _controller,
+              builder: (context, child) {
+                return SizedBox(
+                  height: 180,
+                  width: 180,
+                  child: Stack(
+                    alignment: Alignment.center,
+                    children: [
+                      // Outer Pulsing Circle 2
+                      Transform.scale(
+                        scale: _pulseAnimation.value * 1.1,
+                        child: Container(
+                          width: 140,
+                          height: 140,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: primaryColor.withAlpha((0.05 * 255).round()),
+                          ),
+                        ),
+                      ),
+                      // Pulsing Circle 1
+                      Transform.scale(
+                        scale: _pulseAnimation.value,
+                        child: Container(
+                          width: 110,
+                          height: 110,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: primaryColor.withAlpha((0.1 * 255).round()),
+                          ),
+                        ),
+                      ),
+                      // Floating Core Card/Icon
+                      Transform.translate(
+                        offset: Offset(0, _floatAnimation.value),
+                        child: Container(
+                          width: 80,
+                          height: 80,
+                          decoration: BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: primaryColor,
+                            boxShadow: [
+                              BoxShadow(
+                                color: primaryColor.withAlpha((0.3 * 255).round()),
+                                blurRadius: 15,
+                                offset: const Offset(0, 5),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.apartment_outlined,
+                            size: 38,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      // Small Floating Accent Element (e.g. Key)
+                      Transform.translate(
+                        offset: Offset(35, _floatAnimation.value - 25),
+                        child: Container(
+                          padding: const EdgeInsets.all(6),
+                          decoration: const BoxDecoration(
+                            shape: BoxShape.circle,
+                            color: Colors.amber,
+                            boxShadow: [
+                              BoxShadow(
+                                color: Colors.black12,
+                                blurRadius: 4,
+                                offset: Offset(0, 2),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            Icons.key_rounded,
+                            size: 14,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                );
+              },
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'No Active Residency',
+              style: TextStyle(
+                fontSize: 24,
+                fontWeight: FontWeight.w800,
+                color: Color(0xFF1E293B),
+                letterSpacing: -0.5,
+                fontFamily: 'Geist',
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 12),
+            Text(
+              "You are not currently checked into any PG. Start exploring our premium co-living listings, or check your booking request progress on the home screen.",
+              style: TextStyle(
+                fontSize: 15,
+                color: Colors.grey[600],
+                height: 1.5,
+                fontFamily: 'Manrope',
+              ),
+              textAlign: TextAlign.center,
+            ),
+            const SizedBox(height: 40),
+            // Primary Button
+            SizedBox(
+              width: double.infinity,
+              child: ElevatedButton.icon(
+                onPressed: widget.onExplore,
+                style: ElevatedButton.styleFrom(
+                  backgroundColor: primaryColor,
+                  foregroundColor: Colors.white,
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  elevation: 0,
+                ),
+                icon: const Icon(Icons.explore_outlined, size: 20, color: Colors.white),
+                label: const Text(
+                  'Explore Properties',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Geist'),
+                ),
+              ),
+            ),
+            const SizedBox(height: 16),
+            // Secondary Button
+            SizedBox(
+              width: double.infinity,
+              child: OutlinedButton.icon(
+                onPressed: widget.onGoHome,
+                style: OutlinedButton.styleFrom(
+                  foregroundColor: Colors.grey[700],
+                  padding: const EdgeInsets.symmetric(vertical: 16),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(14),
+                  ),
+                  side: BorderSide(color: Colors.grey[300]!, width: 1.5),
+                ),
+                icon: Icon(Icons.home_outlined, size: 20, color: Colors.grey[600]),
+                label: const Text(
+                  'Go to Home Screen',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold, fontFamily: 'Geist'),
+                ),
+              ),
+            ),
+          ],
+        ),
+      ),
     );
   }
 }

@@ -680,6 +680,7 @@ export const submitRentPayment = functions.https.onCall(async (data, context) =>
     paymentMode, // 'Cash' | 'UPI'
     transactionId,
     screenshotUrl,
+    rentInvoiceId, // Optional: links this payment to a specific invoice
   } = data;
 
   const tenantId = context.auth.uid; // Ensuring tenant can only submit for themselves
@@ -697,8 +698,22 @@ export const submitRentPayment = functions.https.onCall(async (data, context) =>
 
   const now = admin.firestore.Timestamp.now();
 
-  // Verify the tenant belongs to this business
-  const bizTenantRef = db.doc(`businesses/${businessId}/tenants/${tenantId}`);
+  // Resolve the actual tenant document ID (e.g. TEN0000001) from the user doc.
+  // The business-scoped tenant collection uses the sequential TEN ID, not the auth UID.
+  const userSnap = await db.collection('users').doc(tenantId).get();
+  const actualTenantId: string | null = userSnap.exists
+    ? (userSnap.data() as any)?.tenantId || null
+    : null;
+
+  if (!actualTenantId) {
+    throw new functions.https.HttpsError(
+      'not-found',
+      'Tenant record not found. Please contact your PG owner.'
+    );
+  }
+
+  // Verify the tenant belongs to this business using the actual TEN ID
+  const bizTenantRef = db.doc(`businesses/${businessId}/tenants/${actualTenantId}`);
   const bizTenantSnap = await bizTenantRef.get();
 
   if (!bizTenantSnap.exists) {
@@ -707,11 +722,37 @@ export const submitRentPayment = functions.https.onCall(async (data, context) =>
 
   const tenantData = bizTenantSnap.data() as any;
 
+  // If a rentInvoiceId is provided, validate the amount matches the invoice
+  // to prevent tenants from submitting arbitrary amounts.
+  if (rentInvoiceId) {
+    const invoiceSnap = await db
+      .doc(`businesses/${businessId}/tenants/${actualTenantId}/rent_invoices/${rentInvoiceId}`)
+      .get();
+    if (invoiceSnap.exists) {
+      const invoiceData = invoiceSnap.data() as any;
+      const invoiceAmount = Number(invoiceData.amount);
+      const submittedAmount = Number(amount);
+      // Allow a small tolerance (₹1) for rounding differences
+      if (Math.abs(submittedAmount - invoiceAmount) > 1) {
+        throw new functions.https.HttpsError(
+          'invalid-argument',
+          `Amount mismatch. Invoice amount is ₹${invoiceAmount}. Please pay the exact amount.`
+        );
+      }
+      if (invoiceData.status === 'paid') {
+        throw new functions.https.HttpsError(
+          'failed-precondition',
+          'This invoice has already been paid.'
+        );
+      }
+    }
+  }
+
   // Create payment record in pending state
-  const paymentRef = db.collection(`businesses/${businessId}/tenants/${tenantId}/payments`).doc();
-  const paymentRecord = {
+  const paymentRef = db.collection(`businesses/${businessId}/tenants/${actualTenantId}/payments`).doc();
+  const paymentRecord: Record<string, any> = {
     id: paymentRef.id,
-    tenantId,
+    tenantId: actualTenantId,
     businessId,
     tenantName: tenantData.name || '',
     roomNumber: tenantData.roomNumber || tenantData.roomId || '',
@@ -727,9 +768,14 @@ export const submitRentPayment = functions.https.onCall(async (data, context) =>
     createdAt: now,
   };
 
+  // Store the invoice reference so verifyRentPayment can mark it paid
+  if (rentInvoiceId) {
+    paymentRecord.rentInvoiceId = rentInvoiceId;
+  }
+
   await paymentRef.set(paymentRecord);
 
-  console.log(`Payment submitted for verification: ${tenantId} paid ₹${amount} for ${month} via ${paymentMode}`);
+  console.log(`Payment submitted for verification: ${actualTenantId} paid ₹${amount} for ${month} via ${paymentMode}`);
 
   return {
     success: true,
@@ -816,6 +862,44 @@ export const verifyRentPayment = functions.https.onCall(async (data, context) =>
           lastPaymentAmount: paymentData.amount,
           updatedAt: now,
         });
+      }
+
+      // 4. Mark the matching rent_invoice as paid so the tenant's
+      //    "All Caught Up" banner appears immediately.
+      //    Prefer the stored rentInvoiceId on the payment record; fall back
+      //    to querying by month if not present (older records).
+      const storedInvoiceId = paymentData.rentInvoiceId as string | undefined;
+      if (storedInvoiceId) {
+        const invoiceRef = db.doc(
+          `businesses/${businessId}/tenants/${tenantId}/rent_invoices/${storedInvoiceId}`
+        );
+        const invoiceSnap = await tx.get(invoiceRef);
+        if (invoiceSnap.exists && (invoiceSnap.data() as any)?.status !== 'paid') {
+          tx.update(invoiceRef, {
+            status: 'paid',
+            paidAt: now,
+            verification: 'verified',
+            mode: paymentData.method || 'manual',
+            updatedAt: now,
+          });
+        }
+      } else {
+        // Fallback: match by month
+        const invoiceQuery = db
+          .collection(`businesses/${businessId}/tenants/${tenantId}/rent_invoices`)
+          .where('month', '==', paymentData.month)
+          .where('status', 'in', ['unpaid', 'overdue'])
+          .limit(1);
+        const invoiceSnap = await tx.get(invoiceQuery);
+        if (!invoiceSnap.empty) {
+          tx.update(invoiceSnap.docs[0].ref, {
+            status: 'paid',
+            paidAt: now,
+            verification: 'verified',
+            mode: paymentData.method || 'manual',
+            updatedAt: now,
+          });
+        }
       }
     } else {
       // Reject

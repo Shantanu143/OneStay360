@@ -1,6 +1,8 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/foundation.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:firebase_crashlytics/firebase_crashlytics.dart';
+import 'package:firebase_analytics/firebase_analytics.dart';
 import 'package:firebase_app_check/firebase_app_check.dart';
 import 'package:firebase_messaging/firebase_messaging.dart';
 import 'package:provider/provider.dart';
@@ -18,6 +20,7 @@ import '../presentation/views/splash/splash_screen.dart';
 import '../presentation/views/auth/auth_wrapper.dart';
 import '../data/providers/tenant_state_provider.dart';
 import '../presentation/view_models/explore_viewmodel.dart';
+import '../presentation/theme/theme_provider.dart';
 import 'services/device_token_service.dart';
 
 /// Background message handler (must be top-level)
@@ -37,6 +40,17 @@ void main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
     debugPrint('Firebase initialized');
+
+    // Pass uncaught Flutter framework errors to Crashlytics
+    FlutterError.onError = (errorDetails) {
+      FirebaseCrashlytics.instance.recordFlutterFatalError(errorDetails);
+    };
+
+    // Pass uncaught asynchronous errors to Crashlytics
+    PlatformDispatcher.instance.onError = (error, stack) {
+      FirebaseCrashlytics.instance.recordError(error, stack, fatal: true);
+      return true;
+    };
 
     // Set up background message handler
     FirebaseMessaging.onBackgroundMessage(_firebaseMessagingBackgroundHandler);
@@ -109,6 +123,30 @@ class MyApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    return const _MyAppShell();
+  }
+}
+
+class _MyAppShell extends StatefulWidget {
+  const _MyAppShell();
+
+  @override
+  State<_MyAppShell> createState() => _MyAppShellState();
+}
+
+class _MyAppShellState extends State<_MyAppShell> {
+  final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
+
+  @override
+  void initState() {
+    super.initState();
+    // Wire the navigator key so DeviceTokenService can push routes
+    // from push notification handlers (e.g. bill_sent → BillReviewScreen).
+    DeviceTokenService.navigatorKey = _navKey;
+  }
+
+  @override
+  Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
         // CORE SERVICES
@@ -136,30 +174,32 @@ class MyApp extends StatelessWidget {
             propertyRepository: context.read<PropertyRepository>(),
           ),
         ),
+
+        // THEME PROVIDER
+        ChangeNotifierProvider<ThemeProvider>(
+          create: (_) => ThemeProvider(),
+        ),
       ],
-      child: MaterialApp(
-        title: 'OneStay360 - Tenant',
-        debugShowCheckedModeBanner: false,
-        theme: _buildTheme(),
-        home: const SplashScreen(),
-        routes: {'/authWrapper': (_) => const AuthWrapper()},
-        builder: (context, child) {
-          return GestureDetector(
-            onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
-            child: child,
+      child: Consumer<ThemeProvider>(
+        builder: (context, themeProvider, child) {
+          return MaterialApp(
+            title: 'OneStay360 - Tenant',
+            debugShowCheckedModeBanner: false,
+            theme: themeProvider.currentThemeData,
+            navigatorKey: _navKey,
+            navigatorObservers: [
+              FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance),
+            ],
+            home: const SplashScreen(),
+            routes: {'/authWrapper': (_) => const AuthWrapper()},
+            builder: (context, child) {
+              return GestureDetector(
+                onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
+                child: child,
+              );
+            },
           );
         },
-      ),
-    );
-  }
-
-  ThemeData _buildTheme() {
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(seedColor: Colors.teal),
-      textTheme: const TextTheme(
-        bodyLarge: TextStyle(fontSize: 16),
-        titleLarge: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
       ),
     );
   }

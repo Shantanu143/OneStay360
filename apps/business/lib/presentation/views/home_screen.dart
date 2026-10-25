@@ -264,46 +264,7 @@ class _BusinessHomeScreenState extends State<BusinessHomeScreen>
                 ),
               ),
               const SizedBox(height: 16),
-              Container(
-                width: double.infinity,
-                padding: const EdgeInsets.all(20),
-                decoration: BoxDecoration(
-                  color: Colors.white,
-                  borderRadius: BorderRadius.circular(16),
-                  boxShadow: [
-                    BoxShadow(
-                        color: Colors.grey.shade200,
-                        blurRadius: 10,
-                        offset: const Offset(0, 4)
-                    ),
-                  ],
-                ),
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    _buildActivityItem(
-                        'New tenant added: John Doe',
-                        '5 mins ago',
-                        Icons.person_add_alt_1_outlined,
-                        Colors.blue
-                    ),
-                    Divider(color: Colors.grey.shade200),
-                    _buildActivityItem(
-                        'Rent collected from Room 203',
-                        '1 hour ago',
-                        Icons.payments_outlined,
-                        Colors.green
-                    ),
-                    Divider(color: Colors.grey.shade200),
-                    _buildActivityItem(
-                        'Maintenance request: AC repair',
-                        'Yesterday',
-                        Icons.handyman_outlined,
-                        Colors.orange
-                    ),
-                  ],
-                ),
-              ),
+              _RecentActivityFeed(businessId: businessState.businessId),
               const SizedBox(height: 20),
             ],
           ),
@@ -465,7 +426,196 @@ class _BusinessHomeScreenState extends State<BusinessHomeScreen>
     );
   }
 
-  Widget _buildActivityItem(String title, String time, IconData icon, Color color) {
+}
+
+// ─── Real-time Recent Activity Feed ───────────────────────────────────────────
+
+class _RecentActivityFeed extends StatelessWidget {
+  final String? businessId;
+  const _RecentActivityFeed({required this.businessId});
+
+  @override
+  Widget build(BuildContext context) {
+    if (businessId == null || businessId!.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return StreamBuilder<QuerySnapshot>(
+      stream: FirebaseFirestore.instance
+          .collection('businesses')
+          .doc(businessId)
+          .collection('audit_logs')
+          .orderBy('createdAt', descending: true)
+          .limit(10)
+          .snapshots(),
+      builder: (context, snapshot) {
+        if (snapshot.connectionState == ConnectionState.waiting) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(color: Colors.grey.shade200, blurRadius: 10, offset: const Offset(0, 4)),
+              ],
+            ),
+            child: const Center(
+              child: Padding(
+                padding: EdgeInsets.symmetric(vertical: 16),
+                child: CircularProgressIndicator(strokeWidth: 2),
+              ),
+            ),
+          );
+        }
+
+        final docs = snapshot.data?.docs ?? [];
+
+        if (docs.isEmpty) {
+          return Container(
+            width: double.infinity,
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(
+              color: Colors.white,
+              borderRadius: BorderRadius.circular(16),
+              boxShadow: [
+                BoxShadow(color: Colors.grey.shade200, blurRadius: 10, offset: const Offset(0, 4)),
+              ],
+            ),
+            child: Column(
+              children: [
+                Icon(Icons.history_toggle_off, size: 40, color: Colors.grey.shade300),
+                const SizedBox(height: 8),
+                Text('No recent activity yet', style: TextStyle(color: Colors.grey.shade500)),
+              ],
+            ),
+          );
+        }
+
+        return Container(
+          width: double.infinity,
+          padding: const EdgeInsets.all(20),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.circular(16),
+            boxShadow: [
+              BoxShadow(color: Colors.grey.shade200, blurRadius: 10, offset: const Offset(0, 4)),
+            ],
+          ),
+          child: Column(
+            children: List.generate(docs.length, (i) {
+              final data = docs[i].data() as Map<String, dynamic>;
+              final action = data['action'] as String? ?? '';
+              final entityType = data['entityType'] as String? ?? '';
+              final entityId = data['entityId'] as String? ?? '';
+              final createdAt = data['createdAt'] as Timestamp?;
+
+              final label = _activityLabel(action, entityType, entityId);
+              final icon = _activityIcon(action);
+              final color = _activityColor(action);
+              final timeStr = createdAt != null ? _timeAgo(createdAt.toDate()) : '';
+
+              return Column(
+                children: [
+                  _ActivityRow(label: label, time: timeStr, icon: icon, color: color),
+                  if (i < docs.length - 1) Divider(color: Colors.grey.shade200),
+                ],
+              );
+            }),
+          ),
+        );
+      },
+    );
+  }
+
+  String _activityLabel(String action, String entityType, String entityId) {
+    switch (action) {
+      case 'tenant_created':
+        return 'New tenant added';
+      case 'tenant_deleted':
+        return 'Tenant removed';
+      case 'bed_occupied':
+        return 'Bed assigned to tenant';
+      case 'bed_vacated':
+        return 'Bed vacated';
+      case 'property_access_granted':
+        return 'Property access granted to member';
+      case 'property_access_revoked':
+        return 'Property access revoked from member';
+      case 'member_role_changed':
+        return 'Member role updated';
+      default:
+        // Humanise snake_case fallback
+        return action.replaceAll('_', ' ').replaceFirstMapped(
+          RegExp(r'^.'),
+          (m) => m.group(0)!.toUpperCase(),
+        );
+    }
+  }
+
+  IconData _activityIcon(String action) {
+    switch (action) {
+      case 'tenant_created':
+        return Icons.person_add_alt_1_outlined;
+      case 'tenant_deleted':
+        return Icons.person_remove_outlined;
+      case 'bed_occupied':
+        return Icons.bed_outlined;
+      case 'bed_vacated':
+        return Icons.hotel_outlined;
+      case 'property_access_granted':
+      case 'property_access_revoked':
+        return Icons.key_outlined;
+      case 'member_role_changed':
+        return Icons.manage_accounts_outlined;
+      default:
+        return Icons.history_outlined;
+    }
+  }
+
+  Color _activityColor(String action) {
+    switch (action) {
+      case 'tenant_created':
+      case 'bed_occupied':
+      case 'property_access_granted':
+        return Colors.blue;
+      case 'tenant_deleted':
+      case 'bed_vacated':
+      case 'property_access_revoked':
+        return Colors.red;
+      case 'member_role_changed':
+        return Colors.orange;
+      default:
+        return Colors.grey;
+    }
+  }
+
+  String _timeAgo(DateTime dt) {
+    final diff = DateTime.now().difference(dt);
+    if (diff.inSeconds < 60) return 'Just now';
+    if (diff.inMinutes < 60) return '${diff.inMinutes}m ago';
+    if (diff.inHours < 24) return '${diff.inHours}h ago';
+    if (diff.inDays == 1) return 'Yesterday';
+    if (diff.inDays < 7) return '${diff.inDays}d ago';
+    return '${dt.day}/${dt.month}/${dt.year}';
+  }
+}
+
+class _ActivityRow extends StatelessWidget {
+  final String label;
+  final String time;
+  final IconData icon;
+  final Color color;
+
+  const _ActivityRow({
+    required this.label,
+    required this.time,
+    required this.icon,
+    required this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 10),
       child: Row(
@@ -477,24 +627,21 @@ class _BusinessHomeScreenState extends State<BusinessHomeScreen>
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  title,
+                  label,
                   style: TextStyle(
-                      fontSize: 16,
-                      fontWeight: FontWeight.w500,
-                      color: Colors.grey.shade800
+                    fontSize: 15,
+                    fontWeight: FontWeight.w500,
+                    color: Colors.grey.shade800,
                   ),
                 ),
-                Text(
-                  time,
-                  style: TextStyle(
-                      fontSize: 12,
-                      color: Colors.grey.shade500
+                if (time.isNotEmpty)
+                  Text(
+                    time,
+                    style: TextStyle(fontSize: 12, color: Colors.grey.shade500),
                   ),
-                ),
               ],
             ),
           ),
-          const Icon(Icons.arrow_forward_ios, size: 16, color: Colors.grey),
         ],
       ),
     );

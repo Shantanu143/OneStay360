@@ -19,42 +19,43 @@ class IdGenerationService {
 
   // Generate property ID: BUS0000001PNQ001, BUS0000001PNQ002, etc.
   Future<String> generatePropertyId(String businessId, String cityCode) async {
-    final counterDoc = await _firestore
+    final docRef = _firestore
         .collection('counters')
-        .doc('property_${businessId}_$cityCode')
-        .get();
+        .doc('property_${businessId}_$cityCode');
 
-    int nextNumber = 1;
-    if (counterDoc.exists) {
-      nextNumber = (counterDoc.data()?['count'] ?? 0) + 1;
-    }
-
-    // Update counter
-    await _firestore
-        .collection('counters')
-        .doc('property_${businessId}_$cityCode')
-        .set({'count': nextNumber});
+    final nextNumber = await _firestore.runTransaction<int>((transaction) async {
+      final snapshot = await transaction.get(docRef);
+      final current = (snapshot.exists && snapshot.data() != null)
+          ? (snapshot.data()!['count'] as num?)?.toInt() ?? 0
+          : 0;
+      final next = current + 1;
+      transaction.set(
+        docRef,
+        {'count': next, 'updatedAt': FieldValue.serverTimestamp()},
+        SetOptions(merge: true),
+      );
+      return next;
+    });
 
     return '$businessId$cityCode${nextNumber.toString().padLeft(3, '0')}';
   }
 
   Future<String> _generateSequentialId(String prefix, String counterName) async {
-    final counterDoc = await _firestore
-        .collection('counters')
-        .doc(counterName)
-        .get();
+    final docRef = _firestore.collection('counters').doc(counterName);
 
-    int nextNumber = 1;
-    if (counterDoc.exists) {
-      nextNumber = (counterDoc.data()?['count'] ?? 0) + 1;
-    }
-    // NOTE: No auto-initialization. Counter is created on first write below.
-
-    // Update counter (creates if doesn't exist)
-    await _firestore
-        .collection('counters')
-        .doc(counterName)
-        .set({'count': nextNumber});
+    final nextNumber = await _firestore.runTransaction<int>((transaction) async {
+      final snapshot = await transaction.get(docRef);
+      final current = (snapshot.exists && snapshot.data() != null)
+          ? (snapshot.data()!['count'] as num?)?.toInt() ?? 0
+          : 0;
+      final next = current + 1;
+      transaction.set(
+        docRef,
+        {'count': next, 'updatedAt': FieldValue.serverTimestamp()},
+        SetOptions(merge: true),
+      );
+      return next;
+    });
 
     return '$prefix${nextNumber.toString().padLeft(7, '0')}';
   }

@@ -2,11 +2,15 @@
 .vscode/
 .idea/
 
-# Flutter/Dart
+# Flutter / Dart
 .dart_tool/
 .packages
 .pub/
 build/
+
+# Node / Dependencies
+node_modules/
+**/node_modules/
 
 # Logs
 *.log
@@ -15,6 +19,7 @@ build_log.txt
 analyze_output.txt
 analyze_output_utf8.txt
 analyze_output_utf16.txt
+deploy_log.txt
 
 # Generated JS maps
 *.js.map
@@ -25,16 +30,32 @@ functions/rzp.json
 functions/stay_data.json
 functions/user_data.json
 
-# Temporary/Test Files
+# Temporary / Test Files
 rzptest.txt
 functions/test.js
 functions/fix_tenant.js
+functions/cancel_enrollment.js
+functions/check_stays.js
+functions/check_tenant_data.js
+functions/lib/test/
+*_utf8.txt
+*_utf16.txt
+
+# Coverage
+coverage/
+**/coverage/
+
+# Next.js / Web Build
+.next/
+**/.next/
+*.tsbuildinfo
 
 # OS
 .DS_Store
 Thumbs.db
 
-*_utf8.txt
-*_utf16.txt
-deploy_log.txt
-build_log.txt
+# Android Signing Keys
+key.properties
+**/key.properties
+*.keystore
+*.jks

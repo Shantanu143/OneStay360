@@ -5,7 +5,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Business</string>
+	<string>OneStay360 Business</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -24,6 +24,21 @@
 	<string>$(FLUTTER_BUILD_NUMBER)</string>
 	<key>LSRequiresIPhoneOS</key>
 	<true/>
+	<key>NSCameraUsageDescription</key>
+	<string>OneStay360 Business uses your camera to scan QR codes and capture property photos.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>OneStay360 Business requires access to your photo library to upload property images.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>OneStay360 Business needs permission to save photos to your library.</string>
+	<key>LSApplicationQueriesSchemes</key>
+	<array>
+		<string>upi</string>
+		<string>phonepe</string>
+		<string>gpay</string>
+		<string>paytm</string>
+		<string>tel</string>
+		<string>whatsapp</string>
+	</array>
 	<key>UILaunchStoryboardName</key>
 	<string>LaunchScreen</string>
 	<key>UIMainStoryboardFile</key>

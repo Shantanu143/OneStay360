@@ -1437,7 +1437,7 @@ class _ApprovalDialogState extends State<_ApprovalDialog> {
                               border: OutlineInputBorder(),
                               helperText: 'Date to pay next rent cycle',
                             ),
-                            value: _billingDate,
+                            initialValue: _billingDate,
                             items: List.generate(31, (index) => index + 1)
                                 .map((day) => DropdownMenuItem(
                                       value: day,

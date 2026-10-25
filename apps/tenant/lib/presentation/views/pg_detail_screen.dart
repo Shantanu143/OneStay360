@@ -167,7 +167,7 @@ class _PGDetailScreenState extends State<PGDetailScreen> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: selectedRoomType.isEmpty ? null : selectedRoomType,
+                  initialValue: selectedRoomType.isEmpty ? null : selectedRoomType,
                   decoration: InputDecoration(
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -194,7 +194,7 @@ class _PGDetailScreenState extends State<PGDetailScreen> {
                 ),
                 const SizedBox(height: 8),
                 DropdownButtonFormField<String>(
-                  value: selectedSharingType.isEmpty ? null : selectedSharingType,
+                  initialValue: selectedSharingType.isEmpty ? null : selectedSharingType,
                   decoration: InputDecoration(
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(8),
@@ -1340,7 +1340,7 @@ class _PGDetailScreenState extends State<PGDetailScreen> {
                 ],
               ),
             );
-          }).toList(),
+          }),
         ],
       ),
     );

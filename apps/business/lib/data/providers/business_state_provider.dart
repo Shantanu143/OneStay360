@@ -14,10 +14,18 @@ class BusinessStateProvider with ChangeNotifier {
   bool _profileCompleted = false;
 
   late final BusinessMembershipService _membershipService;
+  late final FirebaseAuth _auth;
+  late final FirebaseFirestore _firestore;
 
-  BusinessStateProvider({BusinessMembershipService? membershipService}) {
+  BusinessStateProvider({
+    BusinessMembershipService? membershipService,
+    FirebaseAuth? auth,
+    FirebaseFirestore? firestore,
+  }) {
     _membershipService =
         membershipService ?? BusinessMembershipService();
+    _auth = auth ?? FirebaseAuth.instance;
+    _firestore = firestore ?? FirebaseFirestore.instance;
   }
 
   String get fullName => _fullName;
@@ -46,13 +54,13 @@ class BusinessStateProvider with ChangeNotifier {
   /// This supports multi-member businesses in future phases.
   /// If membership validation fails, business access is blocked.
   Future<void> loadUserData() async {
-    final user = FirebaseAuth.instance.currentUser;
+    final user = _auth.currentUser;
     if (user != null) {
       try {
         print('🔄 [BusinessStateProvider.loadUserData] Starting for uid: ${user.uid}');
         
         // Step 1: Load user profile
-        final userDoc = await FirebaseFirestore.instance
+        final userDoc = await _firestore
             .collection('users')
             .doc(user.uid)
             .get();

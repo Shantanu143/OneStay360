@@ -1,0 +1,105 @@
+# Artillery Load Testing Configuration for OneStay360 Cloud Functions
+# Run: npx artillery run load_test.yml
+
+config:
+  target: "https://us-central1-onestay360-1.cloudfunctions.net"
+  phases:
+    - duration: 60
+      arrivalRate: 5
+      name: "Warm up"
+    - duration: 120
+      arrivalRate: 20
+      name: "Ramp up"
+    - duration: 300
+      arrivalRate: 50
+      name: "Peak load"
+    - duration: 60
+      arrivalRate: 5
+      name: "Cool down"
+  defaults:
+    headers:
+      Content-Type: "application/json"
+  plugins:
+    metrics-by-endpoint: {}
+
+scenarios:
+  # ── Enrollment Request Submission ──────────────────────────────────────────
+  - name: "Submit Enrollment Request"
+    weight: 25
+    flow:
+      - post:
+          url: "/submitEnrollmentRequest"
+          json:
+            data:
+              propertyId: "PROP_TEST_001"
+              businessId: "BUS_TEST_001"
+              tenantName: "Load Test User {{ $randomInt(1, 1000) }}"
+              tenantPhone: "98765{{ $randomInt(10000, 99999) }}"
+              moveInDate: "2025-06-01T00:00:00.000Z"
+              propertyName: "Test PG"
+              sharingType: "Double"
+              notes: "Load test request"
+          expect:
+            - statusCode: 200
+
+  # ── Rent Payment Submission ─────────────────────────────────────────────────
+  - name: "Submit Rent Payment (UPI)"
+    weight: 30
+    flow:
+      - post:
+          url: "/submitRentPayment"
+          json:
+            data:
+              businessId: "BUS_TEST_001"
+              amount: 10000
+              month: "January 2025"
+              paymentMode: "UPI"
+              transactionId: "TXN{{ $randomInt(100000000, 999999999) }}"
+          expect:
+            - statusCode: 200
+
+  # ── Payment Verification ────────────────────────────────────────────────────
+  - name: "Verify Rent Payment"
+    weight: 20
+    flow:
+      - post:
+          url: "/verifyRentPayment"
+          json:
+            data:
+              businessId: "BUS_TEST_001"
+              tenantId: "TEN0000001"
+              paymentId: "PAY_TEST_001"
+              action: "confirm"
+          expect:
+            - statusCode: 200
+
+  # ── Dashboard Metrics ───────────────────────────────────────────────────────
+  - name: "Load Dashboard Metrics"
+    weight: 15
+    flow:
+      - post:
+          url: "/getPaymentDashboard"
+          json:
+            data:
+              businessId: "BUS_TEST_001"
+          expect:
+            - statusCode: 200
+
+  # ── Property Billing Debug ──────────────────────────────────────────────────
+  - name: "Debug Property Billing"
+    weight: 10
+    flow:
+      - post:
+          url: "/debugPropertyBilling"
+          json:
+            data:
+              businessId: "BUS_TEST_001"
+              propertyId: "PROP_TEST_001"
+          expect:
+            - statusCode: 200
+
+# Performance thresholds
+ensure:
+  p95: 2000    # 95th percentile < 2 seconds
+  p99: 5000    # 99th percentile < 5 seconds
+  maxErrorRate: 1  # Error rate < 1%

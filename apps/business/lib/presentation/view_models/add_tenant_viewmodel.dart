@@ -83,7 +83,7 @@ class AddTenantViewModel extends ChangeNotifier {
     return true;
   }
 
-  Future<void> submit(BuildContext context) async {
+  Future<void> submit(BuildContext? context) async {
     errorMessage = null;
     if (!isValidForm) {
       errorMessage = 'Please complete all required fields.';
@@ -136,7 +136,7 @@ class AddTenantViewModel extends ChangeNotifier {
           .get();
 
       final roomGender = roomDoc.data()?['gender'] as String?;
-      final tenantGender = genderController?.text.trim(); // from form if available
+      final tenantGender = genderController.text.trim(); // from form if available
 
       if (roomGender != null && roomGender.isNotEmpty &&
           tenantGender != null && tenantGender.isNotEmpty &&

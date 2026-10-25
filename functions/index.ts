@@ -12,7 +12,8 @@ export * from './invitations';
 export * from './auditTriggers';
 export * from './memberAccess';
 export * from './enrollmentNotifications';
-export * from './tenantOnboarding';
+export * from './tenantOnboarding'; // includes vacateTenant
 export * from './rentPaymentNotifications';
 export * from './razorpay';
 export * from './tenantBilling';
+export * from './accountDeletion';

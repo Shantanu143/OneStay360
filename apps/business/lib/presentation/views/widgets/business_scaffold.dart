@@ -389,57 +389,38 @@ class _BusinessScaffoldState extends State<BusinessScaffold> {
     }
   }
 
-  Future<String> _getBusinessId() async {
+  String _getBusinessId(BusinessStateProvider businessState) {
     if (widget.businessId != null && widget.businessId!.isNotEmpty) {
       return widget.businessId!;
     }
-
-    final user = FirebaseAuth.instance.currentUser;
-    if (user != null) {
-      final userDoc = await FirebaseFirestore.instance
-          .collection('users')
-          .doc(user.uid)
-          .get();
-      if (userDoc.exists) {
-        final userData = userDoc.data()!;
-        return userData['businessId'] as String? ?? user.uid;
-      }
-      return user.uid;
+    final bizId = businessState.businessId;
+    if (bizId != null && bizId.isNotEmpty) {
+      return bizId;
     }
-
-    return 'default_business_id';
+    return FirebaseAuth.instance.currentUser?.uid ?? 'default_business_id';
   }
 
-  void _handleNavTap(BuildContext context, BusinessTab targetTab) async {
+  void _handleNavTap(BuildContext context, BusinessTab targetTab) {
     HapticFeedback.lightImpact();
 
     if (targetTab == widget.currentTab) return;
 
-    final actualBusinessId = await _getBusinessId();
+    final businessState = Provider.of<BusinessStateProvider>(context, listen: false);
+    final actualBusinessId = _getBusinessId(businessState);
 
+    Widget destination;
     switch (targetTab) {
       case BusinessTab.dashboard:
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(
-            builder: (_) => BusinessHomeScreen(businessId: actualBusinessId),
-          ),
-              (route) => false,
-        );
+        destination = BusinessHomeScreen(businessId: actualBusinessId);
         break;
       case BusinessTab.properties:
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const BusinessPropertiesScreen()),
-              (route) => false,
-        );
+        destination = const BusinessPropertiesScreen();
         break;
       case BusinessTab.tenants:
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const AddTenantScreen()),
-              (route) => false,
-        );
+        destination = const AddTenantScreen();
         break;
       case BusinessTab.team:
-        final role = Provider.of<BusinessStateProvider>(context, listen: false).role;
+        final role = businessState.role;
         final perms = BusinessPermissions.fromRole(role);
         if (!perms.canInviteMembers) {
           ScaffoldMessenger.of(context).showSnackBar(
@@ -447,23 +428,26 @@ class _BusinessScaffoldState extends State<BusinessScaffold> {
           );
           return;
         }
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const TeamScreen()),
-              (route) => false,
-        );
+        destination = const TeamScreen();
         break;
       case BusinessTab.reports:
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(content: Text('Reports coming soon')),
         );
-        break;
+        return;
       case BusinessTab.profile:
-        Navigator.of(context).pushAndRemoveUntil(
-          MaterialPageRoute(builder: (_) => const BusinessProfileScreen()),
-              (route) => false,
-        );
+        destination = const BusinessProfileScreen();
         break;
     }
+
+    Navigator.of(context).pushAndRemoveUntil(
+      PageRouteBuilder(
+        pageBuilder: (context, animation, secondaryAnimation) => destination,
+        transitionDuration: Duration.zero,
+        reverseTransitionDuration: Duration.zero,
+      ),
+      (route) => false,
+    );
   }
 
   @override

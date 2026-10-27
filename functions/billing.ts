@@ -774,6 +774,22 @@ export const submitRentPayment = functions.https.onCall(async (data, context) =>
   }
 
   // Create payment record in pending state
+  // One "I paid" per invoice at a time: the owner confirms or rejects it first.
+  if (rentInvoiceId) {
+    const pending = await db
+      .collection(`businesses/${businessId}/tenants/${actualTenantId}/payments`)
+      .where('rentInvoiceId', '==', rentInvoiceId)
+      .where('status', '==', 'pending_verification')
+      .limit(1)
+      .get();
+    if (!pending.empty) {
+      throw new functions.https.HttpsError(
+        'already-exists',
+        'You already reported this payment. Your owner will confirm it soon.'
+      );
+    }
+  }
+
   const paymentRef = db.collection(`businesses/${businessId}/tenants/${actualTenantId}/payments`).doc();
   const paymentRecord: Record<string, any> = {
     id: paymentRef.id,

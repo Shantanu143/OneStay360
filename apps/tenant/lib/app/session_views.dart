@@ -4,6 +4,7 @@
 // splash and "couldn't load".
 import 'package:flutter/material.dart';
 
+import '../presentation/design/components/app_brand_logo.dart';
 import '../presentation/design/components/app_button.dart';
 import '../presentation/design/motion.dart';
 import '../presentation/design/tokens.dart';
@@ -55,32 +56,9 @@ class _BrandSplashState extends State<BrandSplash>
           children: [
             ScaleTransition(
               scale: scale,
-              child: Container(
-                width: 84,
-                height: 84,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: AppColors.mint,
-                  borderRadius: BorderRadius.circular(26),
-                ),
-                child: const Icon(
-                  Icons.home_rounded,
-                  size: 44,
-                  color: AppColors.onMint,
-                ),
-              ),
+              child: const AppBrandLogo(height: 64, framed: true, alignment: CrossAxisAlignment.center),
             ),
-            const SizedBox(height: 22),
-            Text(
-              'OneStay360',
-              style: AppText.style(
-                28,
-                700,
-                color: Colors.white,
-                letterSpacing: -0.6,
-              ),
-            ),
-            const SizedBox(height: 4),
+            const SizedBox(height: 18),
             Text(
               'Your home away from home',
               style: AppText.style(14, 500, color: AppColors.onCardMuted),

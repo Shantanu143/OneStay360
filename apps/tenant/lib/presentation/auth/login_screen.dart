@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 
 import '../common/device_actions.dart';
 import '../design/motion.dart';
+import '../design/components/app_brand_logo.dart';
 import '../design/components/app_banner.dart';
 import '../design/components/app_button.dart';
 import '../design/components/app_card.dart';
 import '../design/components/app_chips.dart';
-import '../design/components/app_list_row.dart';
 import '../design/components/app_text_field.dart';
 import '../design/tokens.dart';
 import 'auth_actions.dart';
@@ -84,15 +84,8 @@ class _LoginScreenState extends State<LoginScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    const AppIconTile(
-                      icon: Icons.home_rounded,
-                      color: AppColors.green,
-                      size: 52,
-                      iconSize: 28,
-                    ),
+                    const AppBrandLogo(height: 52),
                     const SizedBox(height: 22),
-                    Text('OneStay360', style: AppText.eyebrow),
-                    const SizedBox(height: 4),
                     Text(
                       signUp ? 'Create your account' : 'Welcome home',
                       style: AppText.pageTitle,

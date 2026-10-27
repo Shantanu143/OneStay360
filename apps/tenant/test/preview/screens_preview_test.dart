@@ -5,7 +5,9 @@
 // Skipped (and harmless) in a normal `flutter test` run.
 import 'package:flutter/material.dart';
 import 'package:flutter_test/flutter_test.dart';
+import 'package:tenant/app/session_views.dart';
 import 'package:tenant/data/models.dart';
+import 'package:tenant/presentation/design/theme.dart';
 import 'package:tenant/data/sources.dart';
 
 import '../support/fakes.dart';
@@ -213,10 +215,32 @@ void main() {
     await snapshot(tester, 'profile');
   }, skip: !enabled);
 
+  Future<void> showLogo(WidgetTester tester) async {
+    // Asset images decode off the fake clock.
+    await tester.runAsync(() async {
+      for (final e in tester.elementList(find.byType(Image))) {
+        await precacheImage((e.widget as Image).image, e);
+      }
+    });
+    await tester.pump();
+  }
+
   testWidgets('login', (tester) async {
     useIphoneView(tester);
     final h = Harness(FakeBackend());
     await h.pump(tester, signedIn: false);
+    await showLogo(tester);
     await snapshot(tester, 'login');
+  }, skip: !enabled);
+
+  testWidgets('splash', (tester) async {
+    useIphoneView(tester);
+    await tester.pumpWidget(MaterialApp(
+      theme: AppTheme.light(),
+      debugShowCheckedModeBanner: false,
+      home: const MediaQuery(data: MediaQueryData(disableAnimations: true), child: BrandSplash()),
+    ));
+    await showLogo(tester);
+    await snapshot(tester, 'splash');
   }, skip: !enabled);
 }

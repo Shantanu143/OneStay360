@@ -122,10 +122,29 @@ Future<void> openProperty(BuildContext context, String propertyId, {int? initial
 }
 
 /// Opens the edit/finish-setup screen for a property.
-Future<void> openEditProperty(BuildContext context, String propertyId) {
-  return Navigator.of(context).push(
-    MaterialPageRoute(builder: (_) => EditPropertyScreen(propertyId: propertyId)),
+Future<void> openEditProperty(BuildContext context, String propertyId) async {
+  final businessId = context.read<BusinessStateProvider>().businessId ?? '';
+  if (businessId.isEmpty) {
+    showBizToast(context, 'Business not loaded yet.', tone: BizTone.danger);
+    return;
+  }
+  final saved = await Navigator.of(context).push<bool>(
+    MaterialPageRoute(
+      builder: (routeContext) => ChangeNotifierProvider(
+        create: (_) => AddPropertyViewModel(
+          imageService: routeContext.read<ImageService>(),
+          propertyRepository: routeContext.read<PropertyRepository>(),
+        ),
+        child: EditPropertyScreen(businessId: businessId, propertyId: propertyId),
+      ),
+    ),
   );
+  if (saved == true && context.mounted) {
+    try {
+      context.read<RefreshSignals>().propertiesChanged();
+    } catch (_) {}
+    showBizToast(context, 'Property updated', tone: BizTone.success);
+  }
 }
 
 /// Opens the newest pending enrollment request on its property's requests tab.

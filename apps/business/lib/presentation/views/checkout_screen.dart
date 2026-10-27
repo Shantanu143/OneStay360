@@ -5,7 +5,18 @@ import 'package:cloud_functions/cloud_functions.dart';
 import 'package:firebase_services/repositories/property_repository.dart';
 import 'package:models/business/property/property_model.dart';
 
-import 'widgets/business_scaffold.dart';
+import '../design/components/biz_banner.dart';
+import '../design/components/biz_button.dart';
+import '../design/components/biz_card.dart';
+import '../design/components/biz_chips.dart';
+import '../design/components/biz_dialogs.dart';
+import '../design/components/biz_scaffold.dart';
+import '../design/components/biz_section_label.dart';
+import '../design/components/biz_states.dart';
+import '../design/components/biz_text_field.dart';
+import '../design/motion.dart';
+import '../design/tokens.dart';
+import 'home/home_format.dart';
 
 class CheckoutScreen extends StatefulWidget {
   final String propertyId;
@@ -35,7 +46,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   bool _processingPayment = false;
   String? _error;
   String? _promoError;
-  Map<String, dynamic>? _pendingOrder;
 
   @override
   void initState() {
@@ -110,6 +120,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Future<void> _createOrderAndPay() async {
+    final repo = context.read<PropertyRepository>();
     if (_property == null || _quote == null) {
       await _fetchQuote();
       if (_quote == null) return;
@@ -118,7 +129,6 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _processingPayment = true;
     });
     try {
-      final repo = context.read<PropertyRepository>();
       final order = await repo.createActivationOrder(
         businessId: _property!.businessId,
         propertyId: _property!.id!,
@@ -129,16 +139,13 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         clientFinalAmount: (_quote!['finalAmount'] as num?)?.toInt(),
         invoiceId: _invoiceId,
       );
-      _pendingOrder = order;
       _openRazorpayCheckout(order);
     } catch (e) {
       if (!mounted) return;
       setState(() {
         _processingPayment = false;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to start payment: $e')));
+      showBizToast(context, "Couldn't start the payment. Try again.", tone: BizTone.danger);
     }
   }
 
@@ -148,9 +155,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     final amountPaise = (order['amount'] as num?)?.toInt();
 
     if (keyId == null || orderId == null || amountPaise == null) {
-      ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Missing payment details, please retry')),
-      );
+      showBizToast(context, 'Missing payment details, please retry', tone: BizTone.danger);
       setState(() {
         _processingPayment = false;
       });
@@ -179,9 +184,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() {
         _processingPayment = false;
       });
-      ScaffoldMessenger.of(
-        context,
-      ).showSnackBar(SnackBar(content: Text('Failed to open payment: $e')));
+      showBizToast(context, "Couldn't open the payment page. Try again.", tone: BizTone.danger);
     }
   }
 
@@ -192,9 +195,7 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
 
     if (orderId == null || paymentId == null || signature == null) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Payment success missing fields')),
-        );
+        showBizToast(context, 'Payment success missing fields', tone: BizTone.danger);
       }
       setState(() {
         _processingPayment = false;
@@ -211,16 +212,12 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(const SnackBar(content: Text('Activation confirmed')));
+        showBizToast(context, 'Payment confirmed. Your property is live.', tone: BizTone.success);
         Navigator.of(context).pop(true);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(
-          context,
-        ).showSnackBar(SnackBar(content: Text('Confirmation failed: $e')));
+        showBizToast(context, "We couldn't confirm the payment yet. If money was taken, it is confirmed automatically within minutes.", tone: BizTone.danger);
       }
       setState(() {
         _processingPayment = false;
@@ -234,355 +231,152 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _processingPayment = false;
     });
     final message = response.message ?? 'Payment failed';
-    ScaffoldMessenger.of(
-      context,
-    ).showSnackBar(SnackBar(content: Text(message)));
+    showBizToast(context, message, tone: BizTone.danger);
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
     if (!mounted) return;
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(
-        content: Text('External wallet not allowed: ${response.walletName}'),
-      ),
-    );
-  }
-
-  String _formatCurrency(num? amount) {
-    if (amount == null) return '—';
-    return '₹${amount.toInt()}';
-  }
-
-  String _nextBillingDateText() {
-    final now = DateTime.now();
-    final next = now.add(const Duration(days: 30));
-    return '${next.year}-${next.month.toString().padLeft(2, '0')}-${next.day.toString().padLeft(2, '0')}';
+    showBizToast(context, 'External wallet not allowed: ${response.walletName}', tone: BizTone.danger);
   }
 
   @override
   Widget build(BuildContext context) {
-    return WillPopScope(
-      onWillPop: () async => !_processingPayment,
-      child: BusinessScaffold(
-        currentTab: BusinessTab.properties,
-        showBackButton: true,
-        titleText: 'Checkout',
+    final monthly = widget.purpose == 'monthly';
+    return PopScope(
+      canPop: !_processingPayment,
+      child: BizScaffold(
+        title: monthly ? 'Pay plan invoice' : 'Go live',
+        eyebrow: _property?.name,
+        bottomBar: _loading || _error != null || _property == null
+            ? null
+            : BizButton(
+                label: _quote == null
+                    ? (monthly ? 'Pay invoice' : 'Pay & go live')
+                    : '${monthly ? 'Pay' : 'Pay & go live'} · ${formatInr((_quote!['finalAmount'] as num?) ?? 0)}',
+                icon: Icons.lock_rounded,
+                loading: _processingPayment,
+                onPressed: _quoteLoading ? null : _createOrderAndPay,
+              ),
         body: _loading
-            ? const Center(child: CircularProgressIndicator())
+            ? const Padding(padding: EdgeInsets.all(16), child: BizSkeletonList(count: 3, cardHeight: 120))
             : _error != null
-            ? Center(child: Text(_error!))
-            : _buildContent(),
+                ? BizErrorState(message: "Couldn't load the price for this property.", onRetry: _loadPropertyAndQuote)
+                : _buildContent(),
       ),
     );
   }
 
   Widget _buildContent() {
-    if (_property == null) return const SizedBox.shrink();
-    final totalBeds = (_property!.totalBeds as num?)?.toInt() ?? 0;
+    final property = _property;
+    if (property == null) return const SizedBox.shrink();
+    final totalBeds = property.totalBeds;
     final planRaw = _quote?['plan'];
-    final plan = planRaw is Map
-        ? Map<String, dynamic>.from(planRaw)
-        : <String, dynamic>{};
-    final planName = (plan['name'] as String?)?.trim().isNotEmpty == true
-        ? plan['name'] as String
-        : 'Plan';
-    final pricePerBed =
-        (plan['pricePerBedInr'] as num?)?.toInt() ??
-        (_property!.pricePerBed as num?)?.toInt() ??
-        0;
+    final plan = planRaw is Map ? Map<String, dynamic>.from(planRaw) : <String, dynamic>{};
+    final planName = (plan['name'] as String?)?.trim().isNotEmpty == true ? plan['name'] as String : 'Standard plan';
+    final pricePerBed = (plan['pricePerBedInr'] as num?)?.toInt() ?? property.pricePerBed;
+    final discount = (_quote?['discountAmount'] as num?) ?? 0;
+    final monthly = widget.purpose == 'monthly';
 
-    return SingleChildScrollView(
-      padding: const EdgeInsets.all(16),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          _buildHeader(planName, pricePerBed, totalBeds),
-          const SizedBox(height: 12),
-          _buildPromoCard(),
-          const SizedBox(height: 12),
-          _buildSummaryCard(),
-          const SizedBox(height: 12),
-          _buildAmountCard(),
-          const SizedBox(height: 16),
-          _buildPayButton(),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildHeader(String planName, int pricePerBed, int totalBeds) {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.05),
-            blurRadius: 12,
-            offset: const Offset(0, 6),
-          ),
-        ],
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Text(
-            _property!.name,
-            style: const TextStyle(fontSize: 20, fontWeight: FontWeight.w800),
-          ),
-          const SizedBox(height: 4),
-          Text(
-            _property!.businessName ?? 'Business',
-            style: TextStyle(color: Colors.grey.shade700, fontSize: 13),
-          ),
-          const SizedBox(height: 12),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-            decoration: BoxDecoration(
-              color: const Color(0xFFE7F7F2),
-              borderRadius: BorderRadius.circular(12),
-            ),
-            child: Row(
+    return ListView(
+      padding: const EdgeInsets.fromLTRB(16, 4, 16, 24),
+      keyboardDismissBehavior: ScrollViewKeyboardDismissBehavior.onDrag,
+      children: [
+        Reveal(
+          animation: const AlwaysStoppedAnimation(1),
+          start: 0,
+          end: 1,
+          child: Container(
+            padding: const EdgeInsets.all(20),
+            decoration: BoxDecoration(color: BizColors.card, borderRadius: BorderRadius.circular(BizRadius.hero)),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                const Icon(
-                  Icons.workspace_premium_rounded,
-                  color: Color(0xFF0D9488),
+                Text(monthly ? 'Plan invoice' : 'Activate ${property.name}', style: BizText.cardLabel),
+                const SizedBox(height: 6),
+                Text(
+                  _quote == null ? '—' : formatInr((_quote!['finalAmount'] as num?) ?? 0),
+                  style: BizText.heroAmount.copyWith(fontSize: 34),
                 ),
-                const SizedBox(width: 8),
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        planName,
-                        style: const TextStyle(fontWeight: FontWeight.w700),
-                      ),
-                      Text(
-                        '₹$pricePerBed per bed · $totalBeds beds',
-                        style: TextStyle(
-                          color: Colors.grey.shade700,
-                          fontSize: 12,
-                        ),
-                      ),
-                    ],
-                  ),
-                ),
+                const SizedBox(height: 6),
+                Text('$planName · ${formatInr(pricePerBed)} per bed · $totalBeds ${totalBeds == 1 ? 'bed' : 'beds'}',
+                    style: BizText.heroCaption),
               ],
             ),
           ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildSummaryCard() {
-    final purposeLabel = widget.purpose == 'monthly'
-        ? 'Monthly Billing'
-        : 'Property Activation';
-    final planRaw = _quote?['plan'];
-    final plan = planRaw is Map
-        ? Map<String, dynamic>.from(planRaw)
-        : <String, dynamic>{};
-    final planName = (plan['name'] as String?)?.trim().isNotEmpty == true
-        ? plan['name'] as String
-        : 'Plan';
-    final pricePerBed =
-        (plan['pricePerBedInr'] as num?)?.toInt() ??
-        (_property!.pricePerBed as num?)?.toInt() ??
-        0;
-    final totalBeds = (_property!.totalBeds as num?)?.toInt() ?? 0;
-
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        ),
+        const SizedBox(height: 18),
+        const BizSectionLabel('SUMMARY'),
+        BizCard(
+          padding: const EdgeInsets.all(16),
+          child: Column(
             children: [
-              Text(
-                purposeLabel,
-                style: const TextStyle(
-                  fontWeight: FontWeight.w700,
-                  fontSize: 16,
-                ),
-              ),
-              Container(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 10,
-                  vertical: 6,
-                ),
-                decoration: BoxDecoration(
-                  color: const Color(0xFFECFDF3),
-                  borderRadius: BorderRadius.circular(12),
-                ),
-                child: Text(
-                  planName,
-                  style: const TextStyle(
-                    color: Color(0xFF15803D),
-                    fontWeight: FontWeight.w700,
-                  ),
-                ),
-              ),
+              _row('Beds × price', '$totalBeds × ${formatInr(pricePerBed)}'),
+              _row('Base amount', formatInr((_quote?['baseAmount'] as num?) ?? 0)),
+              if (discount > 0) _row('Promo discount', '− ${formatInr(discount)}', color: BizColors.greenDeep),
+              const Divider(height: 22),
+              _row('You pay', formatInr((_quote?['finalAmount'] as num?) ?? 0), strong: true),
+              if (!monthly) ...[
+                const SizedBox(height: 6),
+                _row('Next bill around', formatDay(DateTime.now().add(const Duration(days: 30)))),
+              ],
             ],
           ),
-          const SizedBox(height: 8),
-          Text(
-            '₹$pricePerBed × $totalBeds beds / month',
-            style: TextStyle(color: Colors.grey.shade700),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildAmountCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        children: [
-          _buildAmountRow(
-            'Base amount',
-            _formatCurrency(_quote?['baseAmount']),
-          ),
-          const SizedBox(height: 8),
-          _buildAmountRow(
-            'Discount',
-            _formatCurrency(_quote?['discountAmount']),
-          ),
-          const Divider(height: 24),
-          _buildAmountRow(
-            'Payable',
-            _formatCurrency(_quote?['finalAmount']),
-            isBold: true,
-          ),
-          if (widget.purpose == 'activation') ...[
-            const SizedBox(height: 12),
-            _buildAmountRow('Next billing date', _nextBillingDateText()),
-          ],
-        ],
-      ),
-    );
-  }
-
-  Widget _buildPromoCard() {
-    return Container(
-      padding: const EdgeInsets.all(16),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(16),
-        border: Border.all(color: Colors.grey.shade200),
-      ),
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          const Text(
-            'Promo code',
-            style: TextStyle(fontWeight: FontWeight.w700),
-          ),
-          const SizedBox(height: 8),
-          Row(
+        ),
+        const SizedBox(height: 18),
+        const BizSectionLabel('PROMO CODE'),
+        BizCard(
+          padding: const EdgeInsets.all(16),
+          child: Row(
+            crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               Expanded(
-                child: TextField(
+                child: BizTextField(
+                  label: 'Code (optional)',
+                  fieldKey: const Key('checkout-promo'),
                   controller: _promoController,
-                  decoration: InputDecoration(
-                    hintText: 'Add a promo (optional)',
-                    errorText: _promoError,
-                    border: OutlineInputBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                  ),
-                  textInputAction: TextInputAction.done,
-                  onSubmitted: (_) => _fetchQuote(),
+                  hint: 'LAUNCH50',
+                  textCapitalization: TextCapitalization.characters,
+                  errorText: _promoError,
                 ),
               ),
-              const SizedBox(width: 12),
-              SizedBox(
-                height: 48,
-                child: ElevatedButton(
-                  onPressed: _quoteLoading ? null : _fetchQuote,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: const Color(0xFF0D9488),
-                    padding: const EdgeInsets.symmetric(horizontal: 16),
-                    shape: RoundedRectangleBorder(
-                      borderRadius: BorderRadius.circular(12),
-                    ),
-                    elevation: 0,
-                  ),
-                  child: _quoteLoading
-                      ? const SizedBox(
-                          width: 16,
-                          height: 16,
-                          child: CircularProgressIndicator(
-                            strokeWidth: 2,
-                            color: Colors.white,
-                          ),
-                        )
-                      : const Text('Apply'),
+              const SizedBox(width: 10),
+              Padding(
+                padding: const EdgeInsets.only(top: 24),
+                child: BizButton(
+                  label: 'Apply',
+                  expand: false,
+                  kind: BizButtonKind.tonal,
+                  size: BizButtonSize.medium,
+                  loading: _quoteLoading,
+                  onPressed: _processingPayment ? null : _fetchQuote,
                 ),
               ),
             ],
           ),
+        ),
+        const SizedBox(height: 18),
+        BizBanner(
+          message: monthly
+              ? 'Paying keeps this property live for tenants for the next month.'
+              : 'Once paid, the property goes live: tenants can find it, request to join and pay you rent.',
+          tone: BizTone.info,
+          icon: Icons.verified_user_outlined,
+        ),
+        const SizedBox(height: 12),
+        Center(child: Text('Secure payment by Razorpay · UPI, cards, net banking', style: BizText.caption)),
+      ],
+    );
+  }
+
+  Widget _row(String label, String value, {bool strong = false, Color? color}) {
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 4),
+      child: Row(
+        children: [
+          Expanded(child: Text(label, style: strong ? BizText.cardTitle : BizText.body.copyWith(color: BizColors.inkSoft))),
+          Text(value, style: (strong ? BizText.style(20, 800) : BizText.bodyStrong).copyWith(color: color)),
         ],
       ),
-    );
-  }
-
-  Widget _buildPayButton() {
-    return SizedBox(
-      width: double.infinity,
-      child: ElevatedButton(
-        onPressed: (_quoteLoading || _processingPayment)
-            ? null
-            : _createOrderAndPay,
-        style: ElevatedButton.styleFrom(
-          backgroundColor: const Color(0xFF0D9488),
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(14),
-          ),
-          elevation: 0,
-        ),
-        child: _processingPayment
-            ? const SizedBox(
-                width: 18,
-                height: 18,
-                child: CircularProgressIndicator(
-                  strokeWidth: 2,
-                  color: Colors.white,
-                ),
-              )
-            : Text(
-                widget.purpose == 'monthly' ? 'Pay Invoice' : 'Pay & Activate',
-              ),
-      ),
-    );
-  }
-
-  Widget _buildAmountRow(String label, String value, {bool isBold = false}) {
-    return Row(
-      mainAxisAlignment: MainAxisAlignment.spaceBetween,
-      children: [
-        Text(label),
-        Text(
-          value,
-          style: TextStyle(
-            fontWeight: isBold ? FontWeight.w700 : FontWeight.w500,
-          ),
-        ),
-      ],
     );
   }
 }

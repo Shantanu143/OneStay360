@@ -12,6 +12,7 @@ module.exports = {
     '**/test/unit/tenant_invitation_test.ts',
     '**/test/unit/maintenance_test.ts',
     '**/test/unit/payment_tracking_test.ts',
+    '**/test/unit/property_edit_test.ts',
   ],
   transform: {
     '^.+\\.ts$': ['ts-jest', {

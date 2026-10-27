@@ -10,7 +10,6 @@ import '../design/components/biz_chips.dart';
 import '../design/components/biz_dialogs.dart';
 import '../design/components/biz_scaffold.dart';
 import '../design/components/biz_text_field.dart';
-import '../design/tokens.dart';
 import 'my_details_source.dart';
 import 'my_details_viewmodel.dart';
 

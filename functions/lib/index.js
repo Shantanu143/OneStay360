@@ -55,4 +55,5 @@ __exportStar(require("./tenantBilling"), exports);
 __exportStar(require("./accountDeletion"), exports);
 __exportStar(require("./tenantInvitations"), exports);
 __exportStar(require("./maintenance"), exports);
+__exportStar(require("./propertyEdit"), exports);
 //# sourceMappingURL=index.js.map

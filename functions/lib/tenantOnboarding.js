@@ -1064,6 +1064,8 @@ exports.createTenantInvitation = functions.https.onCall(async (data, context) =>
             phone: tenantPhone,
             email: tenantEmail || null,
             businessId,
+            // Explicit null so onTenantUserCreated (userId == null) can link it.
+            userId: null,
             createdAt: admin.firestore.FieldValue.serverTimestamp(),
         });
     }

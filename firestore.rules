@@ -541,8 +541,11 @@ service cloud.firestore {
     // TENANT INVITATIONS
     // ───────────────────────────────
     match /tenant_invitations/{invitationId} {
+      // tenantId is the TEN id, so the invitee is matched through their
+      // global tenant doc. Tenants answer through callables
+      // (approveInvitation / rejectTenantInvitation), never directly.
       allow read: if isAuth() && (
-        request.auth.uid == resource.data.tenantId
+        tenantDocOwnedByCaller(resource.data.tenantId)
         || isBusinessOwner(resource.data.businessId)
       );
 
@@ -583,6 +586,56 @@ service cloud.firestore {
 
       // Only the tenant who created it can delete
       allow delete: if isAuth() && request.auth.uid == resource.data.tenantId;
+    }
+
+    // ───────────────────────────────
+    // MAINTENANCE REQUESTS
+    // Tenants raise them for the PG they stay at and may cancel an open one;
+    // the business team moves them along. Triggers in functions/maintenance.ts
+    // notify the other side.
+    // ───────────────────────────────
+    function callerStaysWith(businessId) {
+      let user = get(/databases/$(database)/documents/users/$(request.auth.uid)).data;
+      return 'tenantId' in user
+        && user.tenantId is string
+        && tenantDocData(user.tenantId).businessId == businessId
+        && tenantDocData(user.tenantId).userId == request.auth.uid;
+    }
+
+    match /maintenanceRequests/{requestId} {
+      allow read: if isAuth() && (
+        resource.data.tenantUid == request.auth.uid
+        || isBusinessMember(resource.data.businessId)
+      );
+
+      allow create: if isAuth()
+        && request.resource.data.tenantUid == request.auth.uid
+        && request.resource.data.status == 'open'
+        && request.resource.data.businessId is string
+        && request.resource.data.propertyId is string
+        && request.resource.data.title is string
+        && request.resource.data.title.size() > 0
+        && request.resource.data.title.size() <= 120
+        && request.resource.data.category in ['electrical', 'plumbing', 'cleaning', 'internet', 'furniture', 'appliance', 'other']
+        && request.resource.data.priority in ['normal', 'urgent']
+        && callerStaysWith(request.resource.data.businessId);
+
+      allow update: if isAuth() && (
+        (
+          resource.data.tenantUid == request.auth.uid
+          && resource.data.status == 'open'
+          && request.resource.data.status == 'cancelled'
+          && request.resource.data.diff(resource.data).affectedKeys().hasOnly(['status', 'updatedAt'])
+        )
+        || (
+          isBusinessMember(resource.data.businessId)
+          && request.resource.data.status in ['open', 'in_progress', 'resolved']
+          && request.resource.data.diff(resource.data).affectedKeys()
+            .hasOnly(['status', 'ownerNote', 'updatedAt', 'updatedBy', 'resolvedAt'])
+        )
+      );
+
+      allow delete: if false;
     }
 
     // ───────────────────────────────

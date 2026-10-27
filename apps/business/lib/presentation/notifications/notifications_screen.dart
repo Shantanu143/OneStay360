@@ -123,6 +123,7 @@ class _Row extends StatelessWidget {
     BusinessNotificationType.payment => (Icons.currency_rupee_rounded, BizColors.green),
     BusinessNotificationType.billing => (Icons.receipt_long_rounded, BizColors.orange),
     BusinessNotificationType.tenantEvent => (Icons.home_work_outlined, BizColors.orange),
+    BusinessNotificationType.maintenance => (Icons.handyman_outlined, BizColors.orange),
     BusinessNotificationType.general => (Icons.notifications_none_rounded, BizColors.inkSoft),
   };
 

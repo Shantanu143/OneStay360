@@ -38,6 +38,11 @@ final class RequestsListTarget extends NotificationTarget {
   const RequestsListTarget();
 }
 
+/// A tenant raised a maintenance request.
+final class MaintenanceListTarget extends NotificationTarget {
+  const MaintenanceListTarget();
+}
+
 /// The notification lacks what it needs to open anything.
 final class MissingTarget extends NotificationTarget {
   const MissingTarget(this.reason);
@@ -67,6 +72,8 @@ NotificationTarget targetFor(BusinessNotification n) {
     case BusinessNotificationType.billing:
       if (!_has(n.propertyId)) return const MissingTarget('Property information missing');
       return PropertyTarget(n.propertyId!, PropertyTarget.billingTab);
+    case BusinessNotificationType.maintenance:
+      return const MaintenanceListTarget();
     case BusinessNotificationType.tenantEvent:
     case BusinessNotificationType.general:
       return const NoTarget();

@@ -6,6 +6,7 @@ import 'package:models/business/business_notification_model.dart';
 import '../../app/app_routes.dart';
 import '../design/components/biz_chips.dart';
 import '../design/components/biz_dialogs.dart';
+import '../maintenance/maintenance_screen.dart';
 import '../payments/pending_payments_screen.dart';
 import '../views/view_property_screen.dart';
 import 'notification_target.dart';
@@ -55,6 +56,8 @@ Future<void> openNotification(BuildContext context, BusinessNotification notific
       } else {
         navigator.pushNamed(AppRoutes.enrollmentRequests, arguments: {'requestId': requestId});
       }
+    case MaintenanceListTarget():
+      navigator.push(MaterialPageRoute(builder: (_) => const MaintenanceScreen()));
     case RequestsListTarget():
       navigator.pushNamed(AppRoutes.enrollmentRequests);
     case MissingTarget(:final reason):

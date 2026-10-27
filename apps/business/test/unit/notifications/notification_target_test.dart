@@ -87,4 +87,21 @@ void main() {
     expect(targetFor(note(BusinessNotificationType.tenantEvent)), isA<NoTarget>());
     expect(targetFor(note(BusinessNotificationType.general)), isA<NoTarget>());
   });
+
+  group('maintenance requests', () {
+    test('open the maintenance list', () {
+      expect(targetFor(note(BusinessNotificationType.maintenance)), isA<MaintenanceListTarget>());
+    });
+
+    test('are read from the type the trigger writes', () {
+      final n = BusinessNotification.fromMap('n', {'type': 'maintenance_request', 'title': 't'});
+      expect(n.type, BusinessNotificationType.maintenance);
+    });
+
+    test('tenant answers to invitations count as tenant events', () {
+      for (final type in ['tenant_joined', 'tenant_invitation_declined']) {
+        expect(BusinessNotification.fromMap('n', {'type': type}).type, BusinessNotificationType.tenantEvent, reason: type);
+      }
+    });
+  });
 }

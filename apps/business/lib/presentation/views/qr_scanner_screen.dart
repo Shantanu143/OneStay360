@@ -6,10 +6,7 @@ import 'package:cloud_firestore/cloud_firestore.dart';
 class QRScannerScreen extends StatefulWidget {
   final Function(Map<String, dynamic> tenantData)? onTenantScanned;
 
-  const QRScannerScreen({
-    super.key,
-    this.onTenantScanned,
-  });
+  const QRScannerScreen({super.key, this.onTenantScanned});
 
   @override
   State<QRScannerScreen> createState() => _QRScannerScreenState();
@@ -40,7 +37,9 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
           const SnackBar(
-            content: Text('Invalid QR code. Please scan a tenant profile QR code.'),
+            content: Text(
+              'Invalid QR code. Please scan a tenant profile QR code.',
+            ),
             backgroundColor: Colors.red,
           ),
         );
@@ -53,7 +52,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     try {
       // Extract tenantId from QR code
       final tenantId = scannedData.replaceFirst('onestay360:tenant:', '');
-      
+
       if (tenantId.isEmpty) {
         throw Exception('Invalid tenant ID in QR code');
       }
@@ -108,24 +107,20 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
       // Also get user document for additional details
       final userId = tenantData['userId']?.toString();
       Map<String, dynamic>? userData;
-      
+
       if (userId != null && userId.isNotEmpty) {
         final userDoc = await FirebaseFirestore.instance
             .collection('users')
             .doc(userId)
             .get();
-        
+
         if (userDoc.exists) {
           userData = userDoc.data();
         }
       }
 
       // Merge tenant and user data
-      return {
-        ...tenantData,
-        ...?userData,
-        'tenantId': tenantId,
-      };
+      return {...tenantData, ...?userData, 'tenantId': tenantId};
     } catch (e) {
       print('Error fetching tenant data: $e');
       return null;
@@ -150,10 +145,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
       ),
       body: Stack(
         children: [
-          MobileScanner(
-            controller: _controller,
-            onDetect: _handleBarcode,
-          ),
+          MobileScanner(controller: _controller, onDetect: _handleBarcode),
           if (_isProcessing)
             Container(
               color: Colors.black.withOpacity(0.7),
@@ -182,10 +174,7 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
                   gradient: LinearGradient(
                     begin: Alignment.topCenter,
                     end: Alignment.bottomCenter,
-                    colors: [
-                      Colors.transparent,
-                      Colors.black.withOpacity(0.8),
-                    ],
+                    colors: [Colors.transparent, Colors.black.withOpacity(0.8)],
                   ),
                 ),
                 child: Column(
@@ -219,7 +208,3 @@ class _QRScannerScreenState extends State<QRScannerScreen> {
     );
   }
 }
-
-
-
-

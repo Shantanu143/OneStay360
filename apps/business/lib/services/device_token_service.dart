@@ -1,260 +1,193 @@
-import 'package:firebase_messaging/firebase_messaging.dart';
+// lib/services/device_token_service.dart
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
-import 'package:flutter/material.dart';
-import '../presentation/views/view_property_screen.dart';
+import 'package:firebase_messaging/firebase_messaging.dart';
+import 'package:flutter/foundation.dart';
 
-/// Service to handle FCM device token registration and management
-class DeviceTokenService {
-  static final DeviceTokenService _instance = DeviceTokenService._internal();
+import '../app/deep_links.dart';
 
-  final FirebaseMessaging _messaging = FirebaseMessaging.instance;
-  final FirebaseAuth _auth = FirebaseAuth.instance;
-  final FirebaseFirestore _firestore = FirebaseFirestore.instance;
+/// The slice of Firebase Messaging this app needs, so it can be faked.
+abstract class PushGateway {
+  Future<void> requestPermission();
+  Future<String?> getToken();
+  Stream<String> get onTokenRefresh;
 
-  bool _initialized = false;
-  
-  // Navigation key for accessing navigator from service
-  static GlobalKey<NavigatorState>? navigatorKey;
+  /// `data` of messages that arrive while the app is open.
+  Stream<Map<String, dynamic>> get onForegroundMessage;
 
-  DeviceTokenService._internal();
+  /// `data` of a notification the user tapped while the app was in background.
+  Stream<Map<String, dynamic>> get onOpenedFromBackground;
 
-  factory DeviceTokenService() {
-    return _instance;
-  }
-
-  /// Initialize FCM and register device token
-  Future<void> initialize() async {
-    if (_initialized) return;
-
-    try {
-      // Request notification permissions (iOS)
-      final settings = await _messaging.requestPermission(
-        alert: true,
-        announcement: false,
-        badge: true,
-        carPlay: false,
-        criticalAlert: false,
-        provisional: false,
-        sound: true,
-      );
-
-      debugPrint(
-        '🔔 FCM Permission Status: ${settings.authorizationStatus}',
-      );
-
-      // Get initial token
-      final token = await _messaging.getToken();
-      if (token != null) {
-        await registerDeviceToken(token);
-      }
-
-      // Listen for token refresh
-      _messaging.onTokenRefresh.listen((newToken) async {
-        debugPrint('🔄 FCM Token Refreshed: $newToken');
-        await registerDeviceToken(newToken);
-      });
-
-      // Handle foreground messages
-      FirebaseMessaging.onMessage.listen((RemoteMessage message) {
-        debugPrint('📬 Foreground message received:');
-        debugPrint('Title: ${message.notification?.title}');
-        debugPrint('Body: ${message.notification?.body}');
-        debugPrint('Data: ${message.data}');
-
-        // You can show a custom notification here or update UI
-        _handleNotificationMessage(message);
-      });
-
-      // Handle notification tap when app is in background
-      FirebaseMessaging.onMessageOpenedApp.listen((RemoteMessage message) {
-        debugPrint('🔔 Notification tapped (app in background):');
-        debugPrint('Data: ${message.data}');
-        _handleNotificationMessage(message);
-      });
-
-      // Handle background message (needs to be a top-level function)
-      // This is handled in main.dart with _firebaseMessagingBackgroundHandler
-
-      // Handle notification tap when app is terminated
-      final initialMessage = await _messaging.getInitialMessage();
-      if (initialMessage != null) {
-        debugPrint('🔔 Notification tapped (app was terminated):');
-        debugPrint('Data: ${initialMessage.data}');
-        _handleNotificationMessage(initialMessage);
-      }
-
-      _initialized = true;
-      debugPrint('✅ FCM Service initialized');
-    } catch (e) {
-      debugPrint('❌ Error initializing FCM: $e');
-    }
-  }
-
-  /// Register device token with Firestore
-  Future<void> registerDeviceToken(String deviceToken) async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) {
-        debugPrint('⚠️ User not authenticated, skipping token registration');
-        return;
-      }
-
-      // Get device info
-      final deviceName = 'Business App';
-      final deviceModel = 'Mobile Device';
-
-      // Call Cloud Function to register token
-      await _firestore
-          .collection('users')
-          .doc(user.uid)
-          .collection('deviceTokens')
-          .doc(deviceToken)
-          .set({
-        'token': deviceToken,
-        'active': true,
-        'registeredAt': FieldValue.serverTimestamp(),
-        'lastSeenAt': FieldValue.serverTimestamp(),
-        'deviceName': deviceName,
-        'deviceModel': deviceModel,
-      }, SetOptions(merge: true));
-
-      debugPrint('✅ Device token registered: $deviceToken');
-    } catch (e) {
-      debugPrint('❌ Error registering device token: $e');
-    }
-  }
-
-  /// Unregister device token (call on logout)
-  Future<void> unregisterDeviceToken() async {
-    try {
-      final user = _auth.currentUser;
-      if (user == null) return;
-
-      final token = await _messaging.getToken();
-      if (token != null) {
-        await _firestore
-            .collection('users')
-            .doc(user.uid)
-            .collection('deviceTokens')
-            .doc(token)
-            .update({
-          'active': false,
-          'deactivatedAt': FieldValue.serverTimestamp(),
-        });
-
-        debugPrint('✅ Device token unregistered: $token');
-      }
-    } catch (e) {
-      debugPrint('❌ Error unregistering device token: $e');
-    }
-  }
-
-  /// Handle notification messages (both foreground and background)
-  void _handleNotificationMessage(RemoteMessage message) {
-    try {
-      final data = message.data;
-      final type = data['type'] ?? '';
-
-      debugPrint('📨 Processing notification of type: $type');
-
-      switch (type) {
-        case 'enrollment_request':
-          _handleEnrollmentNotification(data);
-          break;
-        default:
-          debugPrint('Unknown notification type: $type');
-      }
-    } catch (e) {
-      debugPrint('❌ Error handling notification: $e');
-    }
-  }
-
-  /// Handle enrollment request notification
-  void _handleEnrollmentNotification(Map<String, dynamic> data) {
-    final requestId = data['requestId'] as String?;
-    final propertyId = data['propertyId'] as String?;
-    final tenantName = data['tenantName'] as String?;
-    final moveInDate = data['moveInDate'] as String?;
-    final propertyName = data['propertyName'] as String?;
-
-    debugPrint('🏠 Enrollment Request Notification:');
-    debugPrint('  Request ID: $requestId');
-    debugPrint('  Property ID: $propertyId');
-    if (propertyName != null) {
-      debugPrint('  Property Name: $propertyName');
-    }
-    debugPrint('  Tenant: $tenantName');
-    debugPrint('  Move-in: $moveInDate');
-
-    // Navigate to enrollment requests screen
-    if (propertyId != null && propertyId.isNotEmpty) {
-      _navigateToPropertyRequests(propertyId);
-      return;
-    }
-
-    if (requestId != null) {
-      _navigateToEnrollmentRequests(requestId, propertyId);
-    } else {
-      debugPrint('⚠️ Missing requestId in notification payload');
-    }
-  }
-  
-  /// Navigate to enrollment requests screen
-  void _navigateToEnrollmentRequests(String requestId, String? propertyId) {
-    // Add a delay to ensure the app is fully ready
-    Future.delayed(const Duration(milliseconds: 500), () {
-      final navState = navigatorKey?.currentState;
-      if (navState == null) {
-        debugPrint('⚠️ Navigator state not available yet');
-        return;
-      }
-
-      try {
-        navState.pushNamed(
-          '/enrollment-requests',
-          arguments: {
-            'requestId': requestId,
-            'propertyId': propertyId,
-          },
-        );
-        debugPrint('✅ Navigated to enrollment requests');
-      } catch (e) {
-        debugPrint('❌ Navigation error: $e');
-      }
-    });
-  }
-
-  void _navigateToPropertyRequests(String propertyId) {
-    Future.delayed(const Duration(milliseconds: 500), () {
-      final navState = navigatorKey?.currentState;
-      if (navState == null) {
-        debugPrint('⚠️ Navigator state not available yet');
-        return;
-      }
-
-      try {
-        navState.push(
-          MaterialPageRoute(
-            builder: (_) => ViewPropertyScreen(
-              propertyId: propertyId,
-              initialTabIndex: ViewPropertyScreen.requestsTabIndex,
-            ),
-          ),
-        );
-        debugPrint('✅ Navigated to property requests tab');
-      } catch (e) {
-        debugPrint('❌ Navigation error: $e');
-      }
-    });
-  }
+  /// `data` of the notification that launched the app from a terminated state.
+  Future<Map<String, dynamic>?> initialMessageData();
 }
 
-/// Background message handler - must be a top-level function
-Future<void> firebaseMessagingBackgroundHandler(RemoteMessage message) async {
-  debugPrint('📬 Background message received: ${message.messageId}');
-  debugPrint('Title: ${message.notification?.title}');
-  debugPrint('Body: ${message.notification?.body}');
-  // Don't call DeviceTokenService here in background
-  // Just log the message
+class FirebasePushGateway implements PushGateway {
+  FirebasePushGateway([FirebaseMessaging? messaging])
+      : _messaging = messaging ?? FirebaseMessaging.instance;
+
+  final FirebaseMessaging _messaging;
+
+  @override
+  Future<void> requestPermission() async {
+    final settings = await _messaging.requestPermission(
+      alert: true,
+      badge: true,
+      sound: true,
+    );
+    debugPrint('🔔 FCM permission: ${settings.authorizationStatus}');
+  }
+
+  @override
+  Future<String?> getToken() => _messaging.getToken();
+
+  @override
+  Stream<String> get onTokenRefresh => _messaging.onTokenRefresh;
+
+  @override
+  Stream<Map<String, dynamic>> get onForegroundMessage =>
+      FirebaseMessaging.onMessage.map((m) => m.data);
+
+  @override
+  Stream<Map<String, dynamic>> get onOpenedFromBackground =>
+      FirebaseMessaging.onMessageOpenedApp.map((m) => m.data);
+
+  @override
+  Future<Map<String, dynamic>?> initialMessageData() async =>
+      (await _messaging.getInitialMessage())?.data;
+}
+
+/// Keeps this device's FCM token registered to whoever is signed in, and turns
+/// notification taps into [AppLink]s.
+///
+/// * Registers when a user signs in (not just at app start), on token rotation,
+///   and moves the device to the new user on an account switch.
+/// * [deactivateCurrentToken] must run *before* sign-out (Firestore rules need
+///   the user still authenticated) so a signed-out phone stops getting pushes.
+/// * Foreground messages never navigate; the in-app notification list already
+///   shows them and yanking the user to another screen mid-task is hostile.
+class DeviceTokenService {
+  DeviceTokenService({
+    required this.gateway,
+    required this.authChanges,
+    required this.firestore,
+    required this.onLink,
+  });
+
+  final PushGateway gateway;
+  final Stream<User?> authChanges;
+  final FirebaseFirestore firestore;
+  final void Function(AppLink link) onLink;
+
+  final List<StreamSubscription<dynamic>> _subs = [];
+  Future<void> _queue = Future.value();
+  bool _started = false;
+  String? _uid;
+  String? _token;
+
+  void start() {
+    if (_started) return;
+    _started = true;
+
+    _subs
+      ..add(authChanges.listen((user) {
+        // Serialise: sign-out and sign-in events must not interleave.
+        _queue = _queue.then((_) => _onAuth(user)).catchError((Object e) {
+          debugPrint('❌ [DeviceTokenService] $e');
+        });
+      }))
+      ..add(gateway.onTokenRefresh.listen(_onTokenRefresh))
+      ..add(gateway.onOpenedFromBackground.listen(_open))
+      ..add(gateway.onForegroundMessage.listen((data) {
+        debugPrint('📬 Foreground push: ${data['type']}');
+      }));
+
+    gateway.initialMessageData().then((data) {
+      if (data != null) _open(data);
+    }).catchError((Object e) {
+      debugPrint('❌ [DeviceTokenService] initial message: $e');
+    });
+  }
+
+  Future<void> dispose() async {
+    for (final s in _subs) {
+      await s.cancel();
+    }
+    _subs.clear();
+    _started = false;
+  }
+
+  Future<void> _onAuth(User? user) async {
+    if (user == null) {
+      await deactivateCurrentToken();
+      return;
+    }
+    if (user.uid == _uid) return;
+
+    await deactivateCurrentToken(); // previous user, if any
+    _uid = user.uid;
+    try {
+      await gateway.requestPermission();
+      final token = await gateway.getToken();
+      if (token == null) {
+        _uid = null;
+        return;
+      }
+      _token = token;
+      await _register(user.uid, token);
+    } catch (e) {
+      debugPrint('❌ [DeviceTokenService] registering failed: $e');
+      _uid = null;
+      _token = null;
+    }
+  }
+
+  void _onTokenRefresh(String token) {
+    final uid = _uid;
+    if (uid == null) return;
+    _token = token;
+    _register(uid, token).catchError((Object e) {
+      debugPrint('❌ [DeviceTokenService] refresh failed: $e');
+    });
+  }
+
+  DocumentReference<Map<String, dynamic>> _doc(String uid, String token) =>
+      firestore.collection('users').doc(uid).collection('deviceTokens').doc(token);
+
+  Future<void> _register(String uid, String token) {
+    return _doc(uid, token).set({
+      'token': token,
+      'active': true,
+      'registeredAt': FieldValue.serverTimestamp(),
+      'lastSeenAt': FieldValue.serverTimestamp(),
+      'deviceName': 'Business App',
+      'deviceModel': defaultTargetPlatform.name,
+    }, SetOptions(merge: true));
+  }
+
+  /// Marks this device's token inactive for the current user. Call it *before*
+  /// signing out. Safe to call repeatedly or when nothing is registered.
+  Future<void> deactivateCurrentToken() async {
+    final uid = _uid;
+    final token = _token;
+    _uid = null;
+    _token = null;
+    if (uid == null || token == null) return;
+    try {
+      await _doc(uid, token).set({
+        'active': false,
+        'deactivatedAt': FieldValue.serverTimestamp(),
+      }, SetOptions(merge: true));
+    } catch (e) {
+      // Expected when already signed out (rules deny the write).
+      debugPrint('⚠️ [DeviceTokenService] could not deactivate token: $e');
+    }
+  }
+
+  void _open(Map<String, dynamic> data) {
+    final link = AppLink.fromPushData(data);
+    if (link != null) onLink(link);
+  }
 }

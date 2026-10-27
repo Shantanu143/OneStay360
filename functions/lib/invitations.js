@@ -40,6 +40,7 @@ const sendEmail_1 = require("./sendEmail");
 const sendSms_1 = require("./sendSms");
 const permissions_1 = require("./permissions");
 const audit_1 = require("./audit");
+const invitationLogic_1 = require("./invitationLogic");
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
@@ -119,8 +120,18 @@ exports.createBusinessInvitation = functions
     const expiresAt = addDays(now, 7);
     const inviteRef = db.collection('business_invitations').doc();
     const actorRole = await (0, permissions_1.getMembershipRole)(uid, businessId);
+    // Names the invitee will see before signing in (the business itself is
+    // not readable to them yet).
+    const [businessSnap0, inviterSnap0] = await Promise.all([
+        db.doc(`businesses/${businessId}`).get(),
+        db.doc(`businesses/${businessId}/members/${uid}`).get(),
+    ]);
+    const inviter0 = inviterSnap0.data();
     const inviteData = {
         businessId,
+        businessName: businessSnap0.data()?.name || '',
+        inviterName: inviter0?.name || inviter0?.displayName || '',
+        propertyNames: properties.map((pid) => propertyNames[pid] || pid),
         invitedBy: uid,
         phone,
         email: email || null,
@@ -211,21 +222,13 @@ exports.acceptBusinessInvitation = functions.https.onCall(async (data, context) 
     }
     const inviteRef = db.doc(`business_invitations/${inviteId}`);
     const now = admin.firestore.Timestamp.now();
-    const normalizePhone = (phone) => {
-        if (!phone)
-            return '';
-        const digits = phone.replace(/\D/g, '');
-        if (digits.length > 10) {
-            return digits.substring(digits.length - 10);
-        }
-        return digits;
-    };
     // Load the verified phone number for this user from Firebase Auth.
     // This is more reliable than depending solely on the ID token claims.
     const tokenPhone = context.auth?.token?.phone_number;
     let authPhone = tokenPhone;
     let authProviders;
     let userEmail;
+    let authName;
     try {
         const userRecord = await admin.auth().getUser(uid);
         if (userRecord.phoneNumber) {
@@ -234,6 +237,7 @@ exports.acceptBusinessInvitation = functions.https.onCall(async (data, context) 
         // Capture provider IDs (e.g., phone, password) for downstream analytics/UI.
         authProviders = Array.from(new Set((userRecord.providerData || []).map((p) => p.providerId).filter(Boolean)));
         userEmail = userRecord.email || undefined;
+        authName = userRecord.displayName || undefined;
     }
     catch (err) {
         functions.logger.error('accept_invite_get_user_failed', { uid, error: err });
@@ -250,8 +254,8 @@ exports.acceptBusinessInvitation = functions.https.onCall(async (data, context) 
         if (invite.expiresAt?.toMillis() < now.toMillis()) {
             throw new functions.https.HttpsError('failed-precondition', 'Invitation expired');
         }
-        const invitePhoneNorm = normalizePhone(invite.phone);
-        const authPhoneNorm = normalizePhone(authPhone);
+        const invitePhoneNorm = (0, invitationLogic_1.normalizePhone)(invite.phone);
+        const authPhoneNorm = (0, invitationLogic_1.normalizePhone)(authPhone);
         functions.logger.info('accept_invite_phone_check', {
             uid,
             invitePhone: invite.phone,
@@ -259,11 +263,15 @@ exports.acceptBusinessInvitation = functions.https.onCall(async (data, context) 
             invitePhoneNorm,
             authPhoneNorm,
         });
-        // We already enforce the exact phone match in the Flutter app
-        // before calling this function. Here we only require that the
-        // user has some verified phone on their account.
+        // The invitation was sent to one phone number: only an account verified
+        // with that same number may accept it. (The app checks this too, but a
+        // client check alone can be bypassed with a leaked link.)
         if (!authPhoneNorm) {
             throw new functions.https.HttpsError('unauthenticated', 'Phone authentication required');
+        }
+        if (!(0, invitationLogic_1.phonesMatch)(invite.phone, authPhone)) {
+            functions.logger.warn('accept_invite_phone_mismatch', { uid, inviteId });
+            throw new functions.https.HttpsError('permission-denied', 'This invitation was sent to a different phone number');
         }
         const businessId = invite.businessId;
         const role = invite.role;
@@ -314,11 +322,16 @@ exports.acceptBusinessInvitation = functions.https.onCall(async (data, context) 
                 actorRole: role,
             });
         }
+        // So the team list can show who this is instead of an id.
+        const memberName = authName || existingUser?.fullName || existingUser?.displayName || existingUser?.name || undefined;
         tx.set(membershipRef, {
             uid,
             businessId,
             role,
             status: 'active',
+            ...(memberName ? { name: memberName, displayName: memberName } : {}),
+            ...(authPhone ? { phone: authPhone } : {}),
+            ...(resolvedEmail ? { email: resolvedEmail } : {}),
             createdAt: now,
             updatedAt: now,
             createdBy: uid,

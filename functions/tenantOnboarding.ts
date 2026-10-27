@@ -16,6 +16,7 @@
 import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { sendWhatsAppTemplate } from './sendWhatsApp';
+import { assertPropertyPermission } from './permissions';
 import { buildTenantInvitationEmail, sendEmail } from './sendEmail';
 
 if (admin.apps.length === 0) {
@@ -316,11 +317,12 @@ async function handleEnrollmentApproved(
       // 5. If user exists, update their user document (Only essential fields)
       if (tenantUserId) {
         const userRef = db.doc(`users/${tenantUserId}`);
-        tx.update(userRef, {
+        // merge: a tenant who never finished their profile may have no user doc yet
+        tx.set(userRef, {
           tenantId: tenantDocId,
           isTenant: true,
           updatedAt: now,
-        });
+        }, { merge: true });
       }
 
       // 6. Sync room/bed/rent data to the global /tenants doc so tenant app can read it
@@ -807,9 +809,14 @@ async function handlePaymentSubmitted(
 
     // 2. Create notification record for owner
     await db.collection('businesses').doc(businessId).collection('notifications').add({
+      businessId,
       type: 'payment_submitted',
       title: '💳 Payment Confirmation Required',
+      // `message`/`requestId` are what the business app reads; `body` and
+      // `enrollmentRequestId` are kept for anything already using them.
+      message: `${tenantName} paid ${formattedAmount}. Transaction ID: ${transactionId || 'Not provided'}`,
       body: `${tenantName} paid ${formattedAmount}. Transaction ID: ${transactionId || 'Not provided'}`,
+      requestId,
       enrollmentRequestId: requestId,
       propertyId,
       tenantName,
@@ -1398,6 +1405,9 @@ export const vacateTenant = functions.https.onCall(async (data, context) => {
   if (!tenantId || !businessId || !propertyId || !roomId || !bedId) {
     throw new functions.https.HttpsError('invalid-argument', 'Missing required fields: tenantId, businessId, propertyId, roomId, bedId');
   }
+
+  // Removing a tenant is an owner decision.
+  await assertPropertyPermission(context.auth.uid, businessId, propertyId, 'DELETE_TENANTS');
 
   console.log(`🚪 Vacating tenant ${tenantId} from property ${propertyId}, room ${roomId}, bed ${bedId}`);
 

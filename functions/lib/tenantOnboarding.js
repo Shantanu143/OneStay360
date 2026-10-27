@@ -51,6 +51,7 @@ exports.vacateTenant = exports.onTenantInvitationCreated = exports.createTenantI
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 const sendWhatsApp_1 = require("./sendWhatsApp");
+const permissions_1 = require("./permissions");
 const sendEmail_1 = require("./sendEmail");
 if (admin.apps.length === 0) {
     admin.initializeApp();
@@ -293,11 +294,12 @@ async function handleEnrollmentApproved(requestId, enrollment) {
             // 5. If user exists, update their user document (Only essential fields)
             if (tenantUserId) {
                 const userRef = db.doc(`users/${tenantUserId}`);
-                tx.update(userRef, {
+                // merge: a tenant who never finished their profile may have no user doc yet
+                tx.set(userRef, {
                     tenantId: tenantDocId,
                     isTenant: true,
                     updatedAt: now,
-                });
+                }, { merge: true });
             }
             // 6. Sync room/bed/rent data to the global /tenants doc so tenant app can read it
             const globalTenantRef = db.doc(`tenants/${tenantDocId}`);
@@ -713,9 +715,14 @@ async function handlePaymentSubmitted(requestId, enrollment) {
         }
         // 2. Create notification record for owner
         await db.collection('businesses').doc(businessId).collection('notifications').add({
+            businessId,
             type: 'payment_submitted',
             title: '💳 Payment Confirmation Required',
+            // `message`/`requestId` are what the business app reads; `body` and
+            // `enrollmentRequestId` are kept for anything already using them.
+            message: `${tenantName} paid ${formattedAmount}. Transaction ID: ${transactionId || 'Not provided'}`,
             body: `${tenantName} paid ${formattedAmount}. Transaction ID: ${transactionId || 'Not provided'}`,
+            requestId,
             enrollmentRequestId: requestId,
             propertyId,
             tenantName,
@@ -1202,6 +1209,8 @@ exports.vacateTenant = functions.https.onCall(async (data, context) => {
     if (!tenantId || !businessId || !propertyId || !roomId || !bedId) {
         throw new functions.https.HttpsError('invalid-argument', 'Missing required fields: tenantId, businessId, propertyId, roomId, bedId');
     }
+    // Removing a tenant is an owner decision.
+    await (0, permissions_1.assertPropertyPermission)(context.auth.uid, businessId, propertyId, 'DELETE_TENANTS');
     console.log(`🚪 Vacating tenant ${tenantId} from property ${propertyId}, room ${roomId}, bed ${bedId}`);
     try {
         const now = admin.firestore.Timestamp.now();

@@ -15,6 +15,7 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { BillingStatus } from './types';
 import { getDefaultActivePlan, Plan } from './plan';
+import { assertPropertyPermission } from './permissions';
 
 if (admin.apps.length === 0) {
   admin.initializeApp();
@@ -609,6 +610,19 @@ export const recordPayment = functions.https.onCall(async (data, context) => {
 
   const tenantData = bizTenantSnap.data() as any;
 
+  // Only people who manage this tenant's property may record money for them.
+  await assertPropertyPermission(context.auth.uid, businessId, tenantData.propertyId, 'UPDATE_TENANTS');
+
+  // The invoice this payment settles, so the tenant's dues and the owner's
+  // collection totals stay right. Matched by month label like verifyRentPayment.
+  const invoiceQuery = await db
+    .collection(`businesses/${businessId}/tenants/${tenantId}/rent_invoices`)
+    .where('month', '==', month)
+    .where('status', 'in', ['unpaid', 'overdue'])
+    .limit(1)
+    .get();
+  const invoiceRef = invoiceQuery.empty ? null : invoiceQuery.docs[0].ref;
+
   // Create payment record
   const paymentRef = db.collection(`businesses/${businessId}/tenants/${tenantId}/payments`).doc();
   const paymentRecord = {
@@ -627,6 +641,7 @@ export const recordPayment = functions.https.onCall(async (data, context) => {
     note: note || null,
     recordedBy: context.auth.uid,
     createdAt: now,
+    ...(invoiceRef ? { rentInvoiceId: invoiceRef.id } : {}),
   };
 
   await db.runTransaction(async (tx) => {
@@ -636,6 +651,16 @@ export const recordPayment = functions.https.onCall(async (data, context) => {
 
     // Write payment record
     tx.set(paymentRef, paymentRecord);
+
+    if (invoiceRef) {
+      tx.update(invoiceRef, {
+        status: 'paid',
+        paidAt: now,
+        verification: 'verified',
+        mode: String(paymentMode || 'Cash').toLowerCase(),
+        updatedAt: now,
+      });
+    }
 
     // Update lastPaymentDate on business-scoped tenant doc
     tx.update(bizTenantRef, {
@@ -815,6 +840,19 @@ export const verifyRentPayment = functions.https.onCall(async (data, context) =>
   const paymentRef = db.collection(`businesses/${businessId}/tenants/${tenantId}/payments`).doc(paymentId);
   const globalTenantRef = db.doc(`tenants/${tenantId}`);
 
+  // Only people who manage the tenant's property may confirm or reject their
+  // payments (a tenant must not be able to approve their own).
+  const tenantForAuth = await bizTenantRef.get();
+  if (!tenantForAuth.exists) {
+    throw new functions.https.HttpsError('not-found', 'Tenant not found');
+  }
+  await assertPropertyPermission(
+    context.auth.uid,
+    businessId,
+    (tenantForAuth.data() as any).propertyId,
+    'UPDATE_TENANTS'
+  );
+
   let finalStatus = '';
 
   await db.runTransaction(async (tx) => {
@@ -837,6 +875,31 @@ export const verifyRentPayment = functions.https.onCall(async (data, context) =>
 
     if (action === 'confirm') {
       finalStatus = 'Paid';
+
+      // Firestore transactions must do every read before the first write, so
+      // find the invoice this payment settles before touching anything.
+      //   Prefer the stored rentInvoiceId on the payment record; fall back to
+      //   matching by month for older records.
+      let invoiceToPay: FirebaseFirestore.DocumentReference | null = null;
+      const storedInvoiceId = paymentData.rentInvoiceId as string | undefined;
+      if (storedInvoiceId) {
+        const invoiceRef = db.doc(
+          `businesses/${businessId}/tenants/${tenantId}/rent_invoices/${storedInvoiceId}`
+        );
+        const invoiceSnap = await tx.get(invoiceRef);
+        if (invoiceSnap.exists && (invoiceSnap.data() as any)?.status !== 'paid') {
+          invoiceToPay = invoiceRef;
+        }
+      } else {
+        const invoiceQuery = db
+          .collection(`businesses/${businessId}/tenants/${tenantId}/rent_invoices`)
+          .where('month', '==', paymentData.month)
+          .where('status', 'in', ['unpaid', 'overdue'])
+          .limit(1);
+        const invoiceSnap = await tx.get(invoiceQuery);
+        if (!invoiceSnap.empty) invoiceToPay = invoiceSnap.docs[0].ref;
+      }
+
       // 1. Mark payment as Paid
       tx.update(paymentRef, {
         status: finalStatus,
@@ -866,40 +929,14 @@ export const verifyRentPayment = functions.https.onCall(async (data, context) =>
 
       // 4. Mark the matching rent_invoice as paid so the tenant's
       //    "All Caught Up" banner appears immediately.
-      //    Prefer the stored rentInvoiceId on the payment record; fall back
-      //    to querying by month if not present (older records).
-      const storedInvoiceId = paymentData.rentInvoiceId as string | undefined;
-      if (storedInvoiceId) {
-        const invoiceRef = db.doc(
-          `businesses/${businessId}/tenants/${tenantId}/rent_invoices/${storedInvoiceId}`
-        );
-        const invoiceSnap = await tx.get(invoiceRef);
-        if (invoiceSnap.exists && (invoiceSnap.data() as any)?.status !== 'paid') {
-          tx.update(invoiceRef, {
-            status: 'paid',
-            paidAt: now,
-            verification: 'verified',
-            mode: paymentData.method || 'manual',
-            updatedAt: now,
-          });
-        }
-      } else {
-        // Fallback: match by month
-        const invoiceQuery = db
-          .collection(`businesses/${businessId}/tenants/${tenantId}/rent_invoices`)
-          .where('month', '==', paymentData.month)
-          .where('status', 'in', ['unpaid', 'overdue'])
-          .limit(1);
-        const invoiceSnap = await tx.get(invoiceQuery);
-        if (!invoiceSnap.empty) {
-          tx.update(invoiceSnap.docs[0].ref, {
-            status: 'paid',
-            paidAt: now,
-            verification: 'verified',
-            mode: paymentData.method || 'manual',
-            updatedAt: now,
-          });
-        }
+      if (invoiceToPay) {
+        tx.update(invoiceToPay, {
+          status: 'paid',
+          paidAt: now,
+          verification: 'verified',
+          mode: paymentData.method || 'manual',
+          updatedAt: now,
+        });
       }
     } else {
       // Reject

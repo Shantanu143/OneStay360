@@ -35,6 +35,20 @@ service firebase.storage {
       allow delete: if isAuth();
     }
 
+    // Business compliance documents (incorporation / GST certificates).
+    // Only an active owner of that business may read or write them.
+    match /business_documents/{businessId}/{fileName} {
+      function isActiveOwner() {
+        let member = firestore.get(/databases/(default)/documents/businesses/$(businessId)/members/$(request.auth.uid));
+        return isAuth() && member != null && member.data.role == 'owner' && member.data.status == 'active';
+      }
+
+      allow read, delete: if isActiveOwner();
+      allow write: if isActiveOwner()
+        && request.resource.size < 15 * 1024 * 1024
+        && (request.resource.contentType.matches('image/.*') || request.resource.contentType == 'application/pdf');
+    }
+
     // Default deny for all other paths
     match /{allPaths=**} {
       allow read, write: if false;

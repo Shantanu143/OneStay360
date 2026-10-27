@@ -27,16 +27,16 @@ void main() {
           .collection('members')
           .doc(uid)
           .set({
-        'uid': uid,
-        'businessId': businessId,
-        'role': role,
-        'status': status,
-        'name': 'Test User',
-        'email': 'test@example.com',
-        'phone': '9876543210',
-        'createdAt': Timestamp.now(),
-        'updatedAt': Timestamp.now(),
-      });
+            'uid': uid,
+            'businessId': businessId,
+            'role': role,
+            'status': status,
+            'name': 'Test User',
+            'email': 'test@example.com',
+            'phone': '9876543210',
+            'createdAt': Timestamp.now(),
+            'updatedAt': Timestamp.now(),
+          });
     }
 
     group('getActiveMembership', () {

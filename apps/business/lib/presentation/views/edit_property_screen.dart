@@ -1,17 +1,18 @@
 // lib/presentation/views/business/edit_property_screen.dart
 // Comprehensive property editing screen with form validation and image management
 
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
+import 'package:models/models.dart';
+import 'package:provider/provider.dart';
+import '../../data/providers/business_state_provider.dart';
 import 'widgets/business_scaffold.dart';
 
 class EditPropertyScreen extends StatefulWidget {
   final String propertyId;
 
-  const EditPropertyScreen({
-    super.key,
-    required this.propertyId,
-  });
+  const EditPropertyScreen({super.key, required this.propertyId});
 
   @override
   State<EditPropertyScreen> createState() => _EditPropertyScreenState();
@@ -23,6 +24,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
   late TabController _tabController;
   bool _isLoading = true;
   bool _isSaving = false;
+  String? _loadError;
 
   // Form controllers
   final _nameController = TextEditingController();
@@ -51,7 +53,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
     'Gym',
     'Swimming Pool',
     'Garden',
-    'Elevator'
+    'Elevator',
   ];
 
   @override
@@ -73,44 +75,94 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
     super.dispose();
   }
 
+  /// Loads the property, its rooms and pricing from Firestore.
   Future<void> _loadPropertyData() async {
-    // Simulate loading existing property data
-    await Future.delayed(const Duration(seconds: 1));
+    try {
+      final businessId = context.read<BusinessStateProvider>().businessId;
+      if (businessId == null || businessId.isEmpty) {
+        throw Exception('No active business membership');
+      }
 
-    // Sample data (replace with actual data fetching)
-    setState(() {
-      _nameController.text = 'Greenview Residency';
-      _addressController.text = '12 Park Street, Koramangala';
-      _cityController.text = 'Bengaluru';
-      _stateController.text = 'Karnataka';
-      _pincodeController.text = '560034';
-      _descriptionController.text = 'A premium PG accommodation with modern amenities and excellent connectivity to major IT hubs.';
-      _selectedPropertyType = 'PG';
-      _selectedAmenities = ['WiFi', 'AC', 'Laundry', 'Parking', 'Security'];
-      _propertyImages = [
-        'https://picsum.photos/seed/greenview1/800/600',
-        'https://picsum.photos/seed/greenview2/800/600',
-      ];
-      _rooms = [
-        {
-          'id': 'r1',
-          'number': '101',
-          'type': 'Single',
-          'rent': 8500,
-          'deposit': 17000,
-          'beds': 1,
-        },
-        {
-          'id': 'r2',
-          'number': '102',
-          'type': 'Double',
-          'rent': 6500,
-          'deposit': 13000,
-          'beds': 2,
-        },
-      ];
-      _isLoading = false;
-    });
+      final propertyRef = FirebaseFirestore.instance
+          .collection('businesses')
+          .doc(businessId)
+          .collection('properties')
+          .doc(widget.propertyId);
+
+      final propertySnap = await propertyRef.get();
+      final data = propertySnap.data();
+      if (data == null) throw Exception('Property not found');
+      final property = Property.fromMap(data, propertySnap.id);
+
+      final roomsSnap = await propertyRef.collection('rooms').get();
+      final rooms =
+          roomsSnap.docs.map((doc) => PropertyRoom.fromMap(doc.data())).toList()
+            ..sort((a, b) => a.roomNumber.compareTo(b.roomNumber));
+
+      if (!mounted) return;
+      setState(() {
+        _nameController.text = property.name;
+        _addressController.text = property.address;
+        _cityController.text = property.city;
+        // Not part of the Property model; shown only if the document has it.
+        _stateController.text = data['state']?.toString() ?? '';
+        _pincodeController.text = property.pincode;
+        _descriptionController.text = property.description;
+        final type = data['propertyType']?.toString();
+        _selectedPropertyType = _propertyTypes.contains(type) ? type! : 'PG';
+        _selectedAmenities = _amenityLabels(property.amenities);
+        _propertyImages = property.images ?? [];
+        _rooms = rooms.map((room) {
+          final sharing = room.sharingType ?? 1;
+          return {
+            'id': room.roomNumber,
+            'number': room.roomNumber,
+            'type': _roomTypeFor(sharing),
+            'rent':
+                property.pricing.getPriceFor(sharing, acRoom: room.hasAC) ?? 0,
+            'deposit': property.pricing.securityDeposit,
+            'beds': sharing,
+          };
+        }).toList();
+        _isLoading = false;
+      });
+    } catch (e) {
+      debugPrint('❌ [EditPropertyScreen] Failed to load property: $e');
+      if (!mounted) return;
+      setState(() {
+        _loadError = e.toString();
+        _isLoading = false;
+      });
+    }
+  }
+
+  /// Amenity flags on the property document -> labels used by this form.
+  List<String> _amenityLabels(PropertyAmenities a) {
+    final labels = <String, bool>{
+      'WiFi': a.wifi,
+      'AC': a.ac,
+      'Laundry': a.laundry,
+      'Parking': a.parking,
+      'Security': a.cctv,
+      'Housekeeping': a.housekeeping,
+      'Meals': a.foodIncluded,
+      'Power Backup': a.powerBackup,
+    };
+    return labels.entries.where((e) => e.value).map((e) => e.key).toList();
+  }
+
+  /// Sharing count -> option in the "Room Type" dropdown.
+  String _roomTypeFor(int sharing) {
+    switch (sharing) {
+      case 1:
+        return 'Single';
+      case 2:
+        return 'Double';
+      case 3:
+        return 'Triple';
+      default:
+        return 'Dormitory';
+    }
   }
 
   Future<void> _saveProperty() async {
@@ -164,6 +216,22 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
       );
     }
 
+    if (_loadError != null) {
+      return BusinessScaffold(
+        currentTab: BusinessTab.properties,
+        showBackButton: true,
+        body: Center(
+          child: Padding(
+            padding: const EdgeInsets.all(24),
+            child: Text(
+              'Could not load this property.\n$_loadError',
+              textAlign: TextAlign.center,
+            ),
+          ),
+        ),
+      );
+    }
+
     return BusinessScaffold(
       currentTab: BusinessTab.properties,
       //titleText: 'Edit Property',
@@ -172,10 +240,13 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
         onPressed: _isSaving ? null : _saveProperty,
         child: _isSaving
             ? const SizedBox(
-          width: 20,
-          height: 20,
-          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
-        )
+                width: 20,
+                height: 20,
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
+              )
             : const Icon(Icons.save),
       ),
       body: Form(
@@ -243,14 +314,9 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
               const SizedBox(height: 16),
               DropdownButtonFormField<String>(
                 initialValue: _selectedPropertyType,
-                decoration: const InputDecoration(
-                  labelText: 'Property Type *',
-                ),
+                decoration: const InputDecoration(labelText: 'Property Type *'),
                 items: _propertyTypes.map((type) {
-                  return DropdownMenuItem(
-                    value: type,
-                    child: Text(type),
-                  );
+                  return DropdownMenuItem(value: type, child: Text(type));
                 }).toList(),
                 onChanged: (value) {
                   setState(() {
@@ -396,17 +462,21 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
         decoration: BoxDecoration(
           color: Colors.grey.shade100,
           borderRadius: BorderRadius.circular(12),
-          border: Border.all(color: Colors.grey.shade300, style: BorderStyle.solid),
+          border: Border.all(
+            color: Colors.grey.shade300,
+            style: BorderStyle.solid,
+          ),
         ),
         child: Column(
           mainAxisAlignment: MainAxisAlignment.center,
           children: [
-            Icon(Icons.add_photo_alternate_outlined, size: 32, color: Colors.grey.shade600),
-            const SizedBox(height: 8),
-            Text(
-              'Add Image',
-              style: TextStyle(color: Colors.grey.shade600),
+            Icon(
+              Icons.add_photo_alternate_outlined,
+              size: 32,
+              color: Colors.grey.shade600,
             ),
+            const SizedBox(height: 8),
+            Text('Add Image', style: TextStyle(color: Colors.grey.shade600)),
           ],
         ),
       ),
@@ -456,11 +526,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
                   color: Colors.red,
                   shape: BoxShape.circle,
                 ),
-                child: const Icon(
-                  Icons.close,
-                  color: Colors.white,
-                  size: 16,
-                ),
+                child: const Icon(Icons.close, color: Colors.white, size: 16),
               ),
             ),
           ),
@@ -480,10 +546,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
             children: [
               const Text(
                 'Rooms Configuration',
-                style: TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               ElevatedButton.icon(
                 onPressed: _addRoom,
@@ -563,11 +626,10 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
                     labelText: 'Room Type',
                     isDense: true,
                   ),
-                  items: ['Single', 'Double', 'Triple', 'Dormitory'].map((type) {
-                    return DropdownMenuItem(
-                      value: type,
-                      child: Text(type),
-                    );
+                  items: ['Single', 'Double', 'Triple', 'Dormitory'].map((
+                    type,
+                  ) {
+                    return DropdownMenuItem(value: type, child: Text(type));
                   }).toList(),
                   onChanged: (value) {
                     setState(() {
@@ -658,7 +720,10 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
     );
   }
 
-  Widget _buildFormCard({required String title, required List<Widget> children}) {
+  Widget _buildFormCard({
+    required String title,
+    required List<Widget> children,
+  }) {
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(20),
@@ -678,10 +743,7 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
         children: [
           Text(
             title,
-            style: const TextStyle(
-              fontSize: 18,
-              fontWeight: FontWeight.bold,
-            ),
+            style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
           ),
           const SizedBox(height: 16),
           ...children,
@@ -693,7 +755,9 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
   void _addImage() {
     // Simulate adding an image
     setState(() {
-      _propertyImages.add('https://picsum.photos/seed/new${_propertyImages.length}/800/600');
+      _propertyImages.add(
+        'https://picsum.photos/seed/new${_propertyImages.length}/800/600',
+      );
     });
   }
 
@@ -722,5 +786,3 @@ class _EditPropertyScreenState extends State<EditPropertyScreen>
     });
   }
 }
-
-

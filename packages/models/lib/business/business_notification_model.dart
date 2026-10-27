@@ -79,17 +79,22 @@ class BusinessNotification {
     this.metadata,
   });
 
+  /// The payment-submitted notification (and ones stored before the schema
+  /// settled) use `body` and `enrollmentRequestId` rather than `message` and
+  /// `requestId`; both spellings are read.
   factory BusinessNotification.fromMap(String id, Map<String, dynamic> data) {
+    final routing = data['routing'];
+    final routedRequest = routing is Map ? routing['requestId'] : null;
     return BusinessNotification(
       id: id,
       businessId: data['businessId']?.toString() ?? '',
       title: data['title']?.toString() ?? 'Notification',
-      message: data['message']?.toString() ?? '',
+      message: (data['message'] ?? data['body'])?.toString() ?? '',
       type: _notificationTypeFromString(data['type']?.toString()),
       read: data['read'] as bool? ?? false,
       createdAt: (data['createdAt'] as Timestamp?)?.toDate() ?? DateTime.now(),
       readAt: (data['readAt'] as Timestamp?)?.toDate(),
-      requestId: data['requestId']?.toString(),
+      requestId: (data['requestId'] ?? data['enrollmentRequestId'] ?? routedRequest)?.toString(),
       propertyId: data['propertyId']?.toString(),
       propertyName: data['propertyName']?.toString(),
       tenantId: data['tenantId']?.toString(),
@@ -102,7 +107,14 @@ class BusinessNotification {
   factory BusinessNotification.fromDocument(
     DocumentSnapshot<Map<String, dynamic>> doc,
   ) {
-    return BusinessNotification.fromMap(doc.id, doc.data() ?? const {});
+    final data = doc.data() ?? const <String, dynamic>{};
+    // businesses/{businessId}/notifications/{id}: the business is in the path
+    // even when the document doesn't repeat it.
+    final fromPath = doc.reference.parent.parent?.id;
+    return BusinessNotification.fromMap(doc.id, {
+      if (fromPath != null) 'businessId': fromPath,
+      ...data,
+    });
   }
 
   Map<String, dynamic> toMap() {

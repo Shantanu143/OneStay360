@@ -5,6 +5,7 @@ import { buildInvitationEmail, sendEmail } from './sendEmail';
 import { sendSms } from './sendSms';
 import { assertBusinessPermission, getMembershipRole } from './permissions';
 import { logAudit } from './audit';
+import { normalizePhone, phonesMatch } from './invitationLogic';
 
 if (admin.apps.length === 0) {
   admin.initializeApp();
@@ -121,8 +122,19 @@ export const createBusinessInvitation = functions
     const inviteRef = db.collection('business_invitations').doc();
     const actorRole = await getMembershipRole(uid, businessId);
 
+    // Names the invitee will see before signing in (the business itself is
+    // not readable to them yet).
+    const [businessSnap0, inviterSnap0] = await Promise.all([
+      db.doc(`businesses/${businessId}`).get(),
+      db.doc(`businesses/${businessId}/members/${uid}`).get(),
+    ]);
+    const inviter0 = inviterSnap0.data() as any;
+
     const inviteData = {
       businessId,
+      businessName: (businessSnap0.data() as any)?.name || '',
+      inviterName: inviter0?.name || inviter0?.displayName || '',
+      propertyNames: properties.map((pid) => propertyNames[pid] || pid),
       invitedBy: uid,
       phone,
       email: email || null,
@@ -234,15 +246,6 @@ export const acceptBusinessInvitation = functions.https.onCall(
     const inviteRef = db.doc(`business_invitations/${inviteId}`);
     const now = admin.firestore.Timestamp.now();
 
-    const normalizePhone = (phone: string | undefined | null): string => {
-      if (!phone) return '';
-      const digits = phone.replace(/\D/g, '');
-      if (digits.length > 10) {
-        return digits.substring(digits.length - 10);
-      }
-      return digits;
-    };
-
     // Load the verified phone number for this user from Firebase Auth.
     // This is more reliable than depending solely on the ID token claims.
     const tokenPhone = (context.auth?.token as any)?.phone_number as
@@ -252,6 +255,7 @@ export const acceptBusinessInvitation = functions.https.onCall(
     let authPhone: string | undefined = tokenPhone;
     let authProviders: string[] | undefined;
     let userEmail: string | undefined;
+    let authName: string | undefined;
     try {
       const userRecord = await admin.auth().getUser(uid);
       if (userRecord.phoneNumber) {
@@ -262,6 +266,7 @@ export const acceptBusinessInvitation = functions.https.onCall(
         new Set((userRecord.providerData || []).map((p) => p.providerId).filter(Boolean))
       );
       userEmail = userRecord.email || undefined;
+      authName = userRecord.displayName || undefined;
     } catch (err) {
       functions.logger.error('accept_invite_get_user_failed', { uid, error: err });
     }
@@ -302,13 +307,20 @@ export const acceptBusinessInvitation = functions.https.onCall(
         authPhoneNorm,
       });
 
-      // We already enforce the exact phone match in the Flutter app
-      // before calling this function. Here we only require that the
-      // user has some verified phone on their account.
+      // The invitation was sent to one phone number: only an account verified
+      // with that same number may accept it. (The app checks this too, but a
+      // client check alone can be bypassed with a leaked link.)
       if (!authPhoneNorm) {
         throw new functions.https.HttpsError(
           'unauthenticated',
           'Phone authentication required'
+        );
+      }
+      if (!phonesMatch(invite.phone, authPhone)) {
+        functions.logger.warn('accept_invite_phone_mismatch', { uid, inviteId });
+        throw new functions.https.HttpsError(
+          'permission-denied',
+          'This invitation was sent to a different phone number'
         );
       }
 
@@ -373,6 +385,10 @@ export const acceptBusinessInvitation = functions.https.onCall(
         });
       }
 
+      // So the team list can show who this is instead of an id.
+      const memberName: string | undefined =
+        authName || existingUser?.fullName || existingUser?.displayName || existingUser?.name || undefined;
+
       tx.set(
         membershipRef,
         {
@@ -380,6 +396,9 @@ export const acceptBusinessInvitation = functions.https.onCall(
           businessId,
           role,
           status: 'active',
+          ...(memberName ? { name: memberName, displayName: memberName } : {}),
+          ...(authPhone ? { phone: authPhone } : {}),
+          ...(resolvedEmail ? { email: resolvedEmail } : {}),
           createdAt: now,
           updatedAt: now,
           createdBy: uid,

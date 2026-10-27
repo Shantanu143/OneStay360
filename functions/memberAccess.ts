@@ -2,6 +2,7 @@ import * as functions from 'firebase-functions';
 import * as admin from 'firebase-admin';
 import { assertBusinessPermission } from './permissions';
 import { logAudit } from './audit';
+import { diffAccess, uniqueIds } from './memberAccessLogic';
 
 if (admin.apps.length === 0) {
   admin.initializeApp();
@@ -22,7 +23,7 @@ export const updateMemberPropertyAccess = functions.https.onCall(async (data, co
 
   await assertBusinessPermission(actorUid, businessId, 'ASSIGN_PROPERTIES');
 
-  const uniqueProperties = Array.from(new Set(propertyIds.filter((p: any) => typeof p === 'string' && p)));
+  const uniqueProperties = uniqueIds(propertyIds);
   const membershipRef = db.doc(`businesses/${businessId}/members/${memberUid}`);
 
   const now = admin.firestore.Timestamp.now();
@@ -40,50 +41,24 @@ export const updateMemberPropertyAccess = functions.https.onCall(async (data, co
       throw new functions.https.HttpsError('failed-precondition', 'Owner role cannot be changed');
     }
 
-    // Validate properties (must exist)
+    // Every property of the business: the requested ones must exist, and each
+    // one's `access/{memberUid}` doc shows what the member has now. (A
+    // collection-group query by document id cannot be used here: Firestore
+    // only accepts a full document path for that.)
+    const propertiesSnap = await tx.get(db.collection(`businesses/${businessId}/properties`));
+    const propertyIdsInBusiness = new Set(propertiesSnap.docs.map((d) => d.id));
     for (const pid of uniqueProperties) {
-      const propRef = db.doc(`businesses/${businessId}/properties/${pid}`);
-      const propSnap = await tx.get(propRef);
-      if (!propSnap.exists) {
+      if (!propertyIdsInBusiness.has(pid)) {
         throw new functions.https.HttpsError('failed-precondition', `Property ${pid} not found`);
       }
     }
 
-    // Load existing access docs for this member (across properties) inside the transaction
-    const existingAccess: Record<string, FirebaseFirestore.DocumentSnapshot> = {};
-    const accessQuery = db
-      .collectionGroup('access')
-      .where(admin.firestore.FieldPath.documentId(), '==', memberUid)
-      .where('businessId', '==', businessId);
-    const existingPropsSnap = await tx.get(accessQuery);
-    existingPropsSnap.docs.forEach((doc) => {
-      const segments = doc.ref.path.split('/');
-      const pidIndex = segments.findIndex((s) => s === 'properties');
-      if (pidIndex > -1 && segments[pidIndex + 1]) {
-        const pid = segments[pidIndex + 1];
-        existingAccess[pid] = doc;
-      }
-    });
+    const accessSnaps = await Promise.all(
+      propertiesSnap.docs.map((d) => tx.get(d.ref.collection('access').doc(memberUid)))
+    );
+    const existingPids = propertiesSnap.docs.filter((_, i) => accessSnaps[i].exists).map((d) => d.id);
 
-    const existingPids = new Set(Object.keys(existingAccess));
-    const newPids = new Set(uniqueProperties);
-
-    const toAdd: string[] = [];
-    const toKeep: string[] = [];
-    const toRemove: string[] = [];
-
-    newPids.forEach((pid) => {
-      if (existingPids.has(pid)) {
-        toKeep.push(pid);
-      } else {
-        toAdd.push(pid);
-      }
-    });
-    existingPids.forEach((pid) => {
-      if (!newPids.has(pid)) {
-        toRemove.push(pid);
-      }
-    });
+    const { toAdd, toKeep, toRemove } = diffAccess(existingPids, uniqueProperties);
 
     // Add new access docs
     for (const pid of toAdd) {

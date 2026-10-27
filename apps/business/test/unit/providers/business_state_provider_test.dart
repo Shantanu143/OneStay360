@@ -71,40 +71,47 @@ void main() {
         expect(provider.profileCompleted, isFalse);
       });
 
-      test('should load user data successfully with valid membership', () async {
-        // Setup user document
-        await fakeFirestore.collection('users').doc('test-uid-123').set({
-          'fullName': 'John Doe',
-          'businessName': 'Test PG Business',
-          'businessId': 'BUS0000001',
-          'profileCompleted': true,
-        });
+      test(
+        'should load user data successfully with valid membership',
+        () async {
+          // Setup user document
+          await fakeFirestore.collection('users').doc('test-uid-123').set({
+            'fullName': 'John Doe',
+            'businessName': 'Test PG Business',
+            'businessId': 'BUS0000001',
+            'profileCompleted': true,
+          });
 
-        // Mock successful membership validation
-        final mockMembership = BusinessMembership(
-          id: 'membership-123',
-          uid: 'test-uid-123',
-          businessId: 'BUS0000001',
-          role: 'owner',
-          status: 'active',
-          name: 'John Doe',
-          email: 'test@example.com',
-          phone: '9876543210',
-          createdAt: DateTime.now(),
-        );
+          // Mock successful membership validation
+          final mockMembership = BusinessMembership(
+            id: 'membership-123',
+            uid: 'test-uid-123',
+            businessId: 'BUS0000001',
+            role: 'owner',
+            status: 'active',
+            name: 'John Doe',
+            email: 'test@example.com',
+            phone: '9876543210',
+            createdAt: DateTime.now(),
+          );
 
-        when(mockMembershipService.getActiveMembership('test-uid-123', 'BUS0000001'))
-            .thenAnswer((_) async => mockMembership);
+          when(
+            mockMembershipService.getActiveMembership(
+              'test-uid-123',
+              'BUS0000001',
+            ),
+          ).thenAnswer((_) async => mockMembership);
 
-        await provider.loadUserData();
+          await provider.loadUserData();
 
-        expect(provider.fullName, equals('John Doe'));
-        expect(provider.businessName, equals('Test PG Business'));
-        expect(provider.businessId, equals('BUS0000001'));
-        expect(provider.role, equals('owner'));
-        expect(provider.hasActiveMembership, isTrue);
-        expect(provider.profileCompleted, isTrue);
-      });
+          expect(provider.fullName, equals('John Doe'));
+          expect(provider.businessName, equals('Test PG Business'));
+          expect(provider.businessId, equals('BUS0000001'));
+          expect(provider.role, equals('owner'));
+          expect(provider.hasActiveMembership, isTrue);
+          expect(provider.profileCompleted, isTrue);
+        },
+      );
 
       test('should handle membership validation failure', () async {
         // Setup user document
@@ -116,14 +123,21 @@ void main() {
         });
 
         // Mock membership validation failure
-        when(mockMembershipService.getActiveMembership('test-uid-123', 'BUS0000001'))
-            .thenAnswer((_) async => null);
+        when(
+          mockMembershipService.getActiveMembership(
+            'test-uid-123',
+            'BUS0000001',
+          ),
+        ).thenAnswer((_) async => null);
 
         await provider.loadUserData();
 
         expect(provider.fullName, equals('John Doe'));
         expect(provider.businessName, equals('Test PG Business'));
-        expect(provider.businessId, isNull); // Should be null due to failed membership
+        expect(
+          provider.businessId,
+          isNull,
+        ); // Should be null due to failed membership
         expect(provider.hasActiveMembership, isFalse);
       });
 
@@ -149,8 +163,12 @@ void main() {
         );
 
         var attempts = 0;
-        when(mockMembershipService.getActiveMembership('test-uid-123', 'BUS0000001'))
-            .thenAnswer((_) async {
+        when(
+          mockMembershipService.getActiveMembership(
+            'test-uid-123',
+            'BUS0000001',
+          ),
+        ).thenAnswer((_) async {
           attempts++;
           return attempts == 3 ? mockMembership : null;
         });
@@ -163,8 +181,12 @@ void main() {
         expect(provider.hasActiveMembership, isTrue);
 
         // Verify retry attempts
-        verify(mockMembershipService.getActiveMembership('test-uid-123', 'BUS0000001'))
-            .called(3);
+        verify(
+          mockMembershipService.getActiveMembership(
+            'test-uid-123',
+            'BUS0000001',
+          ),
+        ).called(3);
       });
 
       test('should handle missing businessId in user document', () async {
@@ -189,8 +211,9 @@ void main() {
 
       test('should handle Firestore errors gracefully', () async {
         // Mock Firestore error
-        when(mockMembershipService.getActiveMembership(any, any))
-            .thenThrow(Exception('Firestore connection failed'));
+        when(
+          mockMembershipService.getActiveMembership(any, any),
+        ).thenThrow(Exception('Firestore connection failed'));
 
         await provider.loadUserData();
 
@@ -231,8 +254,12 @@ void main() {
           'profileCompleted': true,
         });
 
-        when(mockMembershipService.getActiveMembership('test-uid-123', 'BUS0000001'))
-            .thenAnswer((_) async => null);
+        when(
+          mockMembershipService.getActiveMembership(
+            'test-uid-123',
+            'BUS0000001',
+          ),
+        ).thenAnswer((_) async => null);
 
         await provider.loadUserData();
 
@@ -262,8 +289,12 @@ void main() {
           createdAt: DateTime.now(),
         );
 
-        when(mockMembershipService.getActiveMembership('test-uid-123', 'BUS0000001'))
-            .thenAnswer((_) async => mockMembership);
+        when(
+          mockMembershipService.getActiveMembership(
+            'test-uid-123',
+            'BUS0000001',
+          ),
+        ).thenAnswer((_) async => mockMembership);
 
         await provider.loadUserData();
 
@@ -299,8 +330,12 @@ void main() {
             createdAt: DateTime.now(),
           );
 
-          when(mockMembershipService.getActiveMembership('test-uid-123', 'BUS0000001'))
-              .thenAnswer((_) async => mockMembership);
+          when(
+            mockMembershipService.getActiveMembership(
+              'test-uid-123',
+              'BUS0000001',
+            ),
+          ).thenAnswer((_) async => mockMembership);
 
           await provider.loadUserData();
 
@@ -340,8 +375,12 @@ void main() {
           createdAt: DateTime.now(),
         );
 
-        when(mockMembershipService.getActiveMembership('test-uid-123', 'BUS0000001'))
-            .thenAnswer((_) async => mockMembership);
+        when(
+          mockMembershipService.getActiveMembership(
+            'test-uid-123',
+            'BUS0000001',
+          ),
+        ).thenAnswer((_) async => mockMembership);
 
         await provider.loadUserData();
 

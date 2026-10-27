@@ -50,6 +50,7 @@ exports.verifyRentPayment = exports.submitRentPayment = exports.recordPayment = 
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 const plan_1 = require("./plan");
+const permissions_1 = require("./permissions");
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
@@ -529,6 +530,17 @@ exports.recordPayment = functions.https.onCall(async (data, context) => {
         throw new functions.https.HttpsError('not-found', `Tenant ${tenantId} not found in business ${businessId}`);
     }
     const tenantData = bizTenantSnap.data();
+    // Only people who manage this tenant's property may record money for them.
+    await (0, permissions_1.assertPropertyPermission)(context.auth.uid, businessId, tenantData.propertyId, 'UPDATE_TENANTS');
+    // The invoice this payment settles, so the tenant's dues and the owner's
+    // collection totals stay right. Matched by month label like verifyRentPayment.
+    const invoiceQuery = await db
+        .collection(`businesses/${businessId}/tenants/${tenantId}/rent_invoices`)
+        .where('month', '==', month)
+        .where('status', 'in', ['unpaid', 'overdue'])
+        .limit(1)
+        .get();
+    const invoiceRef = invoiceQuery.empty ? null : invoiceQuery.docs[0].ref;
     // Create payment record
     const paymentRef = db.collection(`businesses/${businessId}/tenants/${tenantId}/payments`).doc();
     const paymentRecord = {
@@ -547,6 +559,7 @@ exports.recordPayment = functions.https.onCall(async (data, context) => {
         note: note || null,
         recordedBy: context.auth.uid,
         createdAt: now,
+        ...(invoiceRef ? { rentInvoiceId: invoiceRef.id } : {}),
     };
     await db.runTransaction(async (tx) => {
         // Read before write
@@ -554,6 +567,15 @@ exports.recordPayment = functions.https.onCall(async (data, context) => {
         const globalSnap = await tx.get(globalTenantRef);
         // Write payment record
         tx.set(paymentRef, paymentRecord);
+        if (invoiceRef) {
+            tx.update(invoiceRef, {
+                status: 'paid',
+                paidAt: now,
+                verification: 'verified',
+                mode: String(paymentMode || 'Cash').toLowerCase(),
+                updatedAt: now,
+            });
+        }
         // Update lastPaymentDate on business-scoped tenant doc
         tx.update(bizTenantRef, {
             lastPaymentDate: now,
@@ -684,6 +706,13 @@ exports.verifyRentPayment = functions.https.onCall(async (data, context) => {
     const bizTenantRef = db.doc(`businesses/${businessId}/tenants/${tenantId}`);
     const paymentRef = db.collection(`businesses/${businessId}/tenants/${tenantId}/payments`).doc(paymentId);
     const globalTenantRef = db.doc(`tenants/${tenantId}`);
+    // Only people who manage the tenant's property may confirm or reject their
+    // payments (a tenant must not be able to approve their own).
+    const tenantForAuth = await bizTenantRef.get();
+    if (!tenantForAuth.exists) {
+        throw new functions.https.HttpsError('not-found', 'Tenant not found');
+    }
+    await (0, permissions_1.assertPropertyPermission)(context.auth.uid, businessId, tenantForAuth.data().propertyId, 'UPDATE_TENANTS');
     let finalStatus = '';
     await db.runTransaction(async (tx) => {
         // Reads
@@ -701,6 +730,29 @@ exports.verifyRentPayment = functions.https.onCall(async (data, context) => {
         }
         if (action === 'confirm') {
             finalStatus = 'Paid';
+            // Firestore transactions must do every read before the first write, so
+            // find the invoice this payment settles before touching anything.
+            //   Prefer the stored rentInvoiceId on the payment record; fall back to
+            //   matching by month for older records.
+            let invoiceToPay = null;
+            const storedInvoiceId = paymentData.rentInvoiceId;
+            if (storedInvoiceId) {
+                const invoiceRef = db.doc(`businesses/${businessId}/tenants/${tenantId}/rent_invoices/${storedInvoiceId}`);
+                const invoiceSnap = await tx.get(invoiceRef);
+                if (invoiceSnap.exists && invoiceSnap.data()?.status !== 'paid') {
+                    invoiceToPay = invoiceRef;
+                }
+            }
+            else {
+                const invoiceQuery = db
+                    .collection(`businesses/${businessId}/tenants/${tenantId}/rent_invoices`)
+                    .where('month', '==', paymentData.month)
+                    .where('status', 'in', ['unpaid', 'overdue'])
+                    .limit(1);
+                const invoiceSnap = await tx.get(invoiceQuery);
+                if (!invoiceSnap.empty)
+                    invoiceToPay = invoiceSnap.docs[0].ref;
+            }
             // 1. Mark payment as Paid
             tx.update(paymentRef, {
                 status: finalStatus,
@@ -727,39 +779,14 @@ exports.verifyRentPayment = functions.https.onCall(async (data, context) => {
             }
             // 4. Mark the matching rent_invoice as paid so the tenant's
             //    "All Caught Up" banner appears immediately.
-            //    Prefer the stored rentInvoiceId on the payment record; fall back
-            //    to querying by month if not present (older records).
-            const storedInvoiceId = paymentData.rentInvoiceId;
-            if (storedInvoiceId) {
-                const invoiceRef = db.doc(`businesses/${businessId}/tenants/${tenantId}/rent_invoices/${storedInvoiceId}`);
-                const invoiceSnap = await tx.get(invoiceRef);
-                if (invoiceSnap.exists && invoiceSnap.data()?.status !== 'paid') {
-                    tx.update(invoiceRef, {
-                        status: 'paid',
-                        paidAt: now,
-                        verification: 'verified',
-                        mode: paymentData.method || 'manual',
-                        updatedAt: now,
-                    });
-                }
-            }
-            else {
-                // Fallback: match by month
-                const invoiceQuery = db
-                    .collection(`businesses/${businessId}/tenants/${tenantId}/rent_invoices`)
-                    .where('month', '==', paymentData.month)
-                    .where('status', 'in', ['unpaid', 'overdue'])
-                    .limit(1);
-                const invoiceSnap = await tx.get(invoiceQuery);
-                if (!invoiceSnap.empty) {
-                    tx.update(invoiceSnap.docs[0].ref, {
-                        status: 'paid',
-                        paidAt: now,
-                        verification: 'verified',
-                        mode: paymentData.method || 'manual',
-                        updatedAt: now,
-                    });
-                }
+            if (invoiceToPay) {
+                tx.update(invoiceToPay, {
+                    status: 'paid',
+                    paidAt: now,
+                    verification: 'verified',
+                    mode: paymentData.method || 'manual',
+                    updatedAt: now,
+                });
             }
         }
         else {

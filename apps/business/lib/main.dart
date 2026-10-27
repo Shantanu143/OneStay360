@@ -16,16 +16,26 @@ import 'package:firebase_services/services/firestore_service.dart';
 import 'package:firebase_services/repositories/property_repository.dart';
 import 'package:firebase_services/services/image_service.dart';
 import 'package:firebase_services/services/id_generation_service.dart';
+import 'package:firebase_services/services/emulator_config.dart';
+import 'package:firebase_auth/firebase_auth.dart';
+import 'app/actions.dart';
+import 'app/app_routes.dart';
+import 'app/auth_gate.dart';
+import 'app/business_shell.dart';
+import 'app/deep_links.dart';
+import 'app/session_actions.dart';
 import 'services/device_token_service.dart';
 import 'services/team_invitation_service.dart';
-import '../presentation/views/splash/splash_screen.dart';
-import '../presentation/views/auth/auth_wrapper.dart';
-import '../data/providers/business_state_provider.dart';
-import '../data/providers/business_notifications_provider.dart';
-import '../presentation/view_models/payment_methods_viewmodel.dart';
-import '../presentation/views/invite_landing_screen.dart';
-import '../presentation/views/invite_welcome_screen.dart';
-import '../presentation/views/enrollment_requests_screen.dart';
+import 'data/providers/business_state_provider.dart';
+import 'data/providers/business_notifications_provider.dart';
+import 'presentation/design/theme.dart';
+import 'presentation/auth/login_screen.dart';
+import 'presentation/views/properties/properties_tab.dart';
+import 'app/refresh_signals.dart';
+import 'presentation/views/tenants/add_tenant_wizard.dart';
+import 'presentation/team/team_screen.dart';
+import 'presentation/reports/reports_tab.dart';
+import 'presentation/views/home_screen.dart';
 
 // Background message handler - must be top-level or static
 @pragma('vm:entry-point')
@@ -45,6 +55,14 @@ void main() async {
     await Firebase.initializeApp(
       options: DefaultFirebaseOptions.currentPlatform,
     );
+
+    // Opt-in local backend: --dart-define=USE_EMULATOR=true
+    await connectToFirebaseEmulatorIfEnabled();
+    if (kUseFirebaseEmulator) {
+      // Keep local runs out of production crash and analytics reports.
+      await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(false);
+      await FirebaseAnalytics.instance.setAnalyticsCollectionEnabled(false);
+    }
 
     // Pass uncaught Flutter framework errors to Crashlytics
     FlutterError.onError = (errorDetails) {
@@ -123,39 +141,45 @@ class _MyAppShell extends StatefulWidget {
 
 class _MyAppShellState extends State<_MyAppShell> {
   final GlobalKey<NavigatorState> _navKey = GlobalKey<NavigatorState>();
-  AppLinks? _appLinks;
+  final BusinessStateProvider _business = BusinessStateProvider();
+
+  late final DeepLinkCoordinator _links = DeepLinkCoordinator(
+    navigatorKey: _navKey,
+    routeFor: (link) => AppRoutes.forLink(link, businessId: () => _business.businessId),
+  );
+
+  late final DeviceTokenService _push = DeviceTokenService(
+    gateway: FirebasePushGateway(),
+    authChanges: FirebaseAuth.instance.authStateChanges(),
+    firestore: FirebaseFirestore.instance,
+    onLink: _links.handle,
+  );
+
+  final RefreshSignals _signals = RefreshSignals();
+
+  late final SessionActions _session = SessionActions(
+    deactivatePushToken: _push.deactivateCurrentToken,
+    signOut: () => AuthService().signOut(),
+  );
+
   StreamSubscription<Uri?>? _linkSub;
-  String? _lastInviteId;
 
   @override
   void initState() {
     super.initState();
-    // Set navigator key for device token service
-    DeviceTokenService.navigatorKey = _navKey;
+    _push.start();
     _setupAppLinks();
-    _initializeDeviceTokenService();
-  }
-
-  Future<void> _initializeDeviceTokenService() async {
-    try {
-      // Give auth a moment to initialize
-      await Future.delayed(const Duration(milliseconds: 500));
-      await DeviceTokenService().initialize();
-    } catch (e) {
-      debugPrint('Failed to initialize device token service: $e');
-    }
+    WidgetsBinding.instance.addPostFrameCallback((_) => _links.navigatorReady());
   }
 
   Future<void> _setupAppLinks() async {
     try {
-      _appLinks = AppLinks();
+      final appLinks = AppLinks();
 
-      // Handle the initial link when the app is cold-started from an invite.
-      final initialUri = await _appLinks!.getInitialLink();
-      _handleUri(initialUri);
-
-      // Listen for links while the app is in foreground/background.
-      _linkSub = _appLinks!.uriLinkStream.listen(_handleUri, onError: (err) {
+      // The link that cold-started the app, then links while it runs. The
+      // coordinator decides when it is safe to open them.
+      _handleUri(await appLinks.getInitialLink());
+      _linkSub = appLinks.uriLinkStream.listen(_handleUri, onError: (Object err) {
         debugPrint('Deep link error: $err');
       });
     } catch (e) {
@@ -165,44 +189,50 @@ class _MyAppShellState extends State<_MyAppShell> {
 
   void _handleUri(Uri? uri) {
     if (uri == null) return;
-    final hostMatch = uri.host == 'app.onestay360.brandedpatil.in';
-    final pathMatch = uri.path.startsWith('/invite');
-    final inviteId = uri.queryParameters['inviteId'];
-
-    if (!hostMatch || !pathMatch || inviteId == null || inviteId.isEmpty) return;
-
-    if (_lastInviteId == inviteId) return; // prevent duplicate routing
-    _lastInviteId = inviteId;
-
-    // Push invite and clear back stack so splash/auth doesn’t override.
-    _navKey.currentState?.pushNamedAndRemoveUntil(
-      '/invite',
-      (route) => false,
-      arguments: {'inviteId': inviteId},
-    );
+    final link = AppLink.fromUri(uri);
+    if (link != null) _links.handle(link);
   }
 
   @override
   void dispose() {
     _linkSub?.cancel();
+    _push.dispose();
+    _business.dispose();
+    _signals.dispose();
     super.dispose();
+  }
+
+  Widget _pageFor(BuildContext context, ShellTab tab) {
+    switch (tab) {
+      case ShellTab.home:
+        return const HomeTab();
+      case ShellTab.properties:
+        return const PropertiesTab();
+      case ShellTab.tenants:
+        return const AddTenantWizard();
+      case ShellTab.team:
+        return const TeamScreen(showBack: false);
+      case ShellTab.reports:
+        return const ReportsTab();
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return MultiProvider(
       providers: [
-        // Core Services
+        // Core services
         Provider<AuthService>(create: (_) => AuthService()),
         Provider<IdGenerationService>(create: (_) => IdGenerationService()),
         Provider<FirestoreService>(create: (_) => FirestoreService()),
         Provider<ImageService>(create: (_) => ImageService()),
         Provider<TeamInvitationService>(create: (_) => TeamInvitationService()),
+        Provider<DeepLinkCoordinator>.value(value: _links),
+        Provider<SessionActions>.value(value: _session),
+        Provider<RefreshSignals>.value(value: _signals),
 
-        // State Providers
-        ChangeNotifierProvider<BusinessStateProvider>(
-          create: (_) => BusinessStateProvider(),
-        ),
+        // State
+        ChangeNotifierProvider<BusinessStateProvider>.value(value: _business),
         ChangeNotifierProxyProvider<BusinessStateProvider, BusinessNotificationsProvider>(
           create: (_) => BusinessNotificationsProvider(),
           update: (_, businessState, notificationsProvider) {
@@ -210,9 +240,6 @@ class _MyAppShellState extends State<_MyAppShell> {
             provider.updateBusiness(businessState.businessId);
             return provider;
           },
-        ),
-        ChangeNotifierProvider<PaymentMethodsViewModel>(
-          create: (_) => PaymentMethodsViewModel(),
         ),
 
         // Repositories
@@ -226,110 +253,29 @@ class _MyAppShellState extends State<_MyAppShell> {
       child: MaterialApp(
         title: 'OneStay360 - Business',
         debugShowCheckedModeBanner: false,
-        theme: _buildAppTheme(),
+        theme: BizTheme.light(),
         navigatorKey: _navKey,
         navigatorObservers: [
           FirebaseAnalyticsObserver(analytics: FirebaseAnalytics.instance),
         ],
-        home: const SplashScreen(),
-        routes: {
-          '/authWrapper': (context) => const AuthWrapper(),
-        },
-        onGenerateRoute: (settings) {
-          if (settings.name == '/enrollment-requests') {
-            final args = settings.arguments as Map<String, dynamic>?;
-            final requestId = args?['requestId'] as String?;
-            final propertyId = args?['propertyId'] as String?;
-            return MaterialPageRoute(
-              builder: (_) => EnrollmentRequestsScreen(
-                initialRequestId: requestId,
-                initialPropertyId: propertyId,
-              ),
-            );
-          }
-          if (settings.name == '/invite') {
-            final args = settings.arguments as Map<String, dynamic>?;
-            final inviteId = args?['inviteId'] as String?;
-            if (inviteId != null) {
-              return MaterialPageRoute(builder: (_) => InviteLandingScreen(inviteId: inviteId));
-            }
-          }
-          if (settings.name == '/welcomeInvite') {
-            final args = settings.arguments as Map<String, dynamic>?;
-            final businessId = args?['businessId'] as String?;
-            final role = args?['role'] as String?;
-            final propertyIds = (args?['propertyIds'] as List?)?.cast<String>() ?? <String>[];
-            if (businessId != null && role != null) {
-              return MaterialPageRoute(
-                builder: (_) => InviteWelcomeScreen(
-                  businessId: businessId,
-                  role: role,
-                  propertyIds: propertyIds,
-                ),
-              );
-            }
-          }
-          return null;
-        },
+        home: AuthGate(
+          signedOutBuilder: (_) => const LoginScreen(),
+          readyBuilder: (_) => BusinessShell(
+            pageBuilder: _pageFor,
+            onQuickAdd: (context, shell) async {
+              await showQuickAdd(context, shell);
+              _signals.propertiesChanged();
+            },
+            onHomeFab: showQuickAdd,
+          ),
+        ),
+        onGenerateRoute: AppRoutes.onGenerateRoute,
         builder: (context, child) {
           return GestureDetector(
-            onTap: () {
-              FocusManager.instance.primaryFocus?.unfocus();
-            },
+            onTap: () => FocusManager.instance.primaryFocus?.unfocus(),
             child: child,
           );
         },
-      ),
-    );
-  }
-
-  ThemeData _buildAppTheme() {
-    return ThemeData(
-      useMaterial3: true,
-      colorScheme: ColorScheme.fromSeed(
-        seedColor: Colors.teal,
-        brightness: Brightness.light,
-        primary: Colors.teal.shade600,
-        secondary: Colors.orange.shade600,
-      ),
-      appBarTheme: AppBarTheme(
-        centerTitle: true,
-        elevation: 0,
-        backgroundColor: Colors.teal.shade600,
-        titleTextStyle: const TextStyle(
-          fontSize: 20,
-          fontWeight: FontWeight.bold,
-          color: Colors.white,
-        ),
-        iconTheme: const IconThemeData(color: Colors.white),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        border: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(12),
-          borderSide: BorderSide.none,
-        ),
-        filled: true,
-        fillColor: Colors.grey.withAlpha((0.1 * 255).round()),
-        contentPadding: const EdgeInsets.symmetric(
-          horizontal: 16,
-          vertical: 14,
-        ),
-      ),
-      elevatedButtonTheme: ElevatedButtonThemeData(
-        style: ElevatedButton.styleFrom(
-          backgroundColor: Colors.teal.shade600,
-          foregroundColor: Colors.white,
-          padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(12),
-          ),
-        ),
-      ),
-      textTheme: const TextTheme(
-        displayLarge: TextStyle(fontSize: 32, fontWeight: FontWeight.bold),
-        displayMedium: TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
-        titleLarge: TextStyle(fontSize: 22, fontWeight: FontWeight.bold),
-        bodyLarge: TextStyle(fontSize: 16),
       ),
     );
   }

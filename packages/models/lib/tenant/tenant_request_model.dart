@@ -33,18 +33,35 @@ class TenantRequest {
     required this.businessId,
   });
 
+  /// A date from a Firestore timestamp, a [DateTime] or an ISO string.
+  static DateTime? _date(dynamic v) {
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    if (v is String) return DateTime.tryParse(v);
+    return null;
+  }
+
+  static String? _text(dynamic v) {
+    final s = v?.toString().trim();
+    return s == null || s.isEmpty ? null : s;
+  }
+
+  /// Requests written by `submitEnrollmentRequest` call the move-in date
+  /// `moveInDate` and the tenant's note `notes`; older documents used
+  /// `preferredMoveIn` and `message`. Both are read.
   factory TenantRequest.fromFirestore(String id, Map<String, dynamic> data) {
     return TenantRequest(
       id: id,
       tenantName: data['tenantName'] ?? '',
       phone: data['phone'] ?? data['tenantPhone'] ?? '',
-      email: data['email'],
+      email: _text(data['email'] ?? data['tenantEmail']),
       status: data['status'] ?? 'pending',
-      createdAt: (data['createdAt'] as Timestamp).toDate(),
-      updatedAt: data['updatedAt'] != null ? (data['updatedAt'] as Timestamp).toDate() : null,
-      message: data['message'],
-      preferredMoveIn: data['preferredMoveIn'] != null ? (data['preferredMoveIn'] as Timestamp).toDate() : null,
-      sharingType: data['sharingType'],
+      // A just-written server timestamp is null until the server answers.
+      createdAt: _date(data['createdAt']) ?? DateTime.now(),
+      updatedAt: _date(data['updatedAt']),
+      message: _text(data['message'] ?? data['notes']),
+      preferredMoveIn: _date(data['preferredMoveIn'] ?? data['moveInDate']),
+      sharingType: _text(data['sharingType']),
       hasAC: data['hasAC'],
       source: data['source'],
       propertyId: data['propertyId'] ?? '',

@@ -28,11 +28,15 @@ class AddPropertyViewModel extends ChangeNotifier {
   final TextEditingController pincodeController = TextEditingController();
   final TextEditingController descriptionController = TextEditingController();
   final TextEditingController landmarksController = TextEditingController();
-  final TextEditingController googleMapsLinkController = TextEditingController();
-  final TextEditingController numberOfFloorsController = TextEditingController();
+  final TextEditingController googleMapsLinkController =
+      TextEditingController();
+  final TextEditingController numberOfFloorsController =
+      TextEditingController();
   final TextEditingController maxSharingController = TextEditingController();
-  final TextEditingController securityDepositController = TextEditingController();
-  final TextEditingController oneTimeMaintenanceChargeController = TextEditingController();
+  final TextEditingController securityDepositController =
+      TextEditingController();
+  final TextEditingController oneTimeMaintenanceChargeController =
+      TextEditingController();
   final TextEditingController noticePeriodController = TextEditingController();
   final TextEditingController foodNotesController = TextEditingController();
 
@@ -61,7 +65,13 @@ class AddPropertyViewModel extends ChangeNotifier {
 
   // Food plan
   final List<String> days = const [
-    'Monday', 'Tuesday', 'Wednesday', 'Thursday', 'Friday', 'Saturday', 'Sunday',
+    'Monday',
+    'Tuesday',
+    'Wednesday',
+    'Thursday',
+    'Friday',
+    'Saturday',
+    'Sunday',
   ];
   late Map<String, Set<Meal>> weeklyMeals;
 
@@ -81,7 +91,8 @@ class AddPropertyViewModel extends ChangeNotifier {
   AddPropertyViewModel({
     required ImageService imageService,
     required PropertyRepository propertyRepository,
-  }) : _imageService = imageService, _propertyRepository = propertyRepository {
+  }) : _imageService = imageService,
+       _propertyRepository = propertyRepository {
     weeklyMeals = {for (final day in days) day: <Meal>{}};
 
     // Listen to max sharing changes to update dynamic pricing rows
@@ -93,9 +104,11 @@ class AddPropertyViewModel extends ChangeNotifier {
   bool get isUploadingImages => _isUploadingImages;
   List<XFile> get selectedImages => _selectedImages;
   List<String> get uploadedImageUrls => _uploadedImageUrls;
-  int get currentMaxSharing => int.tryParse(maxSharingController.text.trim()) ?? 0;
+  int get currentMaxSharing =>
+      int.tryParse(maxSharingController.text.trim()) ?? 0;
   int? get expandedRoomIndex => _expandedRoomIndex; // Add getter
-  set expandedRoomIndex(int? value) { // Add setter
+  set expandedRoomIndex(int? value) {
+    // Add setter
     _expandedRoomIndex = value;
     notifyListeners();
   }
@@ -152,7 +165,8 @@ class AddPropertyViewModel extends ChangeNotifier {
   }
 
   // Image handling
-  Future<void> pickImages() async { // Renamed from pickAndUploadImages
+  Future<void> pickImages() async {
+    // Renamed from pickAndUploadImages
     try {
       final images = await _imageService.pickImages();
       if (images.isNotEmpty) {
@@ -186,13 +200,17 @@ class AddPropertyViewModel extends ChangeNotifier {
 
   void removeRoom(int index) {
     if (index >= 0 && index < roomDetails.length) {
-      (roomDetails[index]['roomNumberController'] as TextEditingController).dispose();
+      (roomDetails[index]['roomNumberController'] as TextEditingController)
+          .dispose();
       roomDetails.removeAt(index);
       if (_expandedRoomIndex != null) {
         if (roomDetails.isEmpty) {
           _expandedRoomIndex = null;
         } else {
-          _expandedRoomIndex = (_expandedRoomIndex!.clamp(0, roomDetails.length - 1));
+          _expandedRoomIndex = (_expandedRoomIndex!.clamp(
+            0,
+            roomDetails.length - 1,
+          ));
         }
       }
       notifyListeners();
@@ -211,7 +229,8 @@ class AddPropertyViewModel extends ChangeNotifier {
   }
 
   // Amenities
-  void toggleSelectAllAmenities(bool value) { // Changed parameter type
+  void toggleSelectAllAmenities(bool value) {
+    // Changed parameter type
     selectAllAmenities = value;
     hasWifi = value;
     hasAC = value;
@@ -298,7 +317,8 @@ class AddPropertyViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  void clearDayMeals(String day) { // Add this missing method
+  void clearDayMeals(String day) {
+    // Add this missing method
     weeklyMeals[day] = <Meal>{};
     notifyListeners();
   }
@@ -307,7 +327,8 @@ class AddPropertyViewModel extends ChangeNotifier {
     for (final day in days) {
       weeklyMeals[day] = {Meal.breakfast, Meal.lunch, Meal.dinner};
     }
-    foodNotesController.text = 'All meals (Breakfast, Lunch, Dinner) provided daily.';
+    foodNotesController.text =
+        'All meals (Breakfast, Lunch, Dinner) provided daily.';
     notifyListeners();
   }
 
@@ -320,7 +341,8 @@ class AddPropertyViewModel extends ChangeNotifier {
     }
     weeklyMeals['Saturday'] = {Meal.breakfast, Meal.lunch, Meal.dinner};
     weeklyMeals['Sunday'] = {Meal.breakfast, Meal.lunch, Meal.dinner};
-    foodNotesController.text = 'Mon-Fri: Breakfast & Dinner; Sat-Sun: Breakfast, Lunch & Dinner.';
+    foodNotesController.text =
+        'Mon-Fri: Breakfast & Dinner; Sat-Sun: Breakfast, Lunch & Dinner.';
     notifyListeners();
   }
 
@@ -332,7 +354,8 @@ class AddPropertyViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
-  String sharingLabel(int? sharingType) { // Add this missing method
+  String sharingLabel(int? sharingType) {
+    // Add this missing method
     if (sharingType == null) return '';
     return switch (sharingType) {
       1 => 'Single',
@@ -347,27 +370,25 @@ class AddPropertyViewModel extends ChangeNotifier {
     for (final day in days) {
       final meals = weeklyMeals[day]!;
       map[day] = meals
-          .map((m) => switch (m) {
-        Meal.breakfast => 'Breakfast',
-        Meal.lunch => 'Lunch',
-        Meal.dinner => 'Dinner',
-      })
+          .map(
+            (m) => switch (m) {
+              Meal.breakfast => 'Breakfast',
+              Meal.lunch => 'Lunch',
+              Meal.dinner => 'Dinner',
+            },
+          )
           .toList();
     }
-    return {
-      'plan': map,
-      'notes': foodNotesController.text.trim(),
-    };
+    return {'plan': map, 'notes': foodNotesController.text.trim()};
   }
 
   // In AddPropertyViewModel - update the addProperty method
   Future<void> addProperty(
-      String businessId,  // This should be BUS0000001, not the Firebase UID
-      String businessName,
-      String businessPhone,
-      BuildContext context,
-      ) async {
-
+    String businessId, // This should be BUS0000001, not the Firebase UID
+    String businessName,
+    String businessPhone,
+    BuildContext context,
+  ) async {
     // Add debug to check what's being passed
     debugPrint('=== DEBUG: Property Creation ===');
     debugPrint('Received Business ID: $businessId');
@@ -379,7 +400,9 @@ class AddPropertyViewModel extends ChangeNotifier {
 
     // Verify it's a valid business ID format (starts with BUS)
     if (!businessId.startsWith('BUS')) {
-      throw ArgumentError('Invalid business ID format. Expected BUS0000001, got: $businessId');
+      throw ArgumentError(
+        'Invalid business ID format. Expected BUS0000001, got: $businessId',
+      );
     }
 
     _isLoading = true;
@@ -404,9 +427,14 @@ class AddPropertyViewModel extends ChangeNotifier {
       // Upload images using the reserved property ID
       List<String> imageUrls = [];
       if (_selectedImages.isNotEmpty) {
-        debugPrint('Uploading ${_selectedImages.length} images to property $reservedPropertyId...');
+        debugPrint(
+          'Uploading ${_selectedImages.length} images to property $reservedPropertyId...',
+        );
         try {
-          imageUrls = await _imageService.uploadPropertyImages(_selectedImages, reservedPropertyId);
+          imageUrls = await _imageService.uploadPropertyImages(
+            _selectedImages,
+            reservedPropertyId,
+          );
           _uploadedImageUrls = imageUrls;
           debugPrint('✅ Successfully uploaded ${imageUrls.length} images');
         } catch (e) {
@@ -423,8 +451,10 @@ class AddPropertyViewModel extends ChangeNotifier {
       // Create dynamic pricing entries
       debugPrint('Creating pricing entries...');
       final sharingPricing = sharingRows.map((row) {
-        final nonAcText = (row['nonAcController'] as TextEditingController).text.trim();
-        final acText = (row['acController'] as TextEditingController).text.trim();
+        final nonAcText = (row['nonAcController'] as TextEditingController).text
+            .trim();
+        final acText = (row['acController'] as TextEditingController).text
+            .trim();
         return SharingPricingEntry(
           sharing: row['sharing'] as int,
           nonAc: nonAcText.isEmpty ? null : int.tryParse(nonAcText),
@@ -450,21 +480,27 @@ class AddPropertyViewModel extends ChangeNotifier {
           single: 0,
           double: 0,
           triple: 0,
-          securityDeposit: int.tryParse(securityDepositController.text.trim()) ?? 0,
-          oneTimeMaintenance: int.tryParse(oneTimeMaintenanceChargeController.text.trim()) ?? 0,
+          securityDeposit:
+              int.tryParse(securityDepositController.text.trim()) ?? 0,
+          oneTimeMaintenance:
+              int.tryParse(oneTimeMaintenanceChargeController.text.trim()) ?? 0,
           maintenanceDeductedFromDeposit: isMaintenanceDeductedFromDeposit,
           sharing: sharingPricing,
           maxSharing: currentMaxSharing,
         ),
         rooms: roomDetails
-            .map((room) => PropertyRoom(
-          roomNumber: (room['roomNumberController'] as TextEditingController).text.trim(),
-          floor: room['floor']?.toString() ?? 'Ground',
-          occupancyType: sharingLabel(room['sharingType'] as int?),
-          sharingType: room['sharingType'] as int?,
-          hasAC: room['hasAC'] as bool? ?? false,
-          status: 'available',
-        ))
+            .map(
+              (room) => PropertyRoom(
+                roomNumber:
+                    (room['roomNumberController'] as TextEditingController).text
+                        .trim(),
+                floor: room['floor']?.toString() ?? 'Ground',
+                occupancyType: sharingLabel(room['sharingType'] as int?),
+                sharingType: room['sharingType'] as int?,
+                hasAC: room['hasAC'] as bool? ?? false,
+                status: 'available',
+              ),
+            )
             .toList(),
         amenities: PropertyAmenities(
           wifi: hasWifi,
@@ -484,7 +520,8 @@ class AddPropertyViewModel extends ChangeNotifier {
           visitorsAllowed: visitorsAllowed,
           smokingAllowed: smokingAllowed,
           alcoholAllowed: alcoholAllowed,
-          noticePeriodDays: int.tryParse(noticePeriodController.text.trim()) ?? 30,
+          noticePeriodDays:
+              int.tryParse(noticePeriodController.text.trim()) ?? 30,
         ),
         totals: PropertyTotals(
           rooms: getTotalRooms(),
@@ -504,11 +541,14 @@ class AddPropertyViewModel extends ChangeNotifier {
       // Validate property data
       debugPrint('Validating property data...');
       if (property.name.isEmpty) throw Exception('Property name is required');
-      if (property.address.isEmpty) throw Exception('Property address is required');
+      if (property.address.isEmpty)
+        throw Exception('Property address is required');
       if (property.city.isEmpty) throw Exception('City is required');
       if (property.pincode.isEmpty) throw Exception('Pincode is required');
-      if (currentMaxSharing <= 0) throw Exception('Max sharing must be greater than 0');
-      if (property.rooms.isEmpty) throw Exception('At least one room is required');
+      if (currentMaxSharing <= 0)
+        throw Exception('Max sharing must be greater than 0');
+      if (property.rooms.isEmpty)
+        throw Exception('At least one room is required');
 
       debugPrint('✅ Property validation passed');
       debugPrint('Saving to Firestore...');
@@ -523,7 +563,6 @@ class AddPropertyViewModel extends ChangeNotifier {
       );
 
       resetForm();
-
     } catch (e) {
       debugPrint('❌ Error adding property: $e');
       debugPrint('Stack trace: ${e.toString()}');
@@ -593,4 +632,3 @@ class AddPropertyViewModel extends ChangeNotifier {
     notifyListeners();
   }
 }
-

@@ -57,3 +57,10 @@ dev_dependencies:
 
 flutter:
   uses-material-design: true
+
+  fonts:
+    # Inter (SIL OFL, see assets/fonts/Inter-OFL.txt). One variable file; the
+    # weight is driven through the `wght` axis (see BizText).
+    - family: Inter
+      fonts:
+        - asset: assets/fonts/Inter-Variable.ttf

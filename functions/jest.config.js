@@ -7,6 +7,8 @@ module.exports = {
   testMatch: [
     '**/test/unit/billing_logic_test.ts',
     '**/test/unit/tenant_billing_test.ts',
+    '**/test/unit/member_access_test.ts',
+    '**/test/unit/invitation_phone_test.ts',
   ],
   transform: {
     '^.+\\.ts$': ['ts-jest', {

@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter_test/flutter_test.dart';
 import 'package:mockito/mockito.dart';
 import 'package:mockito/annotations.dart';
@@ -69,6 +70,22 @@ Property _makeProperty({
   );
 }
 
+/// Active/inactive tenants live under the business (members may read these;
+/// the global `tenants` collection is owner-only and can't be listed by query).
+Future<void> addTenant(
+  FakeFirebaseFirestore fs,
+  String businessId,
+  String id, {
+  String status = 'active',
+}) {
+  return fs
+      .collection('businesses')
+      .doc(businessId)
+      .collection('tenants')
+      .doc(id)
+      .set({'businessId': businessId, 'status': status, 'name': 'Tenant $id'});
+}
+
 void main() {
   group('BusinessDashboardViewModel Tests', () {
     late BusinessDashboardViewModel viewModel;
@@ -123,20 +140,13 @@ void main() {
           _makeProperty(id: 'PROP2', businessId: businessId, beds: 20),
         ];
 
-        when(mockRepo.getPropertiesByBusiness(businessId))
-            .thenAnswer((_) async => properties);
+        when(
+          mockRepo.getPropertiesByBusiness(businessId),
+        ).thenAnswer((_) async => properties);
 
         // Add active tenants to fake Firestore
-        await fakeFirestore.collection('tenants').add({
-          'businessId': businessId,
-          'status': 'active',
-          'name': 'Tenant 1',
-        });
-        await fakeFirestore.collection('tenants').add({
-          'businessId': businessId,
-          'status': 'active',
-          'name': 'Tenant 2',
-        });
+        await addTenant(fakeFirestore, businessId, 'T1');
+        await addTenant(fakeFirestore, businessId, 'T2');
 
         await viewModel.loadDashboardMetrics(businessId);
 
@@ -152,16 +162,15 @@ void main() {
           _makeProperty(id: 'PROP1', businessId: businessId, beds: 10),
         ];
 
-        when(mockRepo.getPropertiesByBusiness(businessId))
-            .thenAnswer((_) async => properties);
+        when(
+          mockRepo.getPropertiesByBusiness(businessId),
+        ).thenAnswer((_) async => properties);
 
-        // Add 5 active tenants (50% occupancy)
+        // Add 5 active tenants (50% occupancy) and one who has left
         for (int i = 0; i < 5; i++) {
-          await fakeFirestore.collection('tenants').add({
-            'businessId': businessId,
-            'status': 'active',
-          });
+          await addTenant(fakeFirestore, businessId, 'T$i');
         }
+        await addTenant(fakeFirestore, businessId, 'GONE', status: 'inactive');
 
         await viewModel.loadDashboardMetrics(businessId);
 
@@ -175,8 +184,9 @@ void main() {
           _makeProperty(id: 'PROP1', businessId: businessId, beds: 0),
         ];
 
-        when(mockRepo.getPropertiesByBusiness(businessId))
-            .thenAnswer((_) async => properties);
+        when(
+          mockRepo.getPropertiesByBusiness(businessId),
+        ).thenAnswer((_) async => properties);
 
         await viewModel.loadDashboardMetrics(businessId);
 
@@ -186,8 +196,9 @@ void main() {
       test('should handle repository errors gracefully', () async {
         const businessId = 'BUS0000001';
 
-        when(mockRepo.getPropertiesByBusiness(businessId))
-            .thenThrow(Exception('Network error'));
+        when(
+          mockRepo.getPropertiesByBusiness(businessId),
+        ).thenThrow(Exception('Network error'));
 
         await viewModel.loadDashboardMetrics(businessId);
 
@@ -200,8 +211,9 @@ void main() {
       test('should not reload if already loading same businessId', () async {
         const businessId = 'BUS0000001';
 
-        when(mockRepo.getPropertiesByBusiness(businessId))
-            .thenAnswer((_) async {
+        when(mockRepo.getPropertiesByBusiness(businessId)).thenAnswer((
+          _,
+        ) async {
           await Future.delayed(const Duration(milliseconds: 100));
           return [];
         });
@@ -221,8 +233,9 @@ void main() {
     group('Currency Formatting', () {
       test('should format zero correctly', () async {
         const businessId = 'BUS0000001';
-        when(mockRepo.getPropertiesByBusiness(businessId))
-            .thenAnswer((_) async => []);
+        when(
+          mockRepo.getPropertiesByBusiness(businessId),
+        ).thenAnswer((_) async => []);
 
         await viewModel.loadDashboardMetrics(businessId);
 
@@ -231,17 +244,25 @@ void main() {
 
       test('should format thousands correctly', () async {
         const businessId = 'BUS0000001';
-        when(mockRepo.getPropertiesByBusiness(businessId))
-            .thenAnswer((_) async => []);
+        when(
+          mockRepo.getPropertiesByBusiness(businessId),
+        ).thenAnswer((_) async => []);
 
-        // Add pending payment
-        await fakeFirestore
+        // A tenant who owes this month and has a UPI payment awaiting review.
+        final now = DateTime.now();
+        final tenant = fakeFirestore
             .collection('businesses')
             .doc(businessId)
             .collection('tenants')
-            .doc('TEN0000001')
-            .collection('payments')
-            .add({
+            .doc('TEN0000001');
+        await tenant.set({'status': 'active', 'name': 'Amit'});
+        await tenant.collection('rent_invoices').add({
+          'amount': 5000,
+          'status': 'unpaid',
+          'periodMonth': '${now.year}-${now.month.toString().padLeft(2, '0')}',
+          'dueDate': Timestamp.fromDate(now.add(const Duration(days: 3))),
+        });
+        await tenant.collection('payments').add({
           'businessId': businessId,
           'status': 'pending_verification',
           'amount': 5000,
@@ -250,14 +271,65 @@ void main() {
         await viewModel.loadDashboardMetrics(businessId);
 
         expect(viewModel.pendingRentString, equals('₹ 5K'));
+        expect(viewModel.pendingPaymentsCount, 1);
+      });
+
+      test('counts enrollment deposits waiting for confirmation', () async {
+        const businessId = 'BUS0000001';
+        when(
+          mockRepo.getPropertiesByBusiness(businessId),
+        ).thenAnswer((_) async => []);
+        await fakeFirestore.collection('enrollmentRequests').doc('r1').set({
+          'businessId': businessId,
+          'status': 'payment_submitted',
+          'totalBillAmount': 12000, // what the bill flow writes
+        });
+        await fakeFirestore.collection('enrollmentRequests').doc('r2').set({
+          'businessId': businessId,
+          'status': 'pending',
+          'totalAmount': 999,
+        });
+        await fakeFirestore.collection('enrollmentRequests').doc('r3').set({
+          'businessId': 'OTHER',
+          'status': 'payment_submitted',
+          'totalAmount': 777,
+        });
+
+        await viewModel.loadDashboardMetrics(businessId);
+
+        expect(viewModel.pendingPaymentsCount, 1);
+        expect(viewModel.pendingConfirmationAmount, 12000);
+      });
+
+      test('reads the deposit amount from whichever field the request carries', () async {
+        const businessId = 'BUS0000001';
+        when(mockRepo.getPropertiesByBusiness(businessId)).thenAnswer((_) async => []);
+        for (final (id, fields) in [
+          ('a', {'totalBillAmount': 1000}),
+          ('b', {'totalFirstMonth': 2000}),
+          ('c', {'totalAmount': 4000}),
+          ('d', <String, Object>{}),
+        ]) {
+          await fakeFirestore.collection('enrollmentRequests').doc(id).set({
+            'businessId': businessId,
+            'status': 'payment_submitted',
+            ...fields,
+          });
+        }
+
+        await viewModel.loadDashboardMetrics(businessId);
+
+        expect(viewModel.pendingPaymentsCount, 4);
+        expect(viewModel.pendingConfirmationAmount, 7000);
       });
     });
 
     group('refreshMetrics', () {
       test('should reload metrics', () async {
         const businessId = 'BUS0000001';
-        when(mockRepo.getPropertiesByBusiness(businessId))
-            .thenAnswer((_) async => []);
+        when(
+          mockRepo.getPropertiesByBusiness(businessId),
+        ).thenAnswer((_) async => []);
 
         await viewModel.refreshMetrics(businessId);
 
@@ -271,8 +343,9 @@ void main() {
         int notifyCount = 0;
         viewModel.addListener(() => notifyCount++);
 
-        when(mockRepo.getPropertiesByBusiness(businessId))
-            .thenAnswer((_) async => []);
+        when(
+          mockRepo.getPropertiesByBusiness(businessId),
+        ).thenAnswer((_) async => []);
 
         await viewModel.loadDashboardMetrics(businessId);
 
@@ -287,8 +360,9 @@ void main() {
         int notifyCount = 0;
         viewModel.addListener(() => notifyCount++);
 
-        when(mockRepo.getPropertiesByBusiness(businessId))
-            .thenAnswer((_) async {
+        when(mockRepo.getPropertiesByBusiness(businessId)).thenAnswer((
+          _,
+        ) async {
           await Future.delayed(const Duration(milliseconds: 50));
           return [];
         });

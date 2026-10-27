@@ -3,7 +3,10 @@ import '../../models/payment_method_model.dart';
 import '../../services/payment_method_service.dart';
 
 class PaymentMethodsViewModel extends ChangeNotifier {
-  final PaymentMethodService _service = PaymentMethodService();
+  PaymentMethodsViewModel({PaymentMethodService? service})
+      : _service = service ?? PaymentMethodService();
+
+  final PaymentMethodService _service;
 
   List<PaymentMethod> _paymentMethods = [];
   bool _isLoading = false;
@@ -34,8 +37,13 @@ class PaymentMethodsViewModel extends ChangeNotifier {
   // Add new payment method
   Future<bool> addPaymentMethod(String businessId, PaymentMethod method) async {
     try {
+      // Decide from what is saved, not from a cached list that may be empty
+      // (the add form uses a view model that never loaded one).
+      final current = await _service.getPaymentMethods(businessId);
       if (method.type.toLowerCase() == 'razorpay') {
-        final alreadyExists = _paymentMethods.any((m) => m.type.toLowerCase() == 'razorpay');
+        final alreadyExists = current.any(
+          (m) => m.type.toLowerCase() == 'razorpay',
+        );
         if (alreadyExists) {
           _error = 'Razorpay is already configured for this business.';
           notifyListeners();
@@ -55,7 +63,7 @@ class PaymentMethodsViewModel extends ChangeNotifier {
         bankName: method.bankName,
         accountType: method.accountType,
         isActive: true,
-        isPreferred: _paymentMethods.isEmpty, // First method is preferred
+        isPreferred: current.isEmpty, // First method is preferred
         createdAt: DateTime.now(),
       );
 
@@ -100,7 +108,9 @@ class PaymentMethodsViewModel extends ChangeNotifier {
 
   // Set preferred payment method
   Future<bool> setPreferredPaymentMethod(
-      String businessId, String methodId) async {
+    String businessId,
+    String methodId,
+  ) async {
     try {
       await _service.setPreferredPaymentMethod(businessId, methodId);
       await loadPaymentMethods(businessId);
@@ -115,7 +125,9 @@ class PaymentMethodsViewModel extends ChangeNotifier {
 
   // Toggle payment method active status
   Future<bool> togglePaymentMethodStatus(
-      PaymentMethod method, bool isActive) async {
+    PaymentMethod method,
+    bool isActive,
+  ) async {
     try {
       final updated = method.copyWith(isActive: isActive);
       await _service.updatePaymentMethod(updated);

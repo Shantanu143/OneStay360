@@ -42,8 +42,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     _fadeAnimation = Tween<double>(begin: 0, end: 1).animate(
       CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
     );
-    _slideAnimation = Tween<Offset>(begin: const Offset(0, .1), end: Offset.zero)
-        .animate(CurvedAnimation(parent: _animationController, curve: Curves.easeOut));
+    _slideAnimation =
+        Tween<Offset>(begin: const Offset(0, .1), end: Offset.zero).animate(
+          CurvedAnimation(parent: _animationController, curve: Curves.easeOut),
+        );
     _animationController.forward();
 
     debugPrint('🎯 AddPropertyScreen initialized with:');
@@ -62,12 +64,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     return Padding(
       padding: const EdgeInsets.only(top: 24, bottom: 16),
       child: Text(
-          title,
-          style: TextStyle(
-              fontSize: 22,
-              fontWeight: FontWeight.bold,
-              color: Colors.grey.shade800
-          )
+        title,
+        style: TextStyle(
+          fontSize: 22,
+          fontWeight: FontWeight.bold,
+          color: Colors.grey.shade800,
+        ),
       ),
     );
   }
@@ -96,7 +98,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           prefixIcon: icon != null ? Icon(icon, color: primaryColor) : null,
           filled: true,
           fillColor: Colors.grey.shade50,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: Colors.grey.shade200),
@@ -137,7 +142,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
           prefixIcon: icon != null ? Icon(icon, color: primaryColor) : null,
           filled: true,
           fillColor: Colors.grey.shade50,
-          border: OutlineInputBorder(borderRadius: BorderRadius.circular(12), borderSide: BorderSide.none),
+          border: OutlineInputBorder(
+            borderRadius: BorderRadius.circular(12),
+            borderSide: BorderSide.none,
+          ),
           enabledBorder: OutlineInputBorder(
             borderRadius: BorderRadius.circular(12),
             borderSide: BorderSide(color: Colors.grey.shade200),
@@ -159,7 +167,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     );
   }
 
-  Widget _amenityTile(String title, bool value, IconData icon, void Function(bool v) onChanged, Color primaryColor) {
+  Widget _amenityTile(
+    String title,
+    bool value,
+    IconData icon,
+    void Function(bool v) onChanged,
+    Color primaryColor,
+  ) {
     return CheckboxListTile(
       title: Row(
         children: [
@@ -177,14 +191,23 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     );
   }
 
-  Widget _buildFoodPlanSection(AddPropertyViewModel viewModel, Color primaryColor) {
+  Widget _buildFoodPlanSection(
+    AddPropertyViewModel viewModel,
+    Color primaryColor,
+  ) {
     return Container(
       margin: const EdgeInsets.only(left: 0, top: 8, bottom: 16),
       decoration: BoxDecoration(
         color: Colors.white,
         borderRadius: BorderRadius.circular(12),
         border: Border.all(color: Colors.grey.shade200),
-        boxShadow: [BoxShadow(color: Colors.grey.shade200, blurRadius: 8, offset: const Offset(0, 4))],
+        boxShadow: [
+          BoxShadow(
+            color: Colors.grey.shade200,
+            blurRadius: 8,
+            offset: const Offset(0, 4),
+          ),
+        ],
       ),
       child: Padding(
         padding: const EdgeInsets.fromLTRB(16, 16, 16, 12),
@@ -198,9 +221,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                   child: Text(
                     'Food Plan',
                     style: TextStyle(
-                        fontSize: 18,
-                        fontWeight: FontWeight.w800,
-                        color: Colors.grey.shade800
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800,
+                      color: Colors.grey.shade800,
                     ),
                   ),
                 ),
@@ -214,18 +237,31 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                         style: OutlinedButton.styleFrom(
                           foregroundColor: primaryColor,
                           side: BorderSide(color: primaryColor),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                         ),
-                        child: const Text('All meals', style: TextStyle(fontSize: 12)),
+                        child: const Text(
+                          'All meals',
+                          style: TextStyle(fontSize: 12),
+                        ),
                       ),
                       OutlinedButton(
-                        onPressed: viewModel.applyPresetWeekdayBF_DinnerWeekendAll,
+                        onPressed:
+                            viewModel.applyPresetWeekdayBF_DinnerWeekendAll,
                         style: OutlinedButton.styleFrom(
                           foregroundColor: primaryColor,
                           side: BorderSide(color: primaryColor),
-                          padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 8,
+                            vertical: 4,
+                          ),
                         ),
-                        child: const Text('Weekdays BF+D', style: TextStyle(fontSize: 12)),
+                        child: const Text(
+                          'Weekdays BF+D',
+                          style: TextStyle(fontSize: 12),
+                        ),
                       ),
                     ],
                   ),
@@ -243,7 +279,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
               ],
             ),
             const SizedBox(height: 12),
-            ...viewModel.days.map((day) => _buildDayRow(day, viewModel, primaryColor)),
+            ...viewModel.days.map(
+              (day) => _buildDayRow(day, viewModel, primaryColor),
+            ),
             const SizedBox(height: 12),
             _buildTextField(
               controller: viewModel.foodNotesController,
@@ -264,8 +302,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       message: tooltip,
       child: Chip(
         label: Text(
-            label,
-            style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold)
+          label,
+          style: const TextStyle(
+            color: Colors.white,
+            fontWeight: FontWeight.bold,
+          ),
         ),
         backgroundColor: color,
         materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
@@ -275,7 +316,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     );
   }
 
-  Widget _buildDayRow(String day, AddPropertyViewModel viewModel, Color primaryColor) {
+  Widget _buildDayRow(
+    String day,
+    AddPropertyViewModel viewModel,
+    Color primaryColor,
+  ) {
     final set = viewModel.weeklyMeals[day]!;
     return Padding(
       padding: const EdgeInsets.symmetric(vertical: 6),
@@ -286,9 +331,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             child: Text(
               day.length > 6 ? day.substring(0, 6) : day,
               style: TextStyle(
-                  fontSize: 14,
-                  fontWeight: FontWeight.w700,
-                  color: Colors.grey.shade700
+                fontSize: 14,
+                fontWeight: FontWeight.w700,
+                color: Colors.grey.shade700,
               ),
             ),
           ),
@@ -361,42 +406,62 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
   String _getOrdinalSuffix(int number) {
     if (number % 100 >= 11 && number % 100 <= 13) return 'th';
     switch (number % 10) {
-      case 1: return 'st';
-      case 2: return 'nd';
-      case 3: return 'rd';
-      default: return 'th';
+      case 1:
+        return 'st';
+      case 2:
+        return 'nd';
+      case 3:
+        return 'rd';
+      default:
+        return 'th';
     }
   }
 
-  Future<void> _addProperty(AddPropertyViewModel viewModel, BuildContext context) async {
+  Future<void> _addProperty(
+    AddPropertyViewModel viewModel,
+    BuildContext context,
+  ) async {
     if (!_formKey.currentState!.validate()) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please fill all required fields correctly.')),
+        const SnackBar(
+          content: Text('Please fill all required fields correctly.'),
+        ),
       );
       return;
     }
 
     if (viewModel.currentMaxSharing <= 0) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please set a valid Max Sharing (e.g., 3).')),
+        const SnackBar(
+          content: Text('Please set a valid Max Sharing (e.g., 3).'),
+        ),
       );
       return;
     }
 
-    final hasAnyPrice = viewModel.sharingRows.any((row) =>
-    (row['nonAcController'] as TextEditingController).text.trim().isNotEmpty ||
-        (row['acController'] as TextEditingController).text.trim().isNotEmpty);
+    final hasAnyPrice = viewModel.sharingRows.any(
+      (row) =>
+          (row['nonAcController'] as TextEditingController).text
+              .trim()
+              .isNotEmpty ||
+          (row['acController'] as TextEditingController).text.trim().isNotEmpty,
+    );
 
     if (!hasAnyPrice) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Set at least one price for any sharing type.')),
+        const SnackBar(
+          content: Text('Set at least one price for any sharing type.'),
+        ),
       );
       return;
     }
 
-    if (viewModel.hasFood && viewModel.weeklyMeals.values.every((s) => s.isEmpty)) {
+    if (viewModel.hasFood &&
+        viewModel.weeklyMeals.values.every((s) => s.isEmpty)) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Configure Food Plan or disable Food Included.')),
+        const SnackBar(
+          content: Text('Configure Food Plan or disable Food Included.'),
+        ),
       );
       return;
     }
@@ -411,11 +476,14 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
       debugPrint('  Business Phone: ${widget.businessPhone}');
 
       await viewModel.addProperty(
-        widget.businessId,    // Use the passed business ID
-        widget.businessName,  // Use the passed business name
+        widget.businessId, // Use the passed business ID
+        widget.businessName, // Use the passed business name
         widget.businessPhone, // Use the passed business phone
         context,
       );
+      if (mounted) {
+        Navigator.of(context).pop(true);
+      }
     } catch (e) {
       // Error handling is done in the ViewModel
     }
@@ -427,7 +495,7 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
     return BusinessScaffold(
       currentTab: BusinessTab.properties,
-      //titleText: 'Add New Property',
+      titleText: 'Add New Property',
       showBackButton: true,
       body: FadeTransition(
         opacity: _fadeAnimation,
@@ -437,8 +505,19 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
             builder: (context, viewModel, child) {
               final floorItems = [
                 const DropdownMenuItem(value: 'Ground', child: Text('Ground')),
-                for (int i = 1; i <= (int.tryParse(viewModel.numberOfFloorsController.text.trim()) ?? 0); i++)
-                  DropdownMenuItem(value: '$i', child: Text('$i${_getOrdinalSuffix(i)}')),
+                for (
+                  int i = 1;
+                  i <=
+                      (int.tryParse(
+                            viewModel.numberOfFloorsController.text.trim(),
+                          ) ??
+                          0);
+                  i++
+                )
+                  DropdownMenuItem(
+                    value: '$i',
+                    child: Text('$i${_getOrdinalSuffix(i)}'),
+                  ),
               ];
 
               return SingleChildScrollView(
@@ -494,7 +573,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                         label: 'Property Name',
                         hint: 'e.g., The Grand Residency PG',
                         icon: Icons.apartment_outlined,
-                        validator: (value) => (value == null || value.isEmpty) ? 'Please enter property name' : null,
+                        validator: (value) => (value == null || value.isEmpty)
+                            ? 'Please enter property name'
+                            : null,
                         primaryColor: primaryColor,
                       ),
                       _buildTextField(
@@ -503,7 +584,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                         hint: 'Street, Area, City',
                         icon: Icons.location_on_outlined,
                         maxLines: 3,
-                        validator: (value) => (value == null || value.isEmpty) ? 'Please enter full address' : null,
+                        validator: (value) => (value == null || value.isEmpty)
+                            ? 'Please enter full address'
+                            : null,
                         primaryColor: primaryColor,
                       ),
                       _buildTextField(
@@ -513,7 +596,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                         icon: Icons.local_post_office_outlined,
                         keyboardType: TextInputType.number,
                         validator: (value) {
-                          if (value == null || value.isEmpty) return 'Enter pincode';
+                          if (value == null || value.isEmpty)
+                            return 'Enter pincode';
                           if (value.length < 4) return 'Enter valid pincode';
                           return null;
                         },
@@ -523,17 +607,22 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                         label: 'City',
                         value: viewModel.selectedCity,
                         items: viewModel.cities.keys
-                            .map((city) => DropdownMenuItem(
-                            value: city,
-                            child: Text('$city (${viewModel.cities[city]})')
-                        ))
+                            .map(
+                              (city) => DropdownMenuItem(
+                                value: city,
+                                child: Text(
+                                  '$city (${viewModel.cities[city]})',
+                                ),
+                              ),
+                            )
                             .toList(),
                         onChanged: (v) {
                           viewModel.selectedCity = v;
                           viewModel.notifyListeners();
                         },
                         icon: Icons.location_city_outlined,
-                        validator: (v) => v == null ? 'Please select a city' : null,
+                        validator: (v) =>
+                            v == null ? 'Please select a city' : null,
                         primaryColor: primaryColor,
                       ),
                       _buildTextField(
@@ -543,8 +632,10 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                         icon: Icons.layers_outlined,
                         keyboardType: TextInputType.number,
                         validator: (value) {
-                          if (value == null || value.isEmpty) return 'Enter number of floors';
-                          if (int.tryParse(value) == null) return 'Enter a valid number';
+                          if (value == null || value.isEmpty)
+                            return 'Enter number of floors';
+                          if (int.tryParse(value) == null)
+                            return 'Enter a valid number';
                           return null;
                         },
                         primaryColor: primaryColor,
@@ -607,15 +698,21 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                                       radius: 14,
                                       backgroundColor: Colors.red,
                                       child: IconButton(
-                                        icon: const Icon(Icons.close, size: 14, color: Colors.white),
-                                        onPressed: () => viewModel.removeImageAt(index),
+                                        icon: const Icon(
+                                          Icons.close,
+                                          size: 14,
+                                          color: Colors.white,
+                                        ),
+                                        onPressed: () =>
+                                            viewModel.removeImageAt(index),
                                       ),
                                     ),
                                   ),
                                 ],
                               );
                             },
-                            separatorBuilder: (_, __) => const SizedBox(width: 8),
+                            separatorBuilder: (_, __) =>
+                                const SizedBox(width: 8),
                             itemCount: viewModel.selectedImages.length,
                           ),
                         ),
@@ -626,11 +723,16 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                         decoration: BoxDecoration(
                           color: Colors.grey.shade100,
                           borderRadius: BorderRadius.circular(12),
-                          border: Border.all(color: Colors.grey.shade300, width: 1),
+                          border: Border.all(
+                            color: Colors.grey.shade300,
+                            width: 1,
+                          ),
                         ),
                         child: InkWell(
                           borderRadius: BorderRadius.circular(12),
-                          onTap: viewModel.isUploadingImages ? null : () => viewModel.pickImages(),
+                          onTap: viewModel.isUploadingImages
+                              ? null
+                              : () => viewModel.pickImages(),
                           child: Column(
                             mainAxisAlignment: MainAxisAlignment.center,
                             children: [
@@ -638,19 +740,19 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                                 const CircularProgressIndicator(),
                                 const SizedBox(height: 8),
                                 Text(
-                                    'Uploading images...',
-                                    style: TextStyle(color: Colors.grey.shade600)
+                                  'Uploading images...',
+                                  style: TextStyle(color: Colors.grey.shade600),
                                 ),
                               ] else ...[
                                 Icon(
-                                    Icons.camera_alt_outlined,
-                                    size: 40,
-                                    color: Colors.grey.shade400
+                                  Icons.camera_alt_outlined,
+                                  size: 40,
+                                  color: Colors.grey.shade400,
                                 ),
                                 const SizedBox(height: 8),
                                 Text(
-                                    'Tap to add images',
-                                    style: TextStyle(color: Colors.grey.shade500)
+                                  'Tap to add images',
+                                  style: TextStyle(color: Colors.grey.shade500),
                                 ),
                                 const SizedBox(height: 8),
                                 ElevatedButton.icon(
@@ -660,7 +762,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                                   style: ElevatedButton.styleFrom(
                                     backgroundColor: primaryColor,
                                     foregroundColor: Colors.white,
-                                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                                    shape: RoundedRectangleBorder(
+                                      borderRadius: BorderRadius.circular(8),
+                                    ),
                                   ),
                                 ),
                               ],
@@ -673,14 +777,17 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                       _buildSectionTitle('Max Sharing & Pricing'),
                       _buildTextField(
                         controller: viewModel.maxSharingController,
-                        label: 'Max Sharing (Highest number of people per room)',
+                        label:
+                            'Max Sharing (Highest number of people per room)',
                         hint: 'e.g., 3',
                         icon: Icons.people_alt_outlined,
                         keyboardType: TextInputType.number,
                         validator: (value) {
-                          if (value == null || value.isEmpty) return 'Enter max sharing (e.g., 3)';
+                          if (value == null || value.isEmpty)
+                            return 'Enter max sharing (e.g., 3)';
                           final v = int.tryParse(value);
-                          if (v == null || v <= 0) return 'Enter a number greater than 0';
+                          if (v == null || v <= 0)
+                            return 'Enter a number greater than 0';
                           return null;
                         },
                         primaryColor: primaryColor,
@@ -691,7 +798,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                           return Card(
                             margin: const EdgeInsets.symmetric(vertical: 8),
                             elevation: 2,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                             child: Padding(
                               padding: const EdgeInsets.all(16),
                               child: Column(
@@ -746,20 +855,25 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                         icon: Icons.money_outlined,
                         keyboardType: TextInputType.number,
                         validator: (value) {
-                          if (value == null || value.isEmpty) return 'Please enter security deposit';
-                          if (int.tryParse(value) == null) return 'Enter a valid amount';
+                          if (value == null || value.isEmpty)
+                            return 'Please enter security deposit';
+                          if (int.tryParse(value) == null)
+                            return 'Enter a valid amount';
                           return null;
                         },
                         primaryColor: primaryColor,
                       ),
                       _buildTextField(
-                        controller: viewModel.oneTimeMaintenanceChargeController,
+                        controller:
+                            viewModel.oneTimeMaintenanceChargeController,
                         label: 'One-time Maintenance Charge (if applicable)',
                         hint: '₹ 1000',
                         icon: Icons.build_outlined,
                         keyboardType: TextInputType.number,
                         validator: (value) {
-                          if (value != null && value.isNotEmpty && int.tryParse(value) == null) {
+                          if (value != null &&
+                              value.isNotEmpty &&
+                              int.tryParse(value) == null) {
                             return 'Enter a valid amount';
                           }
                           return null;
@@ -769,14 +883,21 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                       CheckboxListTile(
                         title: Row(
                           children: [
-                            Icon(Icons.account_balance_wallet_outlined, color: primaryColor, size: 20),
+                            Icon(
+                              Icons.account_balance_wallet_outlined,
+                              color: primaryColor,
+                              size: 20,
+                            ),
                             const SizedBox(width: 12),
-                            const Text('Deduct maintenance from security deposit'),
+                            const Text(
+                              'Deduct maintenance from security deposit',
+                            ),
                           ],
                         ),
                         value: viewModel.isMaintenanceDeductedFromDeposit,
                         onChanged: (val) {
-                          viewModel.isMaintenanceDeductedFromDeposit = val ?? false;
+                          viewModel.isMaintenanceDeductedFromDeposit =
+                              val ?? false;
                           viewModel.notifyListeners();
                         },
                         activeColor: primaryColor,
@@ -792,10 +913,22 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                         child: Row(
                           mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Text('Total Rooms: ${viewModel.getTotalRooms()}',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.grey.shade700)),
-                            Text('Total Beds: ${viewModel.getTotalBeds()}',
-                                style: TextStyle(fontSize: 16, fontWeight: FontWeight.w600, color: Colors.grey.shade700)),
+                            Text(
+                              'Total Rooms: ${viewModel.getTotalRooms()}',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
+                            Text(
+                              'Total Beds: ${viewModel.getTotalBeds()}',
+                              style: TextStyle(
+                                fontSize: 16,
+                                fontWeight: FontWeight.w600,
+                                color: Colors.grey.shade700,
+                              ),
+                            ),
                           ],
                         ),
                       ),
@@ -807,7 +940,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                         Widget expanded = Card(
                           margin: const EdgeInsets.symmetric(vertical: 10),
                           elevation: 2,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           child: Padding(
                             padding: const EdgeInsets.all(16),
                             child: Column(
@@ -834,8 +969,12 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                                       },
                                     ),
                                     IconButton(
-                                      icon: Icon(Icons.delete_outline, color: Colors.red.shade400),
-                                      onPressed: () => viewModel.removeRoom(index),
+                                      icon: Icon(
+                                        Icons.delete_outline,
+                                        color: Colors.red.shade400,
+                                      ),
+                                      onPressed: () =>
+                                          viewModel.removeRoom(index),
                                     ),
                                   ],
                                 ),
@@ -846,7 +985,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                                   hint: 'e.g., 101',
                                   icon: Icons.door_front_door_outlined,
                                   validator: (value) {
-                                    if (value == null || value.isEmpty) return 'Enter room number';
+                                    if (value == null || value.isEmpty)
+                                      return 'Enter room number';
                                     return null;
                                   },
                                   primaryColor: primaryColor,
@@ -860,15 +1000,23 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                                     viewModel.notifyListeners();
                                   },
                                   icon: Icons.layers_outlined,
-                                  validator: (value) => value == null ? 'Select floor' : null,
+                                  validator: (value) =>
+                                      value == null ? 'Select floor' : null,
                                   primaryColor: primaryColor,
                                 ),
                                 _buildDropdownField<int>(
                                   label: 'Sharing Type',
                                   value: room['sharingType'],
                                   items: [
-                                    for (int i = 1; i <= viewModel.currentMaxSharing; i++)
-                                      DropdownMenuItem(value: i, child: Text('$i Sharing')),
+                                    for (
+                                      int i = 1;
+                                      i <= viewModel.currentMaxSharing;
+                                      i++
+                                    )
+                                      DropdownMenuItem(
+                                        value: i,
+                                        child: Text('$i Sharing'),
+                                      ),
                                   ],
                                   onChanged: (value) {
                                     room['sharingType'] = value;
@@ -876,8 +1024,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                                   },
                                   icon: Icons.group_outlined,
                                   validator: (value) {
-                                    if (viewModel.currentMaxSharing <= 0) return 'Set Max Sharing above first';
-                                    if (value == null || value < 1 || value > viewModel.currentMaxSharing) {
+                                    if (viewModel.currentMaxSharing <= 0)
+                                      return 'Set Max Sharing above first';
+                                    if (value == null ||
+                                        value < 1 ||
+                                        value > viewModel.currentMaxSharing) {
                                       return 'Select sharing type';
                                     }
                                     return null;
@@ -887,7 +1038,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                                 CheckboxListTile(
                                   title: Row(
                                     children: [
-                                      Icon(Icons.ac_unit_outlined, color: primaryColor, size: 20),
+                                      Icon(
+                                        Icons.ac_unit_outlined,
+                                        color: primaryColor,
+                                        size: 20,
+                                      ),
                                       const SizedBox(width: 12),
                                       const Text('Is AC Room?'),
                                     ],
@@ -900,7 +1055,8 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                                   activeColor: primaryColor,
                                   checkColor: Colors.white,
                                   contentPadding: EdgeInsets.zero,
-                                  controlAffinity: ListTileControlAffinity.leading,
+                                  controlAffinity:
+                                      ListTileControlAffinity.leading,
                                 ),
                               ],
                             ),
@@ -910,7 +1066,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                         Widget collapsed = Card(
                           margin: const EdgeInsets.symmetric(vertical: 8),
                           elevation: 1,
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
                           child: ListTile(
                             onTap: () {
                               viewModel.expandedRoomIndex = index;
@@ -918,7 +1076,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                             },
                             title: Text(
                               'Room ${index + 1} • ${(room['roomNumberController'] as TextEditingController).text.isEmpty ? 'No. —' : (room['roomNumberController'] as TextEditingController).text}',
-                              style: const TextStyle(fontWeight: FontWeight.w600),
+                              style: const TextStyle(
+                                fontWeight: FontWeight.w600,
+                              ),
                             ),
                             subtitle: Text(
                               '${room['floor'] ?? 'Floor —'} • ${viewModel.sharingLabel(room['sharingType'] as int?)} • ${(room['hasAC'] == true) ? 'AC' : 'Non-AC'}',
@@ -929,7 +1089,9 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
 
                         return AnimatedCrossFade(
                           duration: const Duration(milliseconds: 200),
-                          crossFadeState: isExpanded ? CrossFadeState.showFirst : CrossFadeState.showSecond,
+                          crossFadeState: isExpanded
+                              ? CrossFadeState.showFirst
+                              : CrossFadeState.showSecond,
                           firstChild: expanded,
                           secondChild: collapsed,
                         );
@@ -940,7 +1102,11 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                           onPressed: () {
                             if (viewModel.currentMaxSharing <= 0) {
                               ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(content: Text('Set Max Sharing before adding rooms.')),
+                                const SnackBar(
+                                  content: Text(
+                                    'Set Max Sharing before adding rooms.',
+                                  ),
+                                ),
                               );
                               return;
                             }
@@ -951,8 +1117,13 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                           style: OutlinedButton.styleFrom(
                             foregroundColor: primaryColor,
                             side: BorderSide(color: primaryColor),
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                            padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 12),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 24,
+                              vertical: 12,
+                            ),
                           ),
                         ),
                       ),
@@ -962,37 +1133,88 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                       CheckboxListTile(
                         title: Row(
                           children: [
-                            Icon(Icons.check_box_outlined, color: primaryColor, size: 20),
+                            Icon(
+                              Icons.check_box_outlined,
+                              color: primaryColor,
+                              size: 20,
+                            ),
                             const SizedBox(width: 12),
                             const Text('Select All Amenities'),
                           ],
                         ),
                         value: viewModel.selectAllAmenities,
-                        onChanged: (val) => viewModel.toggleSelectAllAmenities(val ?? false),
+                        onChanged: (val) =>
+                            viewModel.toggleSelectAllAmenities(val ?? false),
                         activeColor: primaryColor,
                         checkColor: Colors.white,
                         contentPadding: EdgeInsets.zero,
                         controlAffinity: ListTileControlAffinity.leading,
                       ),
-                      _amenityTile('Wi-Fi', viewModel.hasWifi, Icons.wifi_outlined,
-                              (v) => viewModel.updateAmenity('wifi', v), primaryColor),
-                      _amenityTile('Air Conditioning (Common)', viewModel.hasAC, Icons.ac_unit_outlined,
-                              (v) => viewModel.updateAmenity('ac', v), primaryColor),
-                      _amenityTile('Laundry Service', viewModel.hasLaundry, Icons.local_laundry_service_outlined,
-                              (v) => viewModel.updateAmenity('laundry', v), primaryColor),
-                      _amenityTile('Food Included', viewModel.hasFood, Icons.restaurant_menu_outlined,
-                              (v) => viewModel.updateAmenity('food', v), primaryColor),
-                      if (viewModel.hasFood) _buildFoodPlanSection(viewModel, primaryColor),
-                      _amenityTile('Parking Available', viewModel.hasParking, Icons.local_parking_outlined,
-                              (v) => viewModel.updateAmenity('parking', v), primaryColor),
-                      _amenityTile('Geyser/Hot Water', viewModel.hasGeyser, Icons.water_drop_outlined,
-                              (v) => viewModel.updateAmenity('geyser', v), primaryColor),
-                      _amenityTile('Power Backup', viewModel.hasPowerBackup, Icons.battery_charging_full_outlined,
-                              (v) => viewModel.updateAmenity('powerBackup', v), primaryColor),
-                      _amenityTile('CCTV Surveillance', viewModel.hasCCTV, Icons.videocam_outlined,
-                              (v) => viewModel.updateAmenity('cctv', v), primaryColor),
-                      _amenityTile('Daily Housekeeping', viewModel.hasHousekeeping, Icons.cleaning_services_outlined,
-                              (v) => viewModel.updateAmenity('housekeeping', v), primaryColor),
+                      _amenityTile(
+                        'Wi-Fi',
+                        viewModel.hasWifi,
+                        Icons.wifi_outlined,
+                        (v) => viewModel.updateAmenity('wifi', v),
+                        primaryColor,
+                      ),
+                      _amenityTile(
+                        'Air Conditioning (Common)',
+                        viewModel.hasAC,
+                        Icons.ac_unit_outlined,
+                        (v) => viewModel.updateAmenity('ac', v),
+                        primaryColor,
+                      ),
+                      _amenityTile(
+                        'Laundry Service',
+                        viewModel.hasLaundry,
+                        Icons.local_laundry_service_outlined,
+                        (v) => viewModel.updateAmenity('laundry', v),
+                        primaryColor,
+                      ),
+                      _amenityTile(
+                        'Food Included',
+                        viewModel.hasFood,
+                        Icons.restaurant_menu_outlined,
+                        (v) => viewModel.updateAmenity('food', v),
+                        primaryColor,
+                      ),
+                      if (viewModel.hasFood)
+                        _buildFoodPlanSection(viewModel, primaryColor),
+                      _amenityTile(
+                        'Parking Available',
+                        viewModel.hasParking,
+                        Icons.local_parking_outlined,
+                        (v) => viewModel.updateAmenity('parking', v),
+                        primaryColor,
+                      ),
+                      _amenityTile(
+                        'Geyser/Hot Water',
+                        viewModel.hasGeyser,
+                        Icons.water_drop_outlined,
+                        (v) => viewModel.updateAmenity('geyser', v),
+                        primaryColor,
+                      ),
+                      _amenityTile(
+                        'Power Backup',
+                        viewModel.hasPowerBackup,
+                        Icons.battery_charging_full_outlined,
+                        (v) => viewModel.updateAmenity('powerBackup', v),
+                        primaryColor,
+                      ),
+                      _amenityTile(
+                        'CCTV Surveillance',
+                        viewModel.hasCCTV,
+                        Icons.videocam_outlined,
+                        (v) => viewModel.updateAmenity('cctv', v),
+                        primaryColor,
+                      ),
+                      _amenityTile(
+                        'Daily Housekeeping',
+                        viewModel.hasHousekeeping,
+                        Icons.cleaning_services_outlined,
+                        (v) => viewModel.updateAmenity('housekeeping', v),
+                        primaryColor,
+                      ),
 
                       // Rules
                       _buildSectionTitle('Rules & Policies'),
@@ -1001,15 +1223,22 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                         value: viewModel.genderAllowed,
                         items: const [
                           DropdownMenuItem(value: 'Male', child: Text('Male')),
-                          DropdownMenuItem(value: 'Female', child: Text('Female')),
-                          DropdownMenuItem(value: 'Co-ed', child: Text('Co-ed')),
+                          DropdownMenuItem(
+                            value: 'Female',
+                            child: Text('Female'),
+                          ),
+                          DropdownMenuItem(
+                            value: 'Co-ed',
+                            child: Text('Co-ed'),
+                          ),
                         ],
                         onChanged: (v) {
                           viewModel.genderAllowed = v;
                           viewModel.notifyListeners();
                         },
                         icon: Icons.wc_outlined,
-                        validator: (v) => v == null ? 'Please select gender allowed' : null,
+                        validator: (v) =>
+                            v == null ? 'Please select gender allowed' : null,
                         primaryColor: primaryColor,
                       ),
                       _buildTextField(
@@ -1019,45 +1248,82 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
                         icon: Icons.calendar_month_outlined,
                         keyboardType: TextInputType.number,
                         validator: (v) {
-                          if (v == null || v.isEmpty) return 'Please enter notice period';
-                          if (int.tryParse(v) == null) return 'Enter a valid number';
+                          if (v == null || v.isEmpty)
+                            return 'Please enter notice period';
+                          if (int.tryParse(v) == null)
+                            return 'Enter a valid number';
                           return null;
                         },
                         primaryColor: primaryColor,
                       ),
-                      _amenityTile('Curfew Applicable', viewModel.hasCurfew, Icons.access_time_outlined,
-                              (v) => viewModel.updateRule('curfew', v), primaryColor),
-                      _amenityTile('Visitors Allowed', viewModel.visitorsAllowed, Icons.group_add_outlined,
-                              (v) => viewModel.updateRule('visitors', v), primaryColor),
-                      _amenityTile('Smoking Allowed', viewModel.smokingAllowed, Icons.smoking_rooms_outlined,
-                              (v) => viewModel.updateRule('smoking', v), primaryColor),
-                      _amenityTile('Alcohol Allowed', viewModel.alcoholAllowed, Icons.local_bar_outlined,
-                              (v) => viewModel.updateRule('alcohol', v), primaryColor),
+                      _amenityTile(
+                        'Curfew Applicable',
+                        viewModel.hasCurfew,
+                        Icons.access_time_outlined,
+                        (v) => viewModel.updateRule('curfew', v),
+                        primaryColor,
+                      ),
+                      _amenityTile(
+                        'Visitors Allowed',
+                        viewModel.visitorsAllowed,
+                        Icons.group_add_outlined,
+                        (v) => viewModel.updateRule('visitors', v),
+                        primaryColor,
+                      ),
+                      _amenityTile(
+                        'Smoking Allowed',
+                        viewModel.smokingAllowed,
+                        Icons.smoking_rooms_outlined,
+                        (v) => viewModel.updateRule('smoking', v),
+                        primaryColor,
+                      ),
+                      _amenityTile(
+                        'Alcohol Allowed',
+                        viewModel.alcoholAllowed,
+                        Icons.local_bar_outlined,
+                        (v) => viewModel.updateRule('alcohol', v),
+                        primaryColor,
+                      ),
 
                       const SizedBox(height: 32),
                       SizedBox(
                         width: double.infinity,
                         height: 56,
                         child: ElevatedButton(
-                          onPressed: (viewModel.isLoading || viewModel.isUploadingImages)
+                          onPressed:
+                              (viewModel.isLoading ||
+                                  viewModel.isUploadingImages)
                               ? null
                               : () => _addProperty(viewModel, context),
                           style: ElevatedButton.styleFrom(
                             backgroundColor: primaryColor,
                             foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                            shape: RoundedRectangleBorder(
+                              borderRadius: BorderRadius.circular(12),
+                            ),
                             elevation: 2,
                             shadowColor: primaryColor.withOpacity(0.3),
                           ),
-                          child: (viewModel.isLoading || viewModel.isUploadingImages)
+                          child:
+                              (viewModel.isLoading ||
+                                  viewModel.isUploadingImages)
                               ? const SizedBox(
-                            width: 24, height: 24,
-                            child: CircularProgressIndicator(
-                              valueColor: AlwaysStoppedAnimation<Color>(Colors.white),
-                              strokeWidth: 2,
-                            ),
-                          )
-                              : const Text('Add Property', style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                                  width: 24,
+                                  height: 24,
+                                  child: CircularProgressIndicator(
+                                    valueColor: AlwaysStoppedAnimation<Color>(
+                                      Colors.white,
+                                    ),
+                                    strokeWidth: 2,
+                                  ),
+                                )
+                              : const Text(
+                                  'Add Property',
+                                  style: TextStyle(
+                                    fontSize: 18,
+                                    fontWeight: FontWeight.bold,
+                                  ),
+                                ),
                         ),
                       ),
                       const SizedBox(height: 20),
@@ -1072,5 +1338,3 @@ class _AddPropertyScreenState extends State<AddPropertyScreen>
     );
   }
 }
-
-

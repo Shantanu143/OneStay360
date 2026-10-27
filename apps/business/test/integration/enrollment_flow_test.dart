@@ -47,18 +47,22 @@ void main() {
       expect(snap.docs.first.data()['tenantName'], equals('Rahul Sharma'));
     });
 
-    testWidgets('Owner can approve enrollment with room assignment', (tester) async {
+    testWidgets('Owner can approve enrollment with room assignment', (
+      tester,
+    ) async {
       // Create enrollment request
-      final requestRef = await fakeFirestore.collection('enrollmentRequests').add({
-        'tenantName': 'Priya Patel',
-        'tenantPhone': '9876543211',
-        'propertyId': 'PROP001',
-        'businessId': 'BUS0000001',
-        'propertyName': 'Sunrise PG',
-        'status': 'pending',
-        'moveInDate': DateTime.now().toIso8601String(),
-        'createdAt': DateTime.now().toIso8601String(),
-      });
+      final requestRef = await fakeFirestore
+          .collection('enrollmentRequests')
+          .add({
+            'tenantName': 'Priya Patel',
+            'tenantPhone': '9876543211',
+            'propertyId': 'PROP001',
+            'businessId': 'BUS0000001',
+            'propertyName': 'Sunrise PG',
+            'status': 'pending',
+            'moveInDate': DateTime.now().toIso8601String(),
+            'createdAt': DateTime.now().toIso8601String(),
+          });
 
       // Simulate approval with room/bed assignment
       await requestRef.update({
@@ -78,16 +82,18 @@ void main() {
     });
 
     testWidgets('Owner can send bill to tenant', (tester) async {
-      final requestRef = await fakeFirestore.collection('enrollmentRequests').add({
-        'tenantName': 'Amit Kumar',
-        'tenantPhone': '9876543212',
-        'propertyId': 'PROP001',
-        'businessId': 'BUS0000001',
-        'status': 'approved',
-        'roomId': 'ROOM001',
-        'bedId': '1',
-        'monthlyRent': 8000,
-      });
+      final requestRef = await fakeFirestore
+          .collection('enrollmentRequests')
+          .add({
+            'tenantName': 'Amit Kumar',
+            'tenantPhone': '9876543212',
+            'propertyId': 'PROP001',
+            'businessId': 'BUS0000001',
+            'status': 'approved',
+            'roomId': 'ROOM001',
+            'bedId': '1',
+            'monthlyRent': 8000,
+          });
 
       // Send bill
       await requestRef.update({
@@ -105,14 +111,16 @@ void main() {
     });
 
     testWidgets('Tenant payment submission updates status', (tester) async {
-      final requestRef = await fakeFirestore.collection('enrollmentRequests').add({
-        'tenantName': 'Sneha Reddy',
-        'tenantPhone': '9876543213',
-        'propertyId': 'PROP001',
-        'businessId': 'BUS0000001',
-        'status': 'bill_sent',
-        'totalBillAmount': 24000,
-      });
+      final requestRef = await fakeFirestore
+          .collection('enrollmentRequests')
+          .add({
+            'tenantName': 'Sneha Reddy',
+            'tenantPhone': '9876543213',
+            'propertyId': 'PROP001',
+            'businessId': 'BUS0000001',
+            'status': 'bill_sent',
+            'totalBillAmount': 24000,
+          });
 
       // Tenant submits payment
       await requestRef.update({
@@ -129,17 +137,19 @@ void main() {
 
     testWidgets('Owner confirmation creates tenant record', (tester) async {
       // Create enrollment request in payment_submitted state
-      final requestRef = await fakeFirestore.collection('enrollmentRequests').add({
-        'tenantName': 'Vikram Singh',
-        'tenantPhone': '9876543214',
-        'propertyId': 'PROP001',
-        'businessId': 'BUS0000001',
-        'status': 'payment_submitted',
-        'transactionId': 'TXN111222333',
-        'roomId': 'ROOM001',
-        'bedId': '1',
-        'monthlyRent': 8000,
-      });
+      final requestRef = await fakeFirestore
+          .collection('enrollmentRequests')
+          .add({
+            'tenantName': 'Vikram Singh',
+            'tenantPhone': '9876543214',
+            'propertyId': 'PROP001',
+            'businessId': 'BUS0000001',
+            'status': 'payment_submitted',
+            'transactionId': 'TXN111222333',
+            'roomId': 'ROOM001',
+            'bedId': '1',
+            'monthlyRent': 8000,
+          });
 
       // Owner confirms
       await requestRef.update({
@@ -155,18 +165,18 @@ void main() {
           .collection('tenants')
           .doc('TEN0000001')
           .set({
-        'tenantId': 'TEN0000001',
-        'name': 'Vikram Singh',
-        'phone': '9876543214',
-        'propertyId': 'PROP001',
-        'businessId': 'BUS0000001',
-        'roomId': 'ROOM001',
-        'bedId': '1',
-        'monthlyRent': 8000,
-        'status': 'active',
-        'enrollmentRequestId': requestRef.id,
-        'createdAt': DateTime.now().toIso8601String(),
-      });
+            'tenantId': 'TEN0000001',
+            'name': 'Vikram Singh',
+            'phone': '9876543214',
+            'propertyId': 'PROP001',
+            'businessId': 'BUS0000001',
+            'roomId': 'ROOM001',
+            'bedId': '1',
+            'monthlyRent': 8000,
+            'status': 'active',
+            'enrollmentRequestId': requestRef.id,
+            'createdAt': DateTime.now().toIso8601String(),
+          });
 
       final tenantSnap = await fakeFirestore
           .collection('businesses')
@@ -181,13 +191,15 @@ void main() {
     });
 
     testWidgets('Enrollment rejection notifies tenant', (tester) async {
-      final requestRef = await fakeFirestore.collection('enrollmentRequests').add({
-        'tenantName': 'Kavya Nair',
-        'tenantPhone': '9876543215',
-        'propertyId': 'PROP001',
-        'businessId': 'BUS0000001',
-        'status': 'pending',
-      });
+      final requestRef = await fakeFirestore
+          .collection('enrollmentRequests')
+          .add({
+            'tenantName': 'Kavya Nair',
+            'tenantPhone': '9876543215',
+            'propertyId': 'PROP001',
+            'businessId': 'BUS0000001',
+            'status': 'pending',
+          });
 
       // Owner rejects
       await requestRef.update({

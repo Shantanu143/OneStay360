@@ -15,6 +15,7 @@ import 'package:firebase_services/services/firestore_service.dart';
 import 'package:firebase_services/repositories/property_repository.dart';
 import 'package:firebase_services/services/image_service.dart';
 import 'package:firebase_services/services/id_generation_service.dart';
+import 'package:firebase_services/services/emulator_config.dart';
 
 import '../presentation/views/splash/splash_screen.dart';
 import '../presentation/views/auth/auth_wrapper.dart';
@@ -40,6 +41,14 @@ void main() async {
       options: DefaultFirebaseOptions.currentPlatform,
     );
     debugPrint('Firebase initialized');
+
+    // Opt-in local backend: --dart-define=USE_EMULATOR=true
+    await connectToFirebaseEmulatorIfEnabled();
+    if (kUseFirebaseEmulator) {
+      // Keep local runs out of production crash and analytics reports.
+      await FirebaseCrashlytics.instance.setCrashlyticsCollectionEnabled(false);
+      await FirebaseAnalytics.instance.setAnalyticsCollectionEnabled(false);
+    }
 
     // Pass uncaught Flutter framework errors to Crashlytics
     FlutterError.onError = (errorDetails) {

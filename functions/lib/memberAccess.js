@@ -38,6 +38,7 @@ const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
 const permissions_1 = require("./permissions");
 const audit_1 = require("./audit");
+const memberAccessLogic_1 = require("./memberAccessLogic");
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
@@ -54,7 +55,7 @@ exports.updateMemberPropertyAccess = functions.https.onCall(async (data, context
         throw new functions.https.HttpsError('invalid-argument', 'role must be manager or staff');
     }
     await (0, permissions_1.assertBusinessPermission)(actorUid, businessId, 'ASSIGN_PROPERTIES');
-    const uniqueProperties = Array.from(new Set(propertyIds.filter((p) => typeof p === 'string' && p)));
+    const uniqueProperties = (0, memberAccessLogic_1.uniqueIds)(propertyIds);
     const membershipRef = db.doc(`businesses/${businessId}/members/${memberUid}`);
     const now = admin.firestore.Timestamp.now();
     const { roleChanged, addedProps, removedProps } = await db.runTransaction(async (tx) => {
@@ -69,47 +70,20 @@ exports.updateMemberPropertyAccess = functions.https.onCall(async (data, context
         if (member.role === 'owner') {
             throw new functions.https.HttpsError('failed-precondition', 'Owner role cannot be changed');
         }
-        // Validate properties (must exist)
+        // Every property of the business: the requested ones must exist, and each
+        // one's `access/{memberUid}` doc shows what the member has now. (A
+        // collection-group query by document id cannot be used here: Firestore
+        // only accepts a full document path for that.)
+        const propertiesSnap = await tx.get(db.collection(`businesses/${businessId}/properties`));
+        const propertyIdsInBusiness = new Set(propertiesSnap.docs.map((d) => d.id));
         for (const pid of uniqueProperties) {
-            const propRef = db.doc(`businesses/${businessId}/properties/${pid}`);
-            const propSnap = await tx.get(propRef);
-            if (!propSnap.exists) {
+            if (!propertyIdsInBusiness.has(pid)) {
                 throw new functions.https.HttpsError('failed-precondition', `Property ${pid} not found`);
             }
         }
-        // Load existing access docs for this member (across properties) inside the transaction
-        const existingAccess = {};
-        const accessQuery = db
-            .collectionGroup('access')
-            .where(admin.firestore.FieldPath.documentId(), '==', memberUid)
-            .where('businessId', '==', businessId);
-        const existingPropsSnap = await tx.get(accessQuery);
-        existingPropsSnap.docs.forEach((doc) => {
-            const segments = doc.ref.path.split('/');
-            const pidIndex = segments.findIndex((s) => s === 'properties');
-            if (pidIndex > -1 && segments[pidIndex + 1]) {
-                const pid = segments[pidIndex + 1];
-                existingAccess[pid] = doc;
-            }
-        });
-        const existingPids = new Set(Object.keys(existingAccess));
-        const newPids = new Set(uniqueProperties);
-        const toAdd = [];
-        const toKeep = [];
-        const toRemove = [];
-        newPids.forEach((pid) => {
-            if (existingPids.has(pid)) {
-                toKeep.push(pid);
-            }
-            else {
-                toAdd.push(pid);
-            }
-        });
-        existingPids.forEach((pid) => {
-            if (!newPids.has(pid)) {
-                toRemove.push(pid);
-            }
-        });
+        const accessSnaps = await Promise.all(propertiesSnap.docs.map((d) => tx.get(d.ref.collection('access').doc(memberUid))));
+        const existingPids = propertiesSnap.docs.filter((_, i) => accessSnaps[i].exists).map((d) => d.id);
+        const { toAdd, toKeep, toRemove } = (0, memberAccessLogic_1.diffAccess)(existingPids, uniqueProperties);
         // Add new access docs
         for (const pid of toAdd) {
             const accessRef = db.doc(`businesses/${businessId}/properties/${pid}/access/${memberUid}`);

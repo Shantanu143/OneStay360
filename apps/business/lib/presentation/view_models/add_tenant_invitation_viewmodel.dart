@@ -53,13 +53,11 @@ class AddTenantInvitationViewModel extends ChangeNotifier {
     FirestoreService? firestoreService,
     FirebaseAuth? auth,
     FirebaseFirestore? firestore,
-  })  : _invitationService =
-            invitationService ?? TenantInvitationService(),
-        _searchService = searchService ?? TenantSearchService(),
-        _firestoreService =
-            firestoreService ?? FirestoreService(),
-        _auth = auth ?? FirebaseAuth.instance,
-        _firestore = firestore ?? FirebaseFirestore.instance;
+  }) : _invitationService = invitationService ?? TenantInvitationService(),
+       _searchService = searchService ?? TenantSearchService(),
+       _firestoreService = firestoreService ?? FirestoreService(),
+       _auth = auth ?? FirebaseAuth.instance,
+       _firestore = firestore ?? FirebaseFirestore.instance;
 
   // Getters
   String get mode => _mode;
@@ -232,7 +230,9 @@ class AddTenantInvitationViewModel extends ChangeNotifier {
       final businessId = await _firestoreService.getBusinessId(user.uid);
       print('[DEBUG] Retrieved businessId: $businessId for user: ${user.uid}');
       if (businessId == null || businessId.isEmpty) {
-        throw Exception('Business account not found. Please ensure your business profile is complete.');
+        throw Exception(
+          'Business account not found. Please ensure your business profile is complete.',
+        );
       }
 
       String tenantId;
@@ -257,7 +257,8 @@ class AddTenantInvitationViewModel extends ChangeNotifier {
 
         // Add food preference to tenantDetails
         if (_foodPreference != null) {
-          (tenantDetails as Map<String, dynamic>)['foodPreference'] = _foodPreference;
+          (tenantDetails as Map<String, dynamic>)['foodPreference'] =
+              _foodPreference;
         }
 
         // Tenant record creation happens server-side in createTenantInvitation
@@ -327,8 +328,10 @@ class AddTenantInvitationViewModel extends ChangeNotifier {
     } catch (e) {
       // Parse Firebase permission errors
       String errorMsg = e.toString();
-      if (errorMsg.contains('permission-denied') || errorMsg.contains('PERMISSION_DENIED')) {
-        _errorMessage = 'Permission denied: Unable to create invitation. Please check your business account setup and try again.';
+      if (errorMsg.contains('permission-denied') ||
+          errorMsg.contains('PERMISSION_DENIED')) {
+        _errorMessage =
+            'Permission denied: Unable to create invitation. Please check your business account setup and try again.';
         print('Firestore Error Details: $errorMsg');
       } else if (errorMsg.contains('Business account not found')) {
         _errorMessage = 'Business account not found. Please contact support.';
@@ -341,6 +344,3 @@ class AddTenantInvitationViewModel extends ChangeNotifier {
     }
   }
 }
-
-
-

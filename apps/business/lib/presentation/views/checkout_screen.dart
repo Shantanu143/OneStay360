@@ -136,9 +136,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() {
         _processingPayment = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to start payment: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to start payment: $e')));
     }
   }
 
@@ -179,9 +179,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       setState(() {
         _processingPayment = false;
       });
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Failed to open payment: $e')),
-      );
+      ScaffoldMessenger.of(
+        context,
+      ).showSnackBar(SnackBar(content: Text('Failed to open payment: $e')));
     }
   }
 
@@ -211,16 +211,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       );
 
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(content: Text('Activation confirmed')), 
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(const SnackBar(content: Text('Activation confirmed')));
         Navigator.of(context).pop(true);
       }
     } catch (e) {
       if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          SnackBar(content: Text('Confirmation failed: $e')),
-        );
+        ScaffoldMessenger.of(
+          context,
+        ).showSnackBar(SnackBar(content: Text('Confirmation failed: $e')));
       }
       setState(() {
         _processingPayment = false;
@@ -234,15 +234,17 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       _processingPayment = false;
     });
     final message = response.message ?? 'Payment failed';
-    ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text(message)),
-    );
+    ScaffoldMessenger.of(
+      context,
+    ).showSnackBar(SnackBar(content: Text(message)));
   }
 
   void _handleExternalWallet(ExternalWalletResponse response) {
     if (!mounted) return;
     ScaffoldMessenger.of(context).showSnackBar(
-      SnackBar(content: Text('External wallet not allowed: ${response.walletName}')),
+      SnackBar(
+        content: Text('External wallet not allowed: ${response.walletName}'),
+      ),
     );
   }
 
@@ -268,8 +270,8 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         body: _loading
             ? const Center(child: CircularProgressIndicator())
             : _error != null
-                ? Center(child: Text(_error!))
-                : _buildContent(),
+            ? Center(child: Text(_error!))
+            : _buildContent(),
       ),
     );
   }
@@ -278,11 +280,16 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     if (_property == null) return const SizedBox.shrink();
     final totalBeds = (_property!.totalBeds as num?)?.toInt() ?? 0;
     final planRaw = _quote?['plan'];
-    final plan = planRaw is Map ? Map<String, dynamic>.from(planRaw) : <String, dynamic>{};
+    final plan = planRaw is Map
+        ? Map<String, dynamic>.from(planRaw)
+        : <String, dynamic>{};
     final planName = (plan['name'] as String?)?.trim().isNotEmpty == true
         ? plan['name'] as String
         : 'Plan';
-    final pricePerBed = (plan['pricePerBedInr'] as num?)?.toInt() ?? (_property!.pricePerBed as num?)?.toInt() ?? 0;
+    final pricePerBed =
+        (plan['pricePerBedInr'] as num?)?.toInt() ??
+        (_property!.pricePerBed as num?)?.toInt() ??
+        0;
 
     return SingleChildScrollView(
       padding: const EdgeInsets.all(16),
@@ -338,15 +345,26 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
             ),
             child: Row(
               children: [
-                const Icon(Icons.workspace_premium_rounded, color: Color(0xFF0D9488)),
+                const Icon(
+                  Icons.workspace_premium_rounded,
+                  color: Color(0xFF0D9488),
+                ),
                 const SizedBox(width: 8),
                 Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
-                      Text(planName, style: const TextStyle(fontWeight: FontWeight.w700)),
-                      Text('₹$pricePerBed per bed · $totalBeds beds',
-                          style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+                      Text(
+                        planName,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                      Text(
+                        '₹$pricePerBed per bed · $totalBeds beds',
+                        style: TextStyle(
+                          color: Colors.grey.shade700,
+                          fontSize: 12,
+                        ),
+                      ),
                     ],
                   ),
                 ),
@@ -359,11 +377,20 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
   }
 
   Widget _buildSummaryCard() {
-    final purposeLabel = widget.purpose == 'monthly' ? 'Monthly Billing' : 'Property Activation';
+    final purposeLabel = widget.purpose == 'monthly'
+        ? 'Monthly Billing'
+        : 'Property Activation';
     final planRaw = _quote?['plan'];
-    final plan = planRaw is Map ? Map<String, dynamic>.from(planRaw) : <String, dynamic>{};
-    final planName = (plan['name'] as String?)?.trim().isNotEmpty == true ? plan['name'] as String : 'Plan';
-    final pricePerBed = (plan['pricePerBedInr'] as num?)?.toInt() ?? (_property!.pricePerBed as num?)?.toInt() ?? 0;
+    final plan = planRaw is Map
+        ? Map<String, dynamic>.from(planRaw)
+        : <String, dynamic>{};
+    final planName = (plan['name'] as String?)?.trim().isNotEmpty == true
+        ? plan['name'] as String
+        : 'Plan';
+    final pricePerBed =
+        (plan['pricePerBedInr'] as num?)?.toInt() ??
+        (_property!.pricePerBed as num?)?.toInt() ??
+        0;
     final totalBeds = (_property!.totalBeds as num?)?.toInt() ?? 0;
 
     return Container(
@@ -379,19 +406,37 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              Text(purposeLabel, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+              Text(
+                purposeLabel,
+                style: const TextStyle(
+                  fontWeight: FontWeight.w700,
+                  fontSize: 16,
+                ),
+              ),
               Container(
-                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
                 decoration: BoxDecoration(
                   color: const Color(0xFFECFDF3),
                   borderRadius: BorderRadius.circular(12),
                 ),
-                child: Text(planName, style: const TextStyle(color: Color(0xFF15803D), fontWeight: FontWeight.w700)),
+                child: Text(
+                  planName,
+                  style: const TextStyle(
+                    color: Color(0xFF15803D),
+                    fontWeight: FontWeight.w700,
+                  ),
+                ),
               ),
             ],
           ),
           const SizedBox(height: 8),
-          Text('₹$pricePerBed × $totalBeds beds / month', style: TextStyle(color: Colors.grey.shade700)),
+          Text(
+            '₹$pricePerBed × $totalBeds beds / month',
+            style: TextStyle(color: Colors.grey.shade700),
+          ),
         ],
       ),
     );
@@ -407,11 +452,21 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       ),
       child: Column(
         children: [
-          _buildAmountRow('Base amount', _formatCurrency(_quote?['baseAmount'])),
+          _buildAmountRow(
+            'Base amount',
+            _formatCurrency(_quote?['baseAmount']),
+          ),
           const SizedBox(height: 8),
-          _buildAmountRow('Discount', _formatCurrency(_quote?['discountAmount'])),
+          _buildAmountRow(
+            'Discount',
+            _formatCurrency(_quote?['discountAmount']),
+          ),
           const Divider(height: 24),
-          _buildAmountRow('Payable', _formatCurrency(_quote?['finalAmount']), isBold: true),
+          _buildAmountRow(
+            'Payable',
+            _formatCurrency(_quote?['finalAmount']),
+            isBold: true,
+          ),
           if (widget.purpose == 'activation') ...[
             const SizedBox(height: 12),
             _buildAmountRow('Next billing date', _nextBillingDateText()),
@@ -432,7 +487,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          const Text('Promo code', style: TextStyle(fontWeight: FontWeight.w700)),
+          const Text(
+            'Promo code',
+            style: TextStyle(fontWeight: FontWeight.w700),
+          ),
           const SizedBox(height: 8),
           Row(
             children: [
@@ -467,7 +525,10 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
                       ? const SizedBox(
                           width: 16,
                           height: 16,
-                          child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                          child: CircularProgressIndicator(
+                            strokeWidth: 2,
+                            color: Colors.white,
+                          ),
                         )
                       : const Text('Apply'),
                 ),
@@ -483,20 +544,29 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
     return SizedBox(
       width: double.infinity,
       child: ElevatedButton(
-        onPressed: (_quoteLoading || _processingPayment) ? null : _createOrderAndPay,
+        onPressed: (_quoteLoading || _processingPayment)
+            ? null
+            : _createOrderAndPay,
         style: ElevatedButton.styleFrom(
           backgroundColor: const Color(0xFF0D9488),
           padding: const EdgeInsets.symmetric(vertical: 16),
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(14),
+          ),
           elevation: 0,
         ),
         child: _processingPayment
             ? const SizedBox(
                 width: 18,
                 height: 18,
-                child: CircularProgressIndicator(strokeWidth: 2, color: Colors.white),
+                child: CircularProgressIndicator(
+                  strokeWidth: 2,
+                  color: Colors.white,
+                ),
               )
-            : Text(widget.purpose == 'monthly' ? 'Pay Invoice' : 'Pay & Activate'),
+            : Text(
+                widget.purpose == 'monthly' ? 'Pay Invoice' : 'Pay & Activate',
+              ),
       ),
     );
   }
@@ -508,7 +578,9 @@ class _CheckoutScreenState extends State<CheckoutScreen> {
         Text(label),
         Text(
           value,
-          style: TextStyle(fontWeight: isBold ? FontWeight.w700 : FontWeight.w500),
+          style: TextStyle(
+            fontWeight: isBold ? FontWeight.w700 : FontWeight.w500,
+          ),
         ),
       ],
     );

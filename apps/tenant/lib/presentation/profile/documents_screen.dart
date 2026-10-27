@@ -118,7 +118,7 @@ class _DocumentsScreenState extends State<DocumentsScreen> {
               : null,
           body: SmoothSwitch(
             child: _vm.loading
-                ? const Padding(key: ValueKey('loading'), padding: EdgeInsets.all(16), child: AppSkeletonList(count: 2, cardHeight: 70))
+                ? const Padding(key: ValueKey('loading'), padding: EdgeInsets.all(16), child: AppSkeletonList(count: 2, cardHeight: 96))
                 : !_vm.canUploadDocuments
                     ? const AppEmptyState(
                         key: ValueKey('none'),

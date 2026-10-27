@@ -92,7 +92,7 @@ class MyStayTab extends StatelessWidget {
 
     return AppScrollPage(
       eyebrow: stay.roomLabel,
-      title: stay.propertyName.isEmpty ? 'My stay' : stay.propertyName,
+      title: 'My stay',
       bottomInset: bottom,
       slivers: [
         SliverPadding(
@@ -112,7 +112,7 @@ class MyStayTab extends StatelessWidget {
                       FactTile(label: 'Bed', value: stay.bedNumber.isEmpty ? '—' : stay.bedNumber, icon: Icons.bed_rounded),
                       FactTile(
                         label: 'Sharing',
-                        value: [room?.sharingLabel, if (room?.hasAC == true) 'AC'].whereType<String>().join(' · ').ifEmpty('—'),
+                        value: [room?.shortSharingLabel, if (room?.hasAC == true) 'AC'].whereType<String>().join(' · ').ifEmpty('—'),
                         icon: Icons.group_rounded,
                       ),
                       FactTile(label: 'Monthly rent', value: formatInr(stay.monthlyRent), icon: Icons.currency_rupee_rounded),

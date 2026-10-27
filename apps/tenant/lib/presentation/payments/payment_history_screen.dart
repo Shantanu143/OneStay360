@@ -37,7 +37,7 @@ class PaymentHistoryScreen extends StatelessWidget {
               message: 'Payments appear here once you live in a PG.',
             )
           : feed.loadingMoney
-              ? const Padding(padding: EdgeInsets.all(16), child: AppSkeletonList(count: 4, cardHeight: 76))
+              ? const Padding(padding: EdgeInsets.all(16), child: AppSkeletonList(count: 4, cardHeight: 96))
               : ListView(
                   padding: const EdgeInsets.fromLTRB(16, 4, 16, 32),
                   physics: const BouncingScrollPhysics(),

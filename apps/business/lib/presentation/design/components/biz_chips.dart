@@ -288,7 +288,14 @@ class BizStatusPill extends StatelessWidget {
             ),
             const SizedBox(width: 7),
           ],
-          Text(label, style: BizText.pill.copyWith(color: p.ink)),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: BizText.pill.copyWith(color: p.ink),
+            ),
+          ),
         ],
       ),
     );

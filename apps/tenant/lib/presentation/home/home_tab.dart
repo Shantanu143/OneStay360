@@ -166,7 +166,7 @@ class _QuickActions extends StatelessWidget {
   Widget build(BuildContext context) {
     final stay = feed.stay!;
     final actions = [
-      (Icons.account_balance_wallet_rounded, AppColors.green, 'Pay rent', () => openRentPayment(context, invoice: feed.dueInvoice)),
+      (Icons.bed_rounded, AppColors.green, 'My room', () => context.read<ShellController>().goTo(ShellTab.stay)),
       (Icons.handyman_rounded, AppColors.orange, 'Get help', () => openMaintenance(context, startNew: true)),
       (
         Icons.call_rounded,

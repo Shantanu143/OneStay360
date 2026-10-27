@@ -118,7 +118,7 @@ class _RentPaymentScreenState extends State<RentPaymentScreen> with WidgetsBindi
                 ? const Padding(
                     key: ValueKey('loading'),
                     padding: EdgeInsets.all(16),
-                    child: AppSkeletonList(count: 3, cardHeight: 90),
+                    child: AppSkeletonList(count: 3, cardHeight: 96),
                   )
                 : done
                     ? PaymentDone(

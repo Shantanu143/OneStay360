@@ -64,7 +64,7 @@ class _NotificationsScreenState extends State<NotificationsScreen> {
                 ? const Padding(
                     key: ValueKey('loading'),
                     padding: EdgeInsets.all(16),
-                    child: AppSkeletonList(count: 4, cardHeight: 72),
+                    child: AppSkeletonList(count: 4, cardHeight: 96),
                   )
                 : _vm.error != null
                     ? AppErrorState(key: const ValueKey('error'), message: _vm.error!)

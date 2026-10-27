@@ -286,12 +286,22 @@ Future<void> showRaiseMaintenanceSheet(BuildContext context) async {
               onChanged: form.setDescription,
             ),
             const SizedBox(height: 6),
-            SwitchListTile.adaptive(
-              contentPadding: const EdgeInsets.symmetric(horizontal: 4),
-              value: form.urgent,
-              onChanged: form.setUrgent,
-              title: Text('Urgent', style: AppText.rowTitle),
-              subtitle: Text('Water leak, no power, safety issue', style: AppText.rowSubtitle),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 4),
+              child: Row(
+                children: [
+                  Expanded(
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Urgent', style: AppText.rowTitle),
+                        Text('Water leak, no power, safety issue', style: AppText.rowSubtitle),
+                      ],
+                    ),
+                  ),
+                  Switch.adaptive(value: form.urgent, onChanged: form.setUrgent),
+                ],
+              ),
             ),
             const SizedBox(height: 10),
             AppButton(

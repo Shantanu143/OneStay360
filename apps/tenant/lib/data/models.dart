@@ -631,6 +631,15 @@ class RoomInfo {
     3 => 'Triple sharing',
     final n => '$n sharing',
   };
+
+  /// For tight spaces: "Single", "Double", "4 sharing".
+  String? get shortSharingLabel => switch (sharing) {
+    null => null,
+    1 => 'Single',
+    2 => 'Double',
+    3 => 'Triple',
+    final n => '$n sharing',
+  };
 }
 
 /// The property card on Home and My Stay.

@@ -125,20 +125,30 @@ class _PropertyScreenState extends State<PropertyScreen> {
               physics: const AlwaysScrollableScrollPhysics(parent: BouncingScrollPhysics()),
               slivers: [
                 SliverToBoxAdapter(
-                  child: PhotoCarousel(images: p.images ?? const [], height: 300 + top, heroTag: 'photo-${p.id}'),
-                ),
-                SliverToBoxAdapter(
-                  child: Transform.translate(
-                    offset: const Offset(0, -24),
-                    child: Container(
-                      decoration: const BoxDecoration(
-                        color: AppColors.page,
-                        borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.hero)),
+                  child: Stack(
+                    children: [
+                      PhotoCarousel(images: p.images ?? const [], height: 300 + top, heroTag: 'photo-${p.id}'),
+                      // The page's rounded top edge, lying over the photo.
+                      Positioned(
+                        left: 0,
+                        right: 0,
+                        bottom: -1,
+                        child: IgnorePointer(
+                          child: Container(
+                            height: 26,
+                            decoration: const BoxDecoration(
+                              color: AppColors.page,
+                              borderRadius: BorderRadius.vertical(top: Radius.circular(AppRadius.hero)),
+                            ),
+                          ),
+                        ),
                       ),
-                      padding: const EdgeInsets.fromLTRB(16, 22, 16, 140),
-                      child: EntranceFade(child: _Details(property: p)),
-                    ),
+                    ],
                   ),
+                ),
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 140),
+                  sliver: SliverToBoxAdapter(child: EntranceFade(child: _Details(property: p))),
                 ),
               ],
             ),
@@ -448,15 +458,16 @@ class _JoinBar extends StatelessWidget {
     final (String label, VoidCallback? action, String? note) = livesHere
         ? ('You live here', null, null)
         : pending != null
-            ? ('Track your request', () => openRequest(context, pending.id), 'Request sent · ${pending.stage.label}')
+            ? ('Track request', () => openRequest(context, pending.id), 'Request sent')
             : livesElsewhere
-                ? ('Request to join', null, 'Move out of your current PG before joining another.')
+                ? ('Request to join', null, 'Move out of your PG first')
                 : ('Request to join', () => showJoinSheet(context, p), null);
 
     return Container(
       padding: EdgeInsets.fromLTRB(20, 14, 16, 12 + inset),
       decoration: BoxDecoration(
-        color: Colors.white.withValues(alpha: 0.97),
+        color: Colors.white,
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(AppRadius.card)),
         boxShadow: [BoxShadow(color: AppColors.ink.withValues(alpha: 0.06), blurRadius: 18, offset: const Offset(0, -4))],
       ),
       child: Row(
@@ -468,7 +479,7 @@ class _JoinBar extends StatelessWidget {
               children: [
                 Text(priceLabelOf(p), style: AppText.style(18, 700, letterSpacing: -0.3)),
                 Text(note ?? (minPriceOf(p) > 0 ? 'per month' : 'Ask the owner'),
-                    maxLines: 2, overflow: TextOverflow.ellipsis, style: AppText.caption),
+                    maxLines: 1, overflow: TextOverflow.ellipsis, style: AppText.caption),
               ],
             ),
           ),

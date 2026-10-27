@@ -6,6 +6,7 @@ import 'package:provider/provider.dart';
 
 import '../data/sources.dart';
 import '../data/tenant_session.dart';
+import '../presentation/auth/auth_actions.dart';
 import '../presentation/auth/login_screen.dart';
 import '../presentation/common/device_actions.dart';
 import '../presentation/design/theme.dart';
@@ -33,6 +34,7 @@ class TenantApp extends StatefulWidget {
     this.authChanges,
     this.push,
     this.analytics = true,
+    this.signIn,
   });
 
   final TenantBackend backend;
@@ -42,6 +44,9 @@ class TenantApp extends StatefulWidget {
   final Stream<User?>? authChanges;
   final DeviceTokenService? push;
   final bool analytics;
+
+  /// Sign-in methods for the login screen; Firebase when null.
+  final AuthActions? signIn;
 
   @override
   State<TenantApp> createState() => _TenantAppState();
@@ -118,7 +123,7 @@ class _TenantAppState extends State<TenantApp> {
             widget.push?.registerCurrentToken();
           },
           signOut: widget.account.signOut,
-          signedOutBuilder: (_) => const LoginScreen(),
+          signedOutBuilder: (_) => LoginScreen(auth: widget.signIn),
           readyBuilder: (context) => _Ready(push: widget.push, shell: _shell),
         ),
       ),

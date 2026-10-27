@@ -288,7 +288,14 @@ class AppStatusPill extends StatelessWidget {
             ),
             const SizedBox(width: 7),
           ],
-          Text(label, style: AppText.pill.copyWith(color: p.ink)),
+          Flexible(
+            child: Text(
+              label,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: AppText.pill.copyWith(color: p.ink),
+            ),
+          ),
         ],
       ),
     );

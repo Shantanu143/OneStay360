@@ -22,6 +22,7 @@ BusinessNotificationType _notificationTypeFromString(String? value) {
       return BusinessNotificationType.maintenance;
     case 'payment':
     case 'payment_submitted': // Tenant submitted payment confirmation
+    case 'rent_received': // Paid online (Razorpay webhook)
       return BusinessNotificationType.payment;
     case 'billing':
     case 'billing_status_change': // Platform billing notification

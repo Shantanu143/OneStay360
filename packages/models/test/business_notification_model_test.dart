@@ -39,6 +39,11 @@ void main() {
       expect(n.type, BusinessNotificationType.payment);
     });
 
+    test('online rent received is a payment', () {
+      final n = BusinessNotification.fromMap('n4', {'type': 'rent_received', 'tenantId': 'TEN0000001'});
+      expect(n.type, BusinessNotificationType.payment);
+    });
+
     test('falls back to the request named in routing', () {
       final n = BusinessNotification.fromMap('n3', {
         'type': 'payment_submitted',

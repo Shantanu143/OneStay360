@@ -8,6 +8,8 @@ import '../design/components/biz_chips.dart';
 import '../design/components/biz_dialogs.dart';
 import '../maintenance/maintenance_screen.dart';
 import '../payments/pending_payments_screen.dart';
+import '../property_detail/property_detail_models.dart';
+import '../tenant_detail/tenant_detail_screen.dart';
 import '../views/view_property_screen.dart';
 import 'notification_target.dart';
 
@@ -56,6 +58,36 @@ Future<void> openNotification(BuildContext context, BusinessNotification notific
       } else {
         navigator.pushNamed(AppRoutes.enrollmentRequests, arguments: {'requestId': requestId});
       }
+    case TenantTarget(:final businessId, :final tenantId):
+      final business = FirebaseFirestore.instance.collection('businesses').doc(businessId);
+      Map<String, dynamic>? data;
+      var propertyName = '';
+      try {
+        data = (await business.collection('tenants').doc(tenantId).get()).data();
+        final propertyId = data?['propertyId']?.toString() ?? '';
+        if (propertyId.isNotEmpty) {
+          propertyName = (await business.collection('properties').doc(propertyId).get()).data()?['name']?.toString() ?? '';
+        }
+      } catch (_) {
+        data = null;
+      }
+      if (!context.mounted) return;
+      if (data == null) {
+        showBizToast(context, "Couldn't find this tenant.", tone: BizTone.danger);
+        return;
+      }
+      navigator.push(
+        MaterialPageRoute(
+          builder: (_) => TenantDetailScreen(
+            tenant: PropertyTenant.fromDoc(tenantId, data!).toDetailMap(
+              businessId: businessId,
+              propertyId: data['propertyId']?.toString() ?? '',
+            ),
+            propertyName: propertyName,
+            businessId: businessId,
+          ),
+        ),
+      );
     case MaintenanceListTarget():
       navigator.push(MaterialPageRoute(builder: (_) => const MaintenanceScreen()));
     case RequestsListTarget():

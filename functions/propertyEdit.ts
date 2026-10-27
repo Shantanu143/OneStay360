@@ -27,7 +27,7 @@ export const updatePropertyDetails = functions.https.onCall(async (data, context
   await assertPropertyPermission(uid, businessId, propertyId, 'MANAGE_PROPERTY_STATE');
 
   const result = cleanPropertyEdit(data?.details || {});
-  if (!result.ok) throw new functions.https.HttpsError('invalid-argument', result.message);
+  if ('message' in result) throw new functions.https.HttpsError('invalid-argument', result.message);
 
   const propertyRef = db.collection('businesses').doc(businessId).collection('properties').doc(propertyId);
   await db.runTransaction(async (tx) => {
@@ -41,7 +41,7 @@ export const updatePropertyDetails = functions.https.onCall(async (data, context
     const citySnap = cityRef ? await tx.get(cityRef) : null;
 
     const update = {
-      ...result.update,
+      ...(result as { update: Record<string, any> }).update,
       updatedAt: admin.firestore.FieldValue.serverTimestamp(),
       updatedBy: uid,
     };

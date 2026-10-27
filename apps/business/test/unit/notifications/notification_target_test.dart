@@ -7,6 +7,8 @@ BusinessNotification note(
   String businessId = 'BUS1',
   String? propertyId,
   String? requestId,
+  Map<String, dynamic>? metadata,
+  String? tenantId,
 }) =>
     BusinessNotification(
       id: 'n1',
@@ -18,6 +20,8 @@ BusinessNotification note(
       createdAt: DateTime(2026, 10, 26),
       propertyId: propertyId,
       requestId: requestId,
+      metadata: metadata,
+      tenantId: tenantId,
     );
 
 void main() {
@@ -59,6 +63,19 @@ void main() {
       expect(t, isA<PendingPaymentsTarget>());
       expect((t as PendingPaymentsTarget).businessId, 'BUS1');
       expect(t.propertyId, 'P1');
+    });
+
+    test('rent paid online opens the tenant, whose payments show it (nothing is pending)', () {
+      final t = targetFor(note(
+        BusinessNotificationType.payment,
+        propertyId: 'P1',
+        tenantId: 'TEN0000001',
+        metadata: {'paidOnline': true},
+      ));
+
+      expect(t, isA<TenantTarget>());
+      expect((t as TenantTarget).businessId, 'BUS1');
+      expect(t.tenantId, 'TEN0000001');
     });
 
     test('say so when the business is unknown', () {

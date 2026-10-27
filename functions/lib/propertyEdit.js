@@ -59,7 +59,7 @@ exports.updatePropertyDetails = functions.https.onCall(async (data, context) => 
     }
     await (0, permissions_1.assertPropertyPermission)(uid, businessId, propertyId, 'MANAGE_PROPERTY_STATE');
     const result = (0, propertyEditLogic_1.cleanPropertyEdit)(data?.details || {});
-    if (!result.ok)
+    if ('message' in result)
         throw new functions.https.HttpsError('invalid-argument', result.message);
     const propertyRef = db.collection('businesses').doc(businessId).collection('properties').doc(propertyId);
     await db.runTransaction(async (tx) => {

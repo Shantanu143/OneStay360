@@ -40,6 +40,7 @@ npm run deploy              # build + `firebase deploy --only functions` -> depl
 - `functions/lib/*.js` is **committed** and is the deploy entry (`"main": "lib/index.js"`). After editing a `.ts` file, run `npm run build` so `lib/` stays in sync.
 - `jest.config.js` whitelists test files explicitly in `testMatch` (billing, tenant billing, member access, invitation phone, tenant invitation and maintenance logic tests). A new test file will NOT run until added there. `test/unit/billing_test.ts` is excluded on purpose: it needs the Firestore/Auth emulators (`test/setup.ts` points at localhost:8080/9099).
 - The Jest tests exercise extracted pure logic, not the callable functions themselves.
+- `test/e2e/` runs the real callables, the signed Razorpay webhook and triggers against the Firestore emulator (rent by UPI/cash and online, property edit, tenant invitations, maintenance): `npx firebase emulators:exec --only firestore --project demo-onestay "cd functions && npx jest -c jest.e2e.config.js"` from the repo root. Not part of `npm test`.
 
 **Admin web** (`apps/admin-web/`):
 ```bash

@@ -764,6 +764,10 @@ async function handlePaymentLinkPaid(event: any): Promise<void> {
     message: `₹${amountInr.toLocaleString('en-IN')} received from ${tenantData.name || 'Tenant'} for ${invoice.month || 'rent'} via Razorpay.`,
     type: 'rent_received',
     tenantId,
+    tenantName: tenantData.name || null,
+    propertyId: invoice.propertyId || tenantData.propertyId || null,
+    // Already settled: the business app opens the property's payments.
+    metadata: { paidOnline: true, amount: amountInr, rentInvoiceId },
     read: false,
     createdAt: now,
   }).catch(() => {});

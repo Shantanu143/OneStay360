@@ -9,6 +9,7 @@ OneStay360 is a PG/hostel management platform for India (INR, UPI, Razorpay, Wha
 - `apps/business` — Flutter app for PG owners/managers/staff (properties, rooms/beds, tenants, rent, team invites)
 - `apps/tenant` — Flutter app for tenants (explore PGs, enroll, pay rent)
 - `apps/admin-web` — Next.js 16 / React 19 / MUI super-admin console (no tests)
+- `apps/web` — Next.js 16 static site: marketing landing, sign in/up, and full owner + tenant dashboards. Runs on an in-browser demo backend; see its README
 - `functions/` — Firebase Cloud Functions (TypeScript, Node 20, firebase-functions **v1 API**)
 - `packages/{models,firebase_services,common_ui,utils}` — shared Dart packages, consumed by both Flutter apps as `path:` dependencies
 - `firestore.rules`, `storage.rules`, `firestore.indexes.json`, `hosting/app-links` (Android assetlinks + invite landing page)
@@ -16,7 +17,7 @@ OneStay360 is a PG/hostel management platform for India (INR, UPI, Razorpay, Wha
 
 ## Commands
 
-There is no workspace tooling: each Flutter package/app and `functions/` and `apps/admin-web/` is installed and run on its own.
+There is no workspace tooling: each Flutter package/app, `functions/`, `apps/admin-web/` and `apps/web/` is installed and run on its own.
 
 **Flutter apps and packages** (run inside `apps/business`, `apps/tenant`, or `packages/<name>`; needs Flutter with Dart ≥ 3.8.1 and JDK 17 for Android builds):
 ```bash
@@ -42,6 +43,14 @@ npm run deploy              # build + `firebase deploy --only functions` -> depl
 - The Jest tests exercise extracted pure logic, not the callable functions themselves.
 - `test/e2e/` runs the real callables, the signed Razorpay webhook and triggers against the Firestore emulator (rent by UPI/cash and online, property edit, tenant invitations, maintenance): `npx firebase emulators:exec --only firestore --project demo-onestay "cd functions && npx jest -c jest.e2e.config.js"` from the repo root. Not part of `npm test`.
 
+**Web app** (`apps/web/`):
+```bash
+npm install
+npm run dev | typecheck | build
+npm run test:e2e            # after build: serves ./out and drives owner/tenant/team flows in Chromium
+```
+Screens use only the `Backend` interface (`lib/backend/api.ts`); the app currently returns `DemoBackend` (`lib/backend/demo/`), a seeded localStorage workspace that mimics the Cloud Functions' behaviour. Demo logins: `asha@onestay.demo` (owner), `vikram@onestay.demo` (manager), `rahul@onestay.demo` (tenant), password `demo1234`. Pages that take an id read it from `?id=` because the site is a static export.
+
 **Admin web** (`apps/admin-web/`):
 ```bash
 npm install
@@ -63,13 +72,14 @@ The business app layers `presentation/views` (screens) → `presentation/view_mo
 
 The business app also handles deep links: `https://app.onestay360.brandedpatil.in/invite?inviteId=…` is routed to `/invite` via `app_links` (host verification file lives in `hosting/app-links/.well-known/assetlinks.json`).
 
-### Roles and permissions: three copies to keep in sync
+### Roles and permissions: copies to keep in sync
 Roles are `owner | manager | staff`, scoped at two levels: business membership (`businesses/{id}/members/{uid}`, must be `status == active`) and per-property access docs (`businesses/{id}/properties/{pid}/access/{uid}`; owners implicitly have all property access). The matrix is implemented independently in:
 1. `functions/permissions.ts` (`assertBusinessPermission` / `assertPropertyPermission`, used by callables)
 2. `firestore.rules` (helper functions at the top)
 3. `apps/business/lib/utils/permissions.dart` (UI gating only)
+4. `apps/web/lib/permissions.ts` (web UI gating; the demo backend repeats the checks)
 
-Changing a permission means touching all three.
+Changing a permission means touching all of them.
 
 ### Firestore layout
 - Business-scoped data nests under `businesses/{businessId}/…`: `members`, `properties/{pid}/{rooms/{rid}/beds, access}`, `tenants`, `payments`, `rent_invoices`, `paymentMethods`, `audit_logs`, `settings`.
@@ -99,4 +109,4 @@ Two entry paths converge on a tenant record:
 Application ids are `com.onestay360.business` / `com.onestay360.tenant`; each has its own `google-services.json` for `onestay360-1`. Release signing reads `android/key.properties` (see `key.properties.example`) and silently falls back to the debug keystore when it is absent.
 
 ## CI
-`.github/workflows/ci.yml` runs on main/staging/develop: functions (`npm ci`, `npm audit --audit-level moderate`, build, jest), both apps (`flutter analyze`, unit and widget tests), the packages, then deploys functions + rules + indexes via `firebase deploy` (staging branch → staging, main → production).
+`.github/workflows/ci.yml` runs on main/staging/develop: functions (`npm ci`, `npm audit --audit-level moderate`, build, jest), both apps (`flutter analyze`, unit and widget tests), the packages, the web app (typecheck, build, Playwright e2e), then deploys functions + rules + indexes via `firebase deploy` (staging branch → staging, main → production).

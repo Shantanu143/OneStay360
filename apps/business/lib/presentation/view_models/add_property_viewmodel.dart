@@ -1,3 +1,4 @@
+import 'package:cloud_functions/cloud_functions.dart';
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:models/business/property/property_model.dart';
@@ -12,9 +13,16 @@ import 'package:models/business/property/property_rules_model.dart';
 import 'package:models/business/property/property_totals_model.dart';
 import 'package:models/business/property/property_rating_model.dart';
 
+/// Sends edited details to the `updatePropertyDetails` callable.
+typedef PropertyDetailsUpdater = Future<void> Function(String businessId, String propertyId, Map<String, dynamic> details);
+
 class AddPropertyViewModel extends ChangeNotifier {
   final ImageService _imageService;
   final PropertyRepository _propertyRepository;
+  final PropertyDetailsUpdater _updateDetails;
+
+  /// Photos already on a listed property (editing).
+  List<String> existingImages = [];
 
   List<XFile> _selectedImages = [];
   List<String> _uploadedImageUrls = [];
@@ -91,8 +99,10 @@ class AddPropertyViewModel extends ChangeNotifier {
   AddPropertyViewModel({
     required ImageService imageService,
     required PropertyRepository propertyRepository,
+    PropertyDetailsUpdater? updateDetails,
   }) : _imageService = imageService,
-       _propertyRepository = propertyRepository {
+       _propertyRepository = propertyRepository,
+       _updateDetails = updateDetails ?? _callUpdatePropertyDetails {
     weeklyMeals = {for (final day in days) day: <Meal>{}};
 
     // Listen to max sharing changes to update dynamic pricing rows
@@ -163,6 +173,32 @@ class AddPropertyViewModel extends ChangeNotifier {
 
     super.dispose();
   }
+
+  // Setters for the form screens.
+  void setCity(String? city) {
+    selectedCity = city;
+    notifyListeners();
+  }
+
+  void setGender(String? gender) {
+    genderAllowed = gender;
+    notifyListeners();
+  }
+
+  void setMaintenanceDeducted(bool value) {
+    isMaintenanceDeductedFromDeposit = value;
+    notifyListeners();
+  }
+
+  /// Sets 'floor', 'sharingType' or 'hasAC' on room [index].
+  void setRoomField(int index, String key, Object? value) {
+    if (index < 0 || index >= roomDetails.length) return;
+    roomDetails[index][key] = value;
+    notifyListeners();
+  }
+
+  /// A text field the screen shows a summary of changed.
+  void fieldsChanged() => notifyListeners();
 
   // Image handling
   Future<void> pickImages() async {
@@ -571,6 +607,152 @@ class AddPropertyViewModel extends ChangeNotifier {
         SnackBar(content: Text('Failed to add property: ${e.toString()}')),
       );
       rethrow;
+    } finally {
+      _isLoading = false;
+      _isUploadingImages = false;
+      notifyListeners();
+    }
+  }
+
+  static Future<void> _callUpdatePropertyDetails(String businessId, String propertyId, Map<String, dynamic> details) async {
+    await FirebaseFunctions.instance
+        .httpsCallable('updatePropertyDetails')
+        .call<Object?>({'businessId': businessId, 'propertyId': propertyId, 'details': details});
+  }
+
+  // Editing a listed property.
+
+  /// Fills the form from a listed property. City and rooms stay as they are.
+  void loadFrom(Property p) {
+    propertyNameController.text = p.name;
+    addressController.text = p.address;
+    pincodeController.text = p.pincode;
+    descriptionController.text = p.description;
+    landmarksController.text = p.landmarks;
+    googleMapsLinkController.text = p.googleMapsLink;
+    numberOfFloorsController.text = '${p.numberOfFloors}';
+    selectedCity = cities.containsKey(p.city) ? p.city : null;
+    existingImages = [...?p.images];
+    _selectedImages = [];
+
+    final sharing = p.pricing.sharing;
+    final stored = p.pricing.maxSharing ?? 0;
+    final max = stored > 0 ? stored : sharing.fold<int>(0, (m, e) => e.sharing > m ? e.sharing : m);
+    maxSharingController.text = max > 0 ? '$max' : '';
+    for (final row in sharingRows) {
+      final entry = sharing.where((e) => e.sharing == row['sharing']).firstOrNull;
+      (row['nonAcController'] as TextEditingController).text = entry?.nonAc?.toString() ?? '';
+      (row['acController'] as TextEditingController).text = entry?.ac?.toString() ?? '';
+    }
+    securityDepositController.text = '${p.pricing.securityDeposit}';
+    oneTimeMaintenanceChargeController.text = '${p.pricing.oneTimeMaintenance}';
+    isMaintenanceDeductedFromDeposit = p.pricing.maintenanceDeductedFromDeposit;
+
+    final a = p.amenities;
+    hasWifi = a.wifi;
+    hasAC = a.ac;
+    hasLaundry = a.laundry;
+    hasFood = a.foodIncluded;
+    hasParking = a.parking;
+    hasGeyser = a.geyser;
+    hasPowerBackup = a.powerBackup;
+    hasCCTV = a.cctv;
+    hasHousekeeping = a.housekeeping;
+
+    for (final day in days) {
+      final raw = p.foodPlan?.plan[day];
+      weeklyMeals[day] = {
+        if (raw is List)
+          for (final m in raw)
+            ...switch (m.toString().toLowerCase()) {
+              'breakfast' => [Meal.breakfast],
+              'lunch' => [Meal.lunch],
+              'dinner' => [Meal.dinner],
+              _ => <Meal>[],
+            },
+      };
+    }
+    foodNotesController.text = p.foodPlan?.notes ?? '';
+
+    genderAllowed = p.rules.genderAllowed;
+    hasCurfew = p.rules.curfew;
+    visitorsAllowed = p.rules.visitorsAllowed;
+    smokingAllowed = p.rules.smokingAllowed;
+    alcoholAllowed = p.rules.alcoholAllowed;
+    noticePeriodController.text = '${p.rules.noticePeriodDays}';
+    notifyListeners();
+  }
+
+  void removeExistingImage(String url) {
+    existingImages = [...existingImages]..remove(url);
+    notifyListeners();
+  }
+
+  int? _money(String text) => text.trim().isEmpty ? null : int.tryParse(text.trim());
+
+  /// The payload `updatePropertyDetails` checks and applies.
+  Map<String, dynamic> editDetails(List<String> images) => {
+        'name': propertyNameController.text.trim(),
+        'address': addressController.text.trim(),
+        'pincode': pincodeController.text.trim(),
+        'description': descriptionController.text.trim(),
+        'landmarks': landmarksController.text.trim(),
+        'googleMapsLink': googleMapsLinkController.text.trim(),
+        'numberOfFloors': int.tryParse(numberOfFloorsController.text.trim()) ?? 0,
+        'images': images,
+        'pricing': {
+          'maxSharing': currentMaxSharing,
+          'sharing': [
+            for (final row in sharingRows)
+              {
+                'sharing': row['sharing'],
+                'nonAc': _money((row['nonAcController'] as TextEditingController).text),
+                'ac': _money((row['acController'] as TextEditingController).text),
+              },
+          ],
+          'securityDeposit': _money(securityDepositController.text) ?? 0,
+          'oneTimeMaintenance': _money(oneTimeMaintenanceChargeController.text) ?? 0,
+          'maintenanceDeductedFromDeposit': isMaintenanceDeductedFromDeposit,
+        },
+        'amenities': {
+          'wifi': hasWifi,
+          'ac': hasAC,
+          'laundry': hasLaundry,
+          'foodIncluded': hasFood,
+          'parking': hasParking,
+          'geyser': hasGeyser,
+          'powerBackup': hasPowerBackup,
+          'cctv': hasCCTV,
+          'housekeeping': hasHousekeeping,
+        },
+        'foodPlan': hasFood ? foodPlanToJson() : null,
+        'rules': {
+          'genderAllowed': genderAllowed ?? 'Co-ed',
+          'curfew': hasCurfew,
+          'visitorsAllowed': visitorsAllowed,
+          'smokingAllowed': smokingAllowed,
+          'alcoholAllowed': alcoholAllowed,
+          'noticePeriodDays': int.tryParse(noticePeriodController.text.trim()) ?? 30,
+        },
+      };
+
+  /// Uploads new photos, then saves. Throws with a readable message.
+  Future<void> saveEdits({required String businessId, required String propertyId}) async {
+    _isLoading = true;
+    _isUploadingImages = _selectedImages.isNotEmpty;
+    notifyListeners();
+    try {
+      var uploaded = <String>[];
+      if (_selectedImages.isNotEmpty) {
+        uploaded = await _imageService.uploadPropertyImages(_selectedImages, propertyId);
+      }
+      _isUploadingImages = false;
+      notifyListeners();
+      await _updateDetails(businessId, propertyId, editDetails([...existingImages, ...uploaded]));
+      existingImages = [...existingImages, ...uploaded];
+      _selectedImages = [];
+    } on FirebaseFunctionsException catch (e) {
+      throw Exception(e.message ?? 'Could not save changes.');
     } finally {
       _isLoading = false;
       _isUploadingImages = false;

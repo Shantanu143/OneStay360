@@ -27,6 +27,8 @@ class FirestoreService {
         'email': user.email ?? '',
         'displayName': user.displayName ?? '',
         'photoURL': user.photoURL ?? '',
+        // Lets an owner's invitation or tenant record for this number find the account.
+        if (user.phoneNumber != null && user.phoneNumber!.isNotEmpty) 'phone': user.phoneNumber,
         'userType': userType,
         'createdAt': FieldValue.serverTimestamp(),
         'updatedAt': FieldValue.serverTimestamp(),

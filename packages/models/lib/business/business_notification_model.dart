@@ -6,6 +6,7 @@ enum BusinessNotificationType {
   tenantEvent,
   payment,
   billing,
+  maintenance,
   general,
 }
 
@@ -14,9 +15,14 @@ BusinessNotificationType _notificationTypeFromString(String? value) {
     case 'enrollment_request':
       return BusinessNotificationType.enrollmentRequest;
     case 'tenant_event':
+    case 'tenant_joined': // Tenant accepted an invitation
+    case 'tenant_invitation_declined':
       return BusinessNotificationType.tenantEvent;
+    case 'maintenance_request':
+      return BusinessNotificationType.maintenance;
     case 'payment':
     case 'payment_submitted': // Tenant submitted payment confirmation
+    case 'rent_received': // Paid online (Razorpay webhook)
       return BusinessNotificationType.payment;
     case 'billing':
     case 'billing_status_change': // Platform billing notification
@@ -36,6 +42,8 @@ String _notificationTypeToString(BusinessNotificationType type) {
       return 'payment';
     case BusinessNotificationType.billing:
       return 'billing';
+    case BusinessNotificationType.maintenance:
+      return 'maintenance_request';
     case BusinessNotificationType.general:
       return 'general';
   }

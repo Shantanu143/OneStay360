@@ -7,6 +7,8 @@ BusinessNotification note(
   String businessId = 'BUS1',
   String? propertyId,
   String? requestId,
+  Map<String, dynamic>? metadata,
+  String? tenantId,
 }) =>
     BusinessNotification(
       id: 'n1',
@@ -18,6 +20,8 @@ BusinessNotification note(
       createdAt: DateTime(2026, 10, 26),
       propertyId: propertyId,
       requestId: requestId,
+      metadata: metadata,
+      tenantId: tenantId,
     );
 
 void main() {
@@ -61,6 +65,19 @@ void main() {
       expect(t.propertyId, 'P1');
     });
 
+    test('rent paid online opens the tenant, whose payments show it (nothing is pending)', () {
+      final t = targetFor(note(
+        BusinessNotificationType.payment,
+        propertyId: 'P1',
+        tenantId: 'TEN0000001',
+        metadata: {'paidOnline': true},
+      ));
+
+      expect(t, isA<TenantTarget>());
+      expect((t as TenantTarget).businessId, 'BUS1');
+      expect(t.tenantId, 'TEN0000001');
+    });
+
     test('say so when the business is unknown', () {
       final t = targetFor(note(BusinessNotificationType.payment, businessId: ''));
 
@@ -86,5 +103,22 @@ void main() {
   test('tenant events and general notices open nothing', () {
     expect(targetFor(note(BusinessNotificationType.tenantEvent)), isA<NoTarget>());
     expect(targetFor(note(BusinessNotificationType.general)), isA<NoTarget>());
+  });
+
+  group('maintenance requests', () {
+    test('open the maintenance list', () {
+      expect(targetFor(note(BusinessNotificationType.maintenance)), isA<MaintenanceListTarget>());
+    });
+
+    test('are read from the type the trigger writes', () {
+      final n = BusinessNotification.fromMap('n', {'type': 'maintenance_request', 'title': 't'});
+      expect(n.type, BusinessNotificationType.maintenance);
+    });
+
+    test('tenant answers to invitations count as tenant events', () {
+      for (final type in ['tenant_joined', 'tenant_invitation_declined']) {
+        expect(BusinessNotification.fromMap('n', {'type': type}).type, BusinessNotificationType.tenantEvent, reason: type);
+      }
+    });
   });
 }

@@ -11,6 +11,9 @@ import '../../app/refresh_signals.dart';
 import '../../data/providers/business_notifications_provider.dart';
 import '../../data/providers/business_state_provider.dart';
 import '../design/components/biz_dialogs.dart';
+import '../maintenance/maintenance_screen.dart';
+import '../maintenance/maintenance_source.dart';
+import '../maintenance/maintenance_viewmodel.dart';
 import '../design/tokens.dart';
 import '../view_models/business_dashboard_viewmodel.dart';
 import 'home/home_dashboard_view.dart';
@@ -46,6 +49,9 @@ class _HomeTabState extends State<HomeTab> with SingleTickerProviderStateMixin {
   late final RefreshSignals _signals = context.read<RefreshSignals>();
   String? _loadedFor;
 
+  /// Tenants' open maintenance requests, for "Needs attention".
+  MaintenanceViewModel? _maintenance;
+
   @override
   void initState() {
     super.initState();
@@ -70,6 +76,8 @@ class _HomeTabState extends State<HomeTab> with SingleTickerProviderStateMixin {
     _signals.anyChanged.removeListener(_onDataChanged);
     _entrance.dispose();
     _vm.dispose();
+    _maintenance?.removeListener(_onMaintenanceChanged);
+    _maintenance?.dispose();
     super.dispose();
   }
 
@@ -80,6 +88,29 @@ class _HomeTabState extends State<HomeTab> with SingleTickerProviderStateMixin {
     if (id == null || id.isEmpty || id == _loadedFor) return;
     _loadedFor = id;
     _vm.loadDashboardMetrics(id);
+    _watchMaintenance(id);
+  }
+
+  void _watchMaintenance(String businessId) {
+    MaintenanceSource source;
+    try {
+      source = context.read<MaintenanceSource>();
+    } on ProviderNotFoundException {
+      return;
+    }
+    final state = context.read<BusinessStateProvider>();
+    _maintenance?.removeListener(_onMaintenanceChanged);
+    _maintenance?.dispose();
+    _maintenance = MaintenanceViewModel(
+      source: source,
+      businessId: businessId,
+      uid: FirebaseAuth.instance.currentUser?.uid ?? '',
+      scope: () => state.propertyScope,
+    )..addListener(_onMaintenanceChanged);
+  }
+
+  void _onMaintenanceChanged() {
+    if (mounted) setState(() {});
   }
 
   void _onDataChanged() {
@@ -123,6 +154,8 @@ class _HomeTabState extends State<HomeTab> with SingleTickerProviderStateMixin {
     final payments = vm.pendingPaymentsCount;
     final leases = vm.leasesEndingThisWeek;
     final vacant = vm.vacantBeds;
+    final fixes = _maintenance?.activeCount ?? 0;
+    final urgentFixes = _maintenance?.visible.where((m) => m.urgent).length ?? 0;
 
     return [
       if (requests > 0)
@@ -143,6 +176,16 @@ class _HomeTabState extends State<HomeTab> with SingleTickerProviderStateMixin {
           subtitle:
               '${formatInr(vm.pendingConfirmationAmount)} awaiting your approval',
           onTap: () => openPendingPayments(context),
+        ),
+      if (fixes > 0)
+        AttentionItem(
+          icon: Icons.handyman_outlined,
+          color: urgentFixes > 0 ? BizColors.badge : BizColors.orange,
+          title: '$fixes maintenance ${plural(fixes, 'request', 'requests')}',
+          subtitle: urgentFixes > 0 ? '$urgentFixes urgent · tenants are waiting' : 'Tenants are waiting on a fix',
+          onTap: () => Navigator.of(context).push(
+            MaterialPageRoute(builder: (_) => const MaintenanceScreen()),
+          ),
         ),
       if (leases > 0)
         AttentionItem(

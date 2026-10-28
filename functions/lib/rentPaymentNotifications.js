@@ -36,6 +36,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.onPaymentUpdated = exports.onPaymentCreated = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
+const paymentTrackingLogic_1 = require("./paymentTrackingLogic");
 if (admin.apps.length === 0) {
     admin.initializeApp();
 }
@@ -55,9 +56,13 @@ exports.onPaymentCreated = functions.firestore
     try {
         if (paymentData.status === 'pending_verification' && paymentData.submittedBy === 'tenant') {
             // Tenant submitted rent -> Notify Business Owner
+            await recordOwnerNotification(businessId, tenantId, paymentData);
             await notifyOwnerAboutPendingRent(businessId, paymentData);
         }
-        else if ((paymentData.status === 'Paid' || paymentData.status === 'paid') && paymentData.recordedBy) {
+        else if ((paymentData.status === 'Paid' || paymentData.status === 'paid') &&
+            paymentData.recordedBy &&
+            // Online payments already tell the tenant "Payment Confirmed".
+            paymentData.recordedBy !== 'razorpay_webhook') {
             // Owner manually recorded payment -> Notify Tenant
             await notifyTenantAboutPayment(tenantId, paymentData, 'Payment Recorded', `Your rent payment for ${paymentData.month} (₹${paymentData.amount}) has been recorded by the owner.`);
         }
@@ -95,6 +100,16 @@ exports.onPaymentUpdated = functions.firestore
     }
 });
 // --- Helper Functions ---
+/** Puts the payment in the owner's notifications list, so it is tracked
+ * even when the push is missed. */
+async function recordOwnerNotification(businessId, tenantId, paymentData) {
+    const tenantSnap = await db.doc(`businesses/${businessId}/tenants/${tenantId}`).get();
+    const propertyId = tenantSnap.data()?.propertyId || null;
+    await db.collection('businesses').doc(businessId).collection('notifications').add({
+        ...(0, paymentTrackingLogic_1.ownerRentSubmissionNotification)(businessId, tenantId, propertyId, paymentData),
+        createdAt: admin.firestore.FieldValue.serverTimestamp(),
+    });
+}
 async function notifyOwnerAboutPendingRent(businessId, paymentData) {
     const businessSnap = await db.collection('businesses').doc(businessId).get();
     if (!businessSnap.exists)

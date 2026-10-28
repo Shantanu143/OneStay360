@@ -38,8 +38,9 @@ npx jest test/unit/billing_logic_test.ts -t "overdue"     # single file / single
 npm run deploy              # build + `firebase deploy --only functions` -> deploys to PRODUCTION
 ```
 - `functions/lib/*.js` is **committed** and is the deploy entry (`"main": "lib/index.js"`). After editing a `.ts` file, run `npm run build` so `lib/` stays in sync.
-- `jest.config.js` whitelists test files explicitly in `testMatch` (currently `billing_logic_test.ts` and `tenant_billing_test.ts`). A new test file will NOT run until added there. `test/unit/billing_test.ts` is excluded on purpose: it needs the Firestore/Auth emulators (`test/setup.ts` points at localhost:8080/9099).
+- `jest.config.js` whitelists test files explicitly in `testMatch` (billing, tenant billing, member access, invitation phone, tenant invitation and maintenance logic tests). A new test file will NOT run until added there. `test/unit/billing_test.ts` is excluded on purpose: it needs the Firestore/Auth emulators (`test/setup.ts` points at localhost:8080/9099).
 - The Jest tests exercise extracted pure logic, not the callable functions themselves.
+- `test/e2e/` runs the real callables, the signed Razorpay webhook and triggers against the Firestore emulator (rent by UPI/cash and online, property edit, tenant invitations, maintenance): `npx firebase emulators:exec --only firestore --project demo-onestay "cd functions && npx jest -c jest.e2e.config.js"` from the repo root. Not part of `npm test`.
 
 **Admin web** (`apps/admin-web/`):
 ```bash
@@ -54,7 +55,11 @@ npm run dev | build | typecheck
 No Flutter or web code connects to the Firebase emulators (`firebase.json` defines them, but nothing calls `use*Emulator`). `flutter run` hits the live `onestay360-1` project: real Auth (Google / email / phone OTP), real Firestore, real Cloud Functions. Be deliberate about writes, and don't create test data casually. In debug builds Firebase App Check uses the **debug provider** and prints a token to the log; that token must be registered in Firebase Console → App Check for backend calls to succeed.
 
 ### Flutter app structure
-Both apps follow the same layering: `presentation/views` (screens) → `presentation/view_models` (ChangeNotifier) → `data/providers` + `services` → `packages/firebase_services` (Firestore/Auth/Storage wrappers and repositories) → `packages/models`. State is `provider`; `main.dart` builds the `MultiProvider` tree and the splash → `AuthWrapper` → home flow. Several files exist in parallel in both apps (`login_screen`, `device_token_service`, `splash`, `auth_wrapper`, and each app has both a `business_state_provider` and a `tenant_state_provider`, implemented differently). They are not shared code, so a bug in one often exists in the other.
+Both apps share one look: the design system in `presentation/design/` (tokens, theme, motion, components; `Biz*` in business, `App*` in tenant, kept as parallel copies) with Inter, the green palette and a floating glass tab bar. Screens sit on ChangeNotifier view models that take an injected source, so they are tested with fakes.
+
+The tenant app (`apps/tenant/lib`): `app/` (auth gate, tab shell, routes, `TenantApp` providers), `data/` (`models.dart`, abstract `sources.dart`, `firestore_sources.dart` implementing all of them as `FirestoreTenantBackend`, `TenantSession`), and `presentation/<feature>/` (home, explore, property, stay, payments, maintenance, notifications, invitations, pinboard, profile, auth). `StayFeed` and `ActivityFeed` are app-level live feeds shared by several screens. Tests use `test/support/fakes.dart` (`FakeBackend`) and `harness.dart` (the real app, signed in, on the fake backend); `test/preview` renders screens to PNG when `RENDER_DIR` is set.
+
+The business app layers `presentation/views` (screens) → `presentation/view_models` (ChangeNotifier) → `data/providers` + `services` → `packages/firebase_services` (Firestore/Auth/Storage wrappers and repositories) → `packages/models`. State is `provider`; `main.dart` builds the `MultiProvider` tree and the splash → `AuthWrapper` → home flow. Several files exist in parallel in both apps (`login_screen`, `device_token_service`, `splash`, `auth_wrapper`, and each app has both a `business_state_provider` and a `tenant_state_provider`, implemented differently). They are not shared code, so a bug in one often exists in the other.
 
 The business app also handles deep links: `https://app.onestay360.brandedpatil.in/invite?inviteId=…` is routed to `/invite` via `app_links` (host verification file lives in `hosting/app-links/.well-known/assetlinks.json`).
 
@@ -82,6 +87,10 @@ Razorpay keys come from `functions.config().razorpay.{key_id,key_secret}` or env
 Two entry paths converge on a tenant record:
 - **Tenant has the app**: `submitEnrollmentRequest` callable creates `enrollmentRequests/{id}`; the owner moves it through `pending → approved → bill_sent → payment_submitted → confirmed` (or `rejected`). The Firestore trigger `onEnrollmentStatusChanged` reacts to each status transition (creates the tenant, marks the bed occupied, sends notifications). Approval requires a room and bed to be assigned, otherwise the trigger resets it to `pending`.
 - **Tenant has no app**: owner adds the tenant manually; `onTenantCreated` sends a WhatsApp/email invitation, and `onTenantUserCreated` auto-links when someone later signs up with the same phone.
+- **Owner invites through the wizard**: `createTenantInvitation` writes `tenant_invitations/{id}`; the tenant app lists and answers it through `listMyTenantInvitations`, `getMyTenantInvitation`, `approveInvitation` and `rejectTenantInvitation` (`tenantInvitations.ts`, matched by tenant id or phone). Accepting creates the business tenant, the active stay and occupies the bed.
+
+### Maintenance requests
+`maintenanceRequests/{id}` (top level): tenants create them for the business they stay with and may cancel an open one; any active member of that business moves them `open → in_progress → resolved` (rules restrict which fields change). `maintenance.ts` notifies the owner on create and pushes the tenant on progress. Business UI: `presentation/maintenance/`, surfaced in Home's "Needs attention" and notifications.
 
 ### Cloud Functions layout
 `functions/index.ts` only re-exports the function modules. `sendSms`, `sendEmail`, `sendWhatsApp`, `audit`, `plan`, `permissions`, `seed_pgs` are helper modules imported by others (not exported functions). Each module guards `admin.initializeApp()` itself. Almost all functions are `functions.https.onCall`, Firestore triggers, or schedulers (the Razorpay webhook is the one `onRequest`). Notable side effects: `auditTriggers.ts` writes `audit_logs`; push notifications use FCM tokens registered through `registerDeviceToken`.

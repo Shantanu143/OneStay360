@@ -36,6 +36,8 @@ import 'presentation/views/tenants/add_tenant_wizard.dart';
 import 'presentation/team/team_screen.dart';
 import 'presentation/reports/reports_tab.dart';
 import 'presentation/views/home_screen.dart';
+import 'presentation/maintenance/firestore_maintenance_source.dart';
+import 'presentation/maintenance/maintenance_source.dart';
 
 // Background message handler - must be top-level or static
 @pragma('vm:entry-point')
@@ -230,6 +232,7 @@ class _MyAppShellState extends State<_MyAppShell> {
         Provider<DeepLinkCoordinator>.value(value: _links),
         Provider<SessionActions>.value(value: _session),
         Provider<RefreshSignals>.value(value: _signals),
+        Provider<MaintenanceSource>(create: (_) => FirestoreMaintenanceSource()),
 
         // State
         ChangeNotifierProvider<BusinessStateProvider>.value(value: _business),

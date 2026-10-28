@@ -53,6 +53,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.getPaymentDashboard = exports.razorpayPaymentWebhook = exports.createPaymentLink = exports.verifyRazorpaySetup = exports.checkRazorpayStatus = exports.onboardPGOwner = void 0;
 const functions = __importStar(require("firebase-functions"));
 const admin = __importStar(require("firebase-admin"));
+const paymentTrackingLogic_1 = require("./paymentTrackingLogic");
 const crypto = __importStar(require("crypto"));
 const https = __importStar(require("https"));
 if (admin.apps.length === 0) {
@@ -335,6 +336,19 @@ exports.createPaymentLink = functions
     if (!businessId || !tenantId || !rentInvoiceId) {
         throw new functions.https.HttpsError('invalid-argument', 'businessId, tenantId, rentInvoiceId required');
     }
+    // Only the tenant the invoice belongs to (or the business team) may ask
+    // for a link to pay it.
+    const [callerSnap, memberSnap] = await Promise.all([
+        db.doc(`users/${uid}`).get(),
+        db.doc(`businesses/${businessId}/members/${uid}`).get(),
+    ]);
+    if (!(0, paymentTrackingLogic_1.callerMayPayInvoice)({
+        callerTenantId: callerSnap.data()?.tenantId,
+        invoiceTenantId: tenantId,
+        isBusinessMember: memberSnap.exists && memberSnap.data()?.status === 'active',
+    })) {
+        throw new functions.https.HttpsError('permission-denied', 'You can only pay your own rent.');
+    }
     // Get Razorpay config for this business
     const configSnap = await db.doc(`businesses/${businessId}/settings/razorpay`).get();
     if (!configSnap.exists) {
@@ -566,70 +580,71 @@ async function handlePaymentLinkPaid(event) {
         return;
     }
     const invoiceRef = db.doc(`businesses/${businessId}/tenants/${tenantId}/rent_invoices/${rentInvoiceId}`);
-    // ── Idempotency: Skip if already processed ──
-    const invoiceSnap = await invoiceRef.get();
-    if (!invoiceSnap.exists) {
+    const bizTenantRef = db.doc(`businesses/${businessId}/tenants/${tenantId}`);
+    const globalTenantRef = db.doc(`tenants/${tenantId}`);
+    const paymentRef = db
+        .collection(`businesses/${businessId}/tenants/${tenantId}/payments`)
+        .doc((0, paymentTrackingLogic_1.razorpayPaymentDocId)(razorpayPaymentId));
+    // payment_link.paid and payment.captured both arrive for one payment, often
+    // together. Keying the record on the Razorpay payment id inside a
+    // transaction records it exactly once.
+    const now = admin.firestore.Timestamp.now();
+    const outcome = await db.runTransaction(async (tx) => {
+        const [invoiceSnap, paymentSnap, tenantSnap, globalSnap] = await Promise.all([
+            tx.get(invoiceRef),
+            tx.get(paymentRef),
+            tx.get(bizTenantRef),
+            tx.get(globalTenantRef),
+        ]);
+        if (!invoiceSnap.exists)
+            return { status: 'no_invoice' };
+        if (paymentSnap.exists)
+            return { status: 'duplicate' };
+        const invoice = invoiceSnap.data();
+        const tenant = tenantSnap.exists ? tenantSnap.data() : {};
+        tx.update(invoiceRef, {
+            status: 'paid',
+            verification: 'verified',
+            mode: 'razorpay',
+            razorpayPaymentId,
+            razorpayPaymentLinkId: paymentLinkId,
+            paidAt: now,
+            updatedAt: now,
+        });
+        tx.set(paymentRef, (0, paymentTrackingLogic_1.buildRazorpayRentPayment)({
+            docId: paymentRef.id,
+            businessId,
+            tenantId,
+            tenant,
+            invoice,
+            rentInvoiceId,
+            razorpayPaymentId,
+            paymentLinkId,
+            amountInr,
+            now,
+        }));
+        if (tenantSnap.exists) {
+            tx.update(bizTenantRef, {
+                lastPaymentDate: now,
+                lastPaymentAmount: amountInr,
+                lastPaymentMonth: invoice.month || '',
+                updatedAt: now,
+            });
+        }
+        if (globalSnap.exists) {
+            tx.update(globalTenantRef, { lastPaymentDate: now, lastPaymentAmount: amountInr, updatedAt: now });
+        }
+        return { status: 'recorded', invoice, tenantData: tenant };
+    });
+    if (outcome.status === 'no_invoice') {
         functions.logger.warn('payment_link_paid_invoice_not_found', { rentInvoiceId });
         return;
     }
-    const invoice = invoiceSnap.data();
-    if (invoice.status === 'paid' && invoice.razorpayPaymentId === razorpayPaymentId) {
+    if (outcome.status === 'duplicate') {
         functions.logger.info('payment_link_paid_already_processed', { razorpayPaymentId });
         return;
     }
-    const now = admin.firestore.Timestamp.now();
-    // ── Update invoice ──
-    await invoiceRef.update({
-        status: 'paid',
-        verification: 'verified',
-        mode: 'razorpay',
-        razorpayPaymentId,
-        razorpayPaymentLinkId: paymentLinkId,
-        paidAt: now,
-        updatedAt: now,
-    });
-    // ── Create payment history record ──
-    const tenantSnap = await db.doc(`businesses/${businessId}/tenants/${tenantId}`).get();
-    const tenantData = tenantSnap.exists ? tenantSnap.data() : {};
-    const paymentRef = db
-        .collection(`businesses/${businessId}/tenants/${tenantId}/payments`)
-        .doc();
-    await paymentRef.set({
-        id: paymentRef.id,
-        tenantId,
-        businessId,
-        tenantName: tenantData.name || '',
-        roomNumber: tenantData.roomNumber || tenantData.roomId || '',
-        bedNumber: tenantData.bedNumber || tenantData.bedId || '',
-        amount: amountInr,
-        month: invoice.month || '',
-        date: now,
-        status: 'Paid',
-        verification: 'verified',
-        method: 'Razorpay',
-        mode: 'razorpay',
-        razorpayPaymentId,
-        razorpayPaymentLinkId: paymentLinkId,
-        rentInvoiceId,
-        submittedBy: 'system',
-        recordedBy: 'razorpay_webhook',
-        createdAt: now,
-    });
-    // ── Update tenant docs ──
-    const bizTenantRef = db.doc(`businesses/${businessId}/tenants/${tenantId}`);
-    await bizTenantRef.update({
-        lastPaymentDate: now,
-        lastPaymentAmount: amountInr,
-        lastPaymentMonth: invoice.month || '',
-        updatedAt: now,
-    }).catch(() => { });
-    const globalTenantRef = db.doc(`tenants/${tenantId}`);
-    await globalTenantRef.update({
-        lastPaymentDate: now,
-        lastPaymentAmount: amountInr,
-        updatedAt: now,
-    }).catch(() => { });
-    // ── Notify PG Owner ──
+    const { invoice, tenantData } = outcome;
     await sendPushToBusinessOwner(businessId, {
         title: '💰 Rent Received',
         body: `₹${amountInr.toLocaleString('en-IN')} received from ${tenantData.name || 'Tenant'} for ${invoice.month || 'rent'}.`,
@@ -657,6 +672,10 @@ async function handlePaymentLinkPaid(event) {
         message: `₹${amountInr.toLocaleString('en-IN')} received from ${tenantData.name || 'Tenant'} for ${invoice.month || 'rent'} via Razorpay.`,
         type: 'rent_received',
         tenantId,
+        tenantName: tenantData.name || null,
+        propertyId: invoice.propertyId || tenantData.propertyId || null,
+        // Already settled: the business app opens the property's payments.
+        metadata: { paidOnline: true, amount: amountInr, rentInvoiceId },
         read: false,
         createdAt: now,
     }).catch(() => { });

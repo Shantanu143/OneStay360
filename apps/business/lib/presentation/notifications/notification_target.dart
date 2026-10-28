@@ -26,6 +26,14 @@ final class PendingPaymentsTarget extends NotificationTarget {
   final String? propertyId;
 }
 
+/// A tenant of the business, opened on their details and payments.
+final class TenantTarget extends NotificationTarget {
+  const TenantTarget(this.businessId, this.tenantId);
+
+  final String businessId;
+  final String tenantId;
+}
+
 /// Only the request is known; its property has to be looked up first.
 final class RequestLookupTarget extends NotificationTarget {
   const RequestLookupTarget(this.requestId);
@@ -36,6 +44,11 @@ final class RequestLookupTarget extends NotificationTarget {
 /// Nothing identifies the request, so show the whole requests list.
 final class RequestsListTarget extends NotificationTarget {
   const RequestsListTarget();
+}
+
+/// A tenant raised a maintenance request.
+final class MaintenanceListTarget extends NotificationTarget {
+  const MaintenanceListTarget();
 }
 
 /// The notification lacks what it needs to open anything.
@@ -60,6 +73,10 @@ NotificationTarget targetFor(BusinessNotification n) {
       return const RequestsListTarget();
     case BusinessNotificationType.payment:
       if (!_has(n.businessId)) return const MissingTarget('Business information missing');
+      // Paid online: already settled, so show it in the tenant's payments.
+      if (n.metadata?['paidOnline'] == true && _has(n.tenantId)) {
+        return TenantTarget(n.businessId, n.tenantId!);
+      }
       return PendingPaymentsTarget(
         n.businessId,
         propertyId: _has(n.propertyId) ? n.propertyId : null,
@@ -67,6 +84,8 @@ NotificationTarget targetFor(BusinessNotification n) {
     case BusinessNotificationType.billing:
       if (!_has(n.propertyId)) return const MissingTarget('Property information missing');
       return PropertyTarget(n.propertyId!, PropertyTarget.billingTab);
+    case BusinessNotificationType.maintenance:
+      return const MaintenanceListTarget();
     case BusinessNotificationType.tenantEvent:
     case BusinessNotificationType.general:
       return const NoTarget();

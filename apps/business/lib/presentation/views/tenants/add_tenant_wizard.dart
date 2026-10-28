@@ -23,7 +23,7 @@ import '../../design/tokens.dart';
 import '../../view_models/tenant_wizard/assignment_data_source.dart';
 import '../../view_models/tenant_wizard/draft_store.dart';
 import '../../view_models/tenant_wizard/wizard_viewmodel.dart';
-import '../qr_scanner_screen.dart';
+import 'qr_scanner_screen.dart';
 import '../widgets/floating_nav_bar.dart';
 import 'details_steps.dart';
 import 'invitation_submitter.dart';
@@ -248,7 +248,7 @@ class _AddTenantWizardState extends State<AddTenantWizard> {
     final custom = widget.openScanner;
     if (custom != null) return custom(context);
     return Navigator.of(context).push<Map<String, dynamic>>(
-      MaterialPageRoute(builder: (_) => const QRScannerScreen()),
+      MaterialPageRoute(builder: (_) => const TenantQrScannerScreen()),
     );
   }
 

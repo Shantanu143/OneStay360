@@ -3,11 +3,11 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart';
 
 import '../common/device_actions.dart';
+import '../design/components/biz_brand_logo.dart';
 import '../design/components/biz_banner.dart';
 import '../design/components/biz_button.dart';
 import '../design/components/biz_card.dart';
 import '../design/components/biz_chips.dart';
-import '../design/components/biz_list_row.dart';
 import '../design/components/biz_text_field.dart';
 import '../design/tokens.dart';
 import 'auth_actions.dart';
@@ -76,10 +76,8 @@ class _LoginScreenState extends State<LoginScreen> {
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
-                  const BizIconTile(icon: Icons.apartment_rounded, color: BizColors.green, size: 52, iconSize: 28),
+                  const BizBrandLogo(height: 52),
                   const SizedBox(height: 22),
-                  Text('OneStay360 Business', style: BizText.eyebrow),
-                  const SizedBox(height: 4),
                   Text(signUp ? 'Create your account' : 'Welcome back', style: BizText.pageTitle),
                   const SizedBox(height: 8),
                   Text(

@@ -4,6 +4,7 @@
 // splash, "no business yet" and "couldn't load".
 import 'package:flutter/material.dart';
 
+import '../presentation/design/components/biz_brand_logo.dart';
 import '../presentation/design/components/biz_button.dart';
 import '../presentation/design/motion.dart';
 import '../presentation/design/tokens.dart';
@@ -54,22 +55,9 @@ class _BrandSplashState extends State<BrandSplash>
           children: [
             ScaleTransition(
               scale: scale,
-              child: Container(
-                width: 84,
-                height: 84,
-                alignment: Alignment.center,
-                decoration: BoxDecoration(
-                  color: BizColors.mint,
-                  borderRadius: BorderRadius.circular(26),
-                ),
-                child: const Icon(Icons.apartment_rounded,
-                    size: 44, color: BizColors.onMint),
-              ),
+              child: const BizBrandLogo(height: 64, framed: true, alignment: CrossAxisAlignment.center),
             ),
-            const SizedBox(height: 22),
-            Text('OneStay360',
-                style: BizText.style(28, 700, color: Colors.white, letterSpacing: -0.6)),
-            const SizedBox(height: 4),
+            const SizedBox(height: 18),
             Text('For PG & hostel owners',
                 style: BizText.style(14, 500, color: BizColors.onCardMuted)),
           ],

@@ -74,7 +74,8 @@ void main() {
     testWidgets('welcomes the owner back with the ways to sign in', (tester) async {
       await pump(tester);
 
-      expect(find.text('OneStay360 Business'), findsOneWidget);
+      expect(find.bySemanticsLabel('OneStay360'), findsOneWidget);
+      expect(find.text('BUSINESS'), findsOneWidget);
       expect(find.text('Welcome back'), findsOneWidget);
       expect(find.text('Sign in'), findsOneWidget);
       expect(find.text('Continue with phone'), findsOneWidget);

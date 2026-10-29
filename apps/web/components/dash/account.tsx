@@ -23,7 +23,7 @@ export function AccountCard() {
           <div className="muted" style={{ fontSize: 14 }}>
             {account.email}
           </div>
-          <div className="faint" style={{ fontSize: 12.5 }}>
+          <div className="faint" style={{ fontSize: 14 }}>
             Member since {date(account.createdAt)}
           </div>
         </div>
@@ -38,15 +38,15 @@ export function AccountCard() {
       </div>
       <div className="row wrap">
         <button className="btn btn-primary" disabled={busy || (form.name === account.name && form.phone === account.phone)} onClick={() => run((b) => b.updateAccount(form), "Profile saved")}>
-          Save
+          Save profile
         </button>
         <span className="spacer" />
         <span className="row muted" style={{ gap: 8, fontSize: 14 }}>
-          <Palette size={16} /> Theme
+          <Palette size={16} aria-hidden /> Theme
         </span>
         <ThemeToggle withLabel />
         <button className="btn btn-ghost" onClick={() => backend.signOut().then(() => (window.location.href = "/"))}>
-          <LogOut size={16} /> Sign out
+          <LogOut size={16} aria-hidden /> Sign out
         </button>
       </div>
     </div>

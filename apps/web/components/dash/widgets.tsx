@@ -38,9 +38,9 @@ export function minRent(p: Property) {
   return p.rooms.length ? Math.min(...p.rooms.map((r) => r.rentPerBed)) : 0;
 }
 
-export function Progress({ value }: { value: number }) {
+export function Progress({ value, label }: { value: number; label: string }) {
   return (
-    <div className="progress" role="progressbar" aria-valuenow={Math.round(value)} aria-valuemin={0} aria-valuemax={100}>
+    <div className="progress" role="progressbar" aria-label={label} aria-valuenow={Math.round(value)} aria-valuemin={0} aria-valuemax={100}>
       <i style={{ width: `${Math.max(0, Math.min(100, value))}%` }} />
     </div>
   );
@@ -98,7 +98,7 @@ export function Donut({ parts, center }: { parts: { label: string; value: number
       </div>
       <div className="stack" style={{ gap: 8 }}>
         {parts.map((p) => (
-          <div key={p.label} className="row" style={{ gap: 8, fontSize: 13.5 }}>
+          <div key={p.label} className="row" style={{ gap: 8, fontSize: 14 }}>
             <i style={{ width: 10, height: 10, borderRadius: 3, background: p.color, display: "inline-block" }} />
             <span className="muted">{p.label}</span>
             <b className="num">{Math.round((p.value / total) * 100)}%</b>

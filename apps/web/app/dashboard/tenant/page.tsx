@@ -9,14 +9,14 @@ import { ago, date, money } from "@/lib/format";
 
 export default function TenantHome() {
   const { account } = useShell();
-  const { data, loading } = useQuery(async (b) => {
+  const { data, loading, error, reload } = useQuery(async (b) => {
     const [stay, invoices, invitations, requests, maintenance, pins] = await Promise.all([b.getStay(), b.listMyInvoices(), b.listMyInvitations(), b.listMyRequests(), b.listMyMaintenance(), b.listPins()]);
     return { stay, invoices, invitations, requests, maintenance, pins };
   });
   const first = account.name.split(" ")[0];
   if (loading || !data) {
     return (
-      <Page title={`Hi, ${first}`}>
+      <Page error={error} onRetry={reload} title={`Hi, ${first}`}>
         <Loading rows={4} />
       </Page>
     );
@@ -27,7 +27,7 @@ export default function TenantHome() {
   const activeReq = requests.filter((r) => !["confirmed", "rejected"].includes(r.status));
 
   return (
-    <Page title={`Hi, ${first}`} sub={stay ? `${stay.property.name} · Room ${stay.tenant.roomNumber} · Bed ${stay.tenant.bedNumber}` : "Let's find you a place"}>
+    <Page error={error} onRetry={reload} title={`Hi, ${first}`} sub={stay ? `${stay.property.name} · Room ${stay.tenant.roomNumber} · Bed ${stay.tenant.bedNumber}` : "Let's find you a place"}>
       {pendingInv.map((i) => (
         <Link key={i.id} href="/dashboard/tenant/invitations/" className="alert alert-green row-between">
           <span className="row" style={{ gap: 10 }}>
@@ -39,7 +39,7 @@ export default function TenantHome() {
       {activeReq.map((r) => (
         <Link key={r.id} href="/dashboard/tenant/requests/" className={`alert ${r.status === "bill_sent" ? "alert-amber" : "alert-blue"} row-between`}>
           <span className="row" style={{ gap: 10 }}>
-            <KeyRound size={18} /> {r.propertyName}: {r.status === "bill_sent" ? `your first bill of ${money(r.total ?? 0)} is ready to pay` : r.status === "payment_submitted" ? "payment submitted, waiting for the owner" : r.status === "approved" ? "approved — bill coming soon" : "request sent, waiting for the owner"}
+            <KeyRound size={18} aria-hidden /> {r.propertyName}: {r.status === "bill_sent" ? `your first bill of ${money(r.total ?? 0)} is ready to pay` : r.status === "payment_submitted" ? "payment submitted, waiting for the owner" : r.status === "approved" ? "approved — bill coming soon" : "request sent, waiting for the owner"}
           </span>
           <ArrowRight size={16} />
         </Link>
@@ -60,7 +60,7 @@ export default function TenantHome() {
                   </div>
                   <div className="value num">{money(open.reduce((s, i) => s + i.amount, 0))}</div>
                   <Link href="/dashboard/tenant/rent/" className="btn" style={{ background: "var(--mint)", color: "#0b1f19", alignSelf: "flex-start" }}>
-                    <Wallet size={16} /> Pay rent
+                    <Wallet size={16} aria-hidden /> Pay rent
                   </Link>
                 </>
               ) : (
@@ -84,7 +84,7 @@ export default function TenantHome() {
                       <I size={18} />
                     </span>
                     <b>{t as string}</b>
-                    <span className="faint" style={{ fontSize: 13 }}>
+                    <span className="faint" style={{ fontSize: 14 }}>
                       {s as string}
                     </span>
                   </Link>
@@ -154,10 +154,10 @@ export default function TenantHome() {
             <p className="muted">Browse verified PGs by city, compare rooms, food and rules, and request a bed. If an owner already added you, their invitation will appear here.</p>
             <div className="row wrap">
               <Link href="/dashboard/tenant/explore/" className="btn btn-primary btn-lg">
-                <Search size={18} /> Explore PGs
+                <Search size={18} aria-hidden /> Explore PGs
               </Link>
               <Link href="/dashboard/tenant/invitations/" className="btn btn-ghost btn-lg">
-                <MailOpen size={18} /> Invitations
+                <MailOpen size={18} aria-hidden /> Invitations
               </Link>
             </div>
           </div>

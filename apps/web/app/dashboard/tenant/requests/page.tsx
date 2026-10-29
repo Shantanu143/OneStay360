@@ -27,7 +27,7 @@ function RequestCard({ r }: { r: EnrollmentRequest }) {
       <div className="row-between wrap">
         <div>
           <h2 className="h3">{r.propertyName}</h2>
-          <div className="faint" style={{ fontSize: 13 }}>
+          <div className="faint" style={{ fontSize: 14 }}>
             Requested {ago(r.createdAt)} · moving in {date(r.moveIn)} · {r.sharing}
           </div>
         </div>
@@ -43,7 +43,7 @@ function RequestCard({ r }: { r: EnrollmentRequest }) {
                 <span className="tl-dot">{i < idx || r.status === "confirmed" ? <Check size={13} /> : i + 1}</span>
                 <div>
                   <div style={{ fontSize: 14, fontWeight: i === idx ? 700 : 550, color: i > idx ? "var(--ink-faint)" : undefined }}>{label}</div>
-                  {i === idx && <div className="faint" style={{ fontSize: 12.5 }}>{hint}</div>}
+                  {i === idx && <div className="faint" style={{ fontSize: 14 }}>{hint}</div>}
                 </div>
               </div>
             ))}
@@ -76,7 +76,7 @@ function RequestCard({ r }: { r: EnrollmentRequest }) {
                   <>
                     <div className="glass card-tight row-between">
                       <div>
-                        <div className="faint" style={{ fontSize: 12 }}>
+                        <div className="faint" style={{ fontSize: 14 }}>
                           Pay by {r.paymentMode === "bank" ? "bank transfer" : "UPI"} to
                         </div>
                         {r.paymentMode === "bank" && r.bank ? (
@@ -114,7 +114,7 @@ function RequestCard({ r }: { r: EnrollmentRequest }) {
             )}
             {r.status === "pending" && (
               <button className="btn btn-ghost" style={{ alignSelf: "flex-start" }} onClick={() => setWithdraw(true)}>
-                <Trash2 size={15} /> Withdraw request
+                <Trash2 size={15} aria-hidden /> Withdraw request
               </button>
             )}
           </div>
@@ -126,14 +126,14 @@ function RequestCard({ r }: { r: EnrollmentRequest }) {
 }
 
 export default function TenantRequestsPage() {
-  const { data, loading } = useQuery((b) => b.listMyRequests());
+  const { data, loading, error, reload } = useQuery((b) => b.listMyRequests());
   return (
-    <Page title="My requests" sub="Track your requests to join PGs">
+    <Page error={error} onRetry={reload} title="My requests" sub="Track your requests to join PGs">
       {loading ? (
         <Loading />
       ) : !data?.length ? (
         <div className="glass card">
-          <Empty icon={KeyRound} title="No requests yet" body="Find a PG you like and request a bed — you'll track every step here." action={<Link href="/dashboard/tenant/explore/" className="btn btn-primary"><Search size={16} /> Explore PGs</Link>} />
+          <Empty icon={KeyRound} title="No requests yet" body="Find a PG you like and request a bed — you'll track every step here." action={<Link href="/dashboard/tenant/explore/" className="btn btn-primary"><Search size={16} aria-hidden /> Explore PGs</Link>} />
         </div>
       ) : (
         data.map((r) => <RequestCard key={r.id} r={r} />)

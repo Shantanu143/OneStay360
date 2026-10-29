@@ -1,11 +1,11 @@
 "use client";
 import Link from "next/link";
 import { useEffect, useState } from "react";
-import { MailOpen, Search, UserPlus, Users, X } from "lucide-react";
+import { MailOpen, UserPlus, Users, X } from "lucide-react";
 import { Page, useShell } from "@/components/dash/shell";
 import { AddTenantModal } from "@/components/dash/owner-forms";
 import { Avatar } from "@/components/dash/widgets";
-import { Empty, Loading, Segmented, StatusBadge } from "@/components/ui";
+import { Empty, Field, Loading, SearchField, Segmented, StatusBadge } from "@/components/ui";
 import { useAction, useQuery } from "@/lib/hooks";
 import { date, money } from "@/lib/format";
 import { permissions } from "@/lib/permissions";
@@ -20,7 +20,7 @@ export default function TenantsPage() {
   const [property, setProperty] = useState("all");
   const [adding, setAdding] = useState(false);
   const { busy, run } = useAction();
-  const { data, loading } = useQuery(async (b) => {
+  const { data, loading, error, reload } = useQuery(async (b) => {
     const [tenants, invitations, properties, invoices] = await Promise.all([b.listTenants(), b.listTenantInvitations(), b.listProperties(), b.listInvoices()]);
     return { tenants, invitations, properties, invoices };
   });
@@ -35,13 +35,13 @@ export default function TenantsPage() {
   const pendingInv = data?.invitations.filter((i) => i.status === "pending").length ?? 0;
 
   return (
-    <Page
+    <Page error={error} onRetry={reload}
       title="Tenants"
       sub={data ? `${data.tenants.filter((t) => t.status === "active").length} active · ${pendingInv} invitation${pendingInv === 1 ? "" : "s"} pending` : undefined}
       actions={
         can.canManageTenants && (
           <button className="btn btn-primary btn-sm" onClick={() => setAdding(true)}>
-            <UserPlus size={16} /> <span className="hide-sm">Add tenant</span>
+            <UserPlus size={16} aria-hidden /> Add a tenant
           </button>
         )
       }
@@ -56,8 +56,9 @@ export default function TenantsPage() {
             { value: "past", label: "Past" },
           ]}
         />
-        <div className="row wrap" style={{ gap: 8 }}>
-          <select className="select" value={property} onChange={(e) => setProperty(e.target.value)} style={{ width: 200 }} aria-label="Filter by property">
+        <div className="filters" style={{ flex: "1 1 420px", justifyContent: "flex-end" }}>
+          <Field label="Property">
+          <select className="select" value={property} onChange={(e) => setProperty(e.target.value)}>
             <option value="all">All properties</option>
             {data?.properties.map((p) => (
               <option key={p.id} value={p.id}>
@@ -65,10 +66,8 @@ export default function TenantsPage() {
               </option>
             ))}
           </select>
-          <div style={{ position: "relative" }}>
-            <Search size={16} style={{ position: "absolute", left: 12, top: 14, color: "var(--ink-faint)" }} />
-            <input className="input" placeholder="Name, phone or room" value={q} onChange={(e) => setQ(e.target.value)} style={{ paddingLeft: 36, width: 220 }} aria-label="Search tenants" />
-          </div>
+          </Field>
+          <SearchField label="Search tenants" value={q} onChange={setQ} placeholder="Name, phone or room" />
         </div>
       </div>
       <div className="glass card">
@@ -97,7 +96,7 @@ export default function TenantsPage() {
                   )}
                   {i.status === "accepted" && i.tenantId && (
                     <Link href={`/dashboard/owner/tenant/?id=${i.tenantId}`} className="btn btn-ghost btn-sm">
-                      Open
+                      View tenant
                     </Link>
                   )}
                 </div>
@@ -128,7 +127,7 @@ export default function TenantsPage() {
                           <Avatar name={t.name} />
                           <span>
                             <b style={{ display: "block" }}>{t.name}</b>
-                            <span className="faint" style={{ fontSize: 12.5 }}>
+                            <span className="faint" style={{ fontSize: 14 }}>
                               {t.id} · {t.phone}
                             </span>
                           </span>

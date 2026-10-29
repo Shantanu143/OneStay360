@@ -41,7 +41,7 @@ function Checkout({ p, onClose }: { p: Property; onClose: () => void }) {
               Cancel
             </button>
             <button className="btn btn-primary" disabled={!quote} onClick={() => setStep("pay")}>
-              <CreditCard size={16} /> Pay {quote ? money(quote.finalAmount) : ""}
+              <CreditCard size={16} aria-hidden /> Pay {quote ? money(quote.finalAmount) : ""}
             </button>
           </>
         ) : (
@@ -85,11 +85,11 @@ function Checkout({ p, onClose }: { p: Property; onClose: () => void }) {
               <input className="input" value={promo} onChange={(e) => setPromo(e.target.value.toUpperCase())} placeholder="e.g. WELCOME20" />
             </Field>
             <button className="btn btn-ghost" onClick={() => setApplied(promo || undefined)}>
-              <Tag size={15} /> Apply
+              <Tag size={15} aria-hidden /> Apply code
             </button>
           </div>
           {error && <div className="alert alert-red">{error}</div>}
-          <p className="faint" style={{ fontSize: 12.5 }}>Demo promo codes: WELCOME20, ONESTAY50.</p>
+          <p className="faint" style={{ fontSize: 14 }}>Demo promo codes: WELCOME20, ONESTAY50.</p>
         </div>
       ) : (
         <div className="stack">
@@ -97,7 +97,7 @@ function Checkout({ p, onClose }: { p: Property; onClose: () => void }) {
             <ShieldCheck size={22} color="var(--brand)" />
             <div>
               <b>Secure checkout</b>
-              <p className="muted" style={{ fontSize: 13.5 }}>
+              <p className="muted" style={{ fontSize: 14 }}>
                 In production this opens Razorpay checkout (createActivationOrder → confirmActivationPayment). In demo mode, completing marks the property paid.
               </p>
             </div>
@@ -115,14 +115,14 @@ function Checkout({ p, onClose }: { p: Property; onClose: () => void }) {
 export default function BillingPage() {
   const { account } = useShell();
   const [checkout, setCheckout] = useState<string | null>(null);
-  const { data, loading } = useQuery(async (b) => ({ properties: await b.listProperties(), invoices: await b.listPlatformInvoices() }));
+  const { data, loading, error, reload } = useQuery(async (b) => ({ properties: await b.listProperties(), invoices: await b.listPlatformInvoices() }));
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("checkout");
     if (id) setCheckout(id);
   }, []);
   if (!permissions(account.role).canViewBilling) {
     return (
-      <Page title="Billing">
+      <Page error={error} onRetry={reload} title="Billing">
         <div className="alert alert-amber">Billing is owner-only.</div>
       </Page>
     );
@@ -130,14 +130,14 @@ export default function BillingPage() {
   const target = data?.properties.find((p) => p.id === checkout);
   const monthly = data?.properties.filter((p) => p.billingStatus === "paid").reduce((s, p) => s + bedStats(p).total * p.pricePerBed, 0) ?? 0;
   return (
-    <Page title="Billing" sub="Your OneStay360 plan: pay per bed, per active property">
+    <Page error={error} onRetry={reload} title="Billing" sub="Your OneStay360 plan: pay per bed, per active property">
       <div className="glass card kpi-hero row wrap" style={{ gap: 20 }}>
         <div className="grow" style={{ flex: 1 }}>
           <div className="label" style={{ color: "#b9ccc5" }}>
             Current monthly cost
           </div>
           <div style={{ fontSize: 32, fontWeight: 800 }}>{money(monthly)}</div>
-          <div style={{ color: "#b9ccc5", fontSize: 13 }}>₹30 per bed per month on active properties</div>
+          <div style={{ color: "#b9ccc5", fontSize: 14 }}>₹30 per bed per month on active properties</div>
         </div>
       </div>
       <div className="glass card">
@@ -164,7 +164,7 @@ export default function BillingPage() {
                   <StatusBadge status={p.billingStatus} />
                   {p.billingStatus !== "paid" ? (
                     <button className="btn btn-primary btn-sm" onClick={() => setCheckout(p.id)}>
-                      Activate
+                      Activate property
                     </button>
                   ) : (
                     <button className="btn btn-ghost btn-sm" onClick={() => setCheckout(p.id)}>

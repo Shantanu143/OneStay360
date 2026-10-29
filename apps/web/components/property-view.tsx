@@ -40,24 +40,24 @@ export function PropertyView({ p, account, onRequireAuth, onJoined }: { p: Prope
                 {p.name}
               </h2>
               <div className="muted row" style={{ gap: 6, marginTop: 4 }}>
-                <MapPin size={15} /> {p.address}, {p.city} {p.pincode}
+                <MapPin size={15} aria-hidden /> {p.address}, {p.city} {p.pincode}
               </div>
             </div>
             <div className="row wrap" style={{ gap: 8 }}>
               {p.rating > 0 && (
                 <Badge tone="amber">
-                  <Star size={12} /> {p.rating.toFixed(1)}
+                  <Star size={12} aria-hidden /> {p.rating.toFixed(1)}
                 </Badge>
               )}
               <Badge tone="green">
-                <BedDouble size={12} /> {freeBeds(p)} beds free
+                <BedDouble size={12} aria-hidden /> {freeBeds(p)} beds free
               </Badge>
             </div>
           </div>
           {p.description && <p className="muted">{p.description}</p>}
           <div className="row wrap">
             <div style={{ marginRight: "auto" }}>
-              <span className="faint" style={{ fontSize: 13 }}>
+              <span className="faint" style={{ fontSize: 14 }}>
                 Rent from
               </span>
               <div style={{ fontSize: 26, fontWeight: 800 }}>
@@ -76,7 +76,7 @@ export function PropertyView({ p, account, onRequireAuth, onJoined }: { p: Prope
                   </button>
                 )}
                 <a className="btn btn-ghost" href={`tel:+91${p.businessPhone}`}>
-                  <Phone size={16} /> Call owner
+                  <Phone size={16} aria-hidden /> Call owner
                 </a>
                 <button className="btn btn-primary" onClick={start} disabled={freeBeds(p) === 0}>
                   {freeBeds(p) === 0 ? "Fully occupied" : "Request to join"}
@@ -111,7 +111,7 @@ export function PropertyView({ p, account, onRequireAuth, onJoined }: { p: Prope
                   </div>
                   <div style={{ textAlign: "right" }}>
                     <b className="num">{money(r.rentPerBed)}</b>
-                    <div className="faint" style={{ fontSize: 12 }}>
+                    <div className="faint" style={{ fontSize: 14 }}>
                       {free ? `${free} free` : "full"}
                     </div>
                   </div>
@@ -128,7 +128,7 @@ export function PropertyView({ p, account, onRequireAuth, onJoined }: { p: Prope
             <div className="chips">
               {p.amenities.map((a) => (
                 <span key={a} className="badge badge-green">
-                  <Check size={12} /> {a}
+                  <Check size={12} aria-hidden /> {a}
                 </span>
               ))}
             </div>

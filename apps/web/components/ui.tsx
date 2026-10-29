@@ -1,23 +1,34 @@
 "use client";
-// Shared building blocks: brand, theme toggle, modal, toasts, states, badges.
+// Shared building blocks: brand, theme switch, modal, toasts, states, badges,
+// form fields. Pages compose these instead of styling one-off variants.
 import Link from "next/link";
 import { useEffect, useRef, useState, type ReactNode } from "react";
-import { AlertTriangle, CheckCircle2, Info, Monitor, Moon, Sun, X, type LucideIcon } from "lucide-react";
+import { AlertTriangle, CheckCircle2, Info, Moon, RotateCcw, Search, Sun, X, type LucideIcon } from "lucide-react";
 import { applyTheme, effectiveDark, readTheme, useToasts, type ThemeChoice } from "@/lib/hooks";
 import { cls } from "@/lib/format";
 
-export function Brand({ href = "/", compact = false }: { href?: string; compact?: boolean }) {
+function BrandMark() {
+  return (
+    <span className="brand-mark">
+      {/* eslint-disable-next-line @next/next/no-img-element */}
+      <img src="/brand/mark-96.png" alt="" width={22} height={28} />
+    </span>
+  );
+}
+
+export function Brand({ href = "/", asLink = true }: { href?: string; asLink?: boolean }) {
+  const inner = (
+    <>
+      <BrandMark />
+      <span>
+        OneStay<b>360</b>
+      </span>
+    </>
+  );
+  if (!asLink) return <span className="brand">{inner}</span>;
   return (
     <Link href={href} className="brand" aria-label="OneStay360 home">
-      <span className="brand-mark">
-        {/* eslint-disable-next-line @next/next/no-img-element */}
-        <img src="/brand/mark.png" alt="" width={24} height={28} />
-      </span>
-      {!compact && (
-        <span>
-          OneStay<b>360</b>
-        </span>
-      )}
+      {inner}
     </Link>
   );
 }
@@ -27,12 +38,11 @@ export function Aurora() {
     <div className="aurora" aria-hidden>
       <span />
       <span />
-      <span />
     </div>
   );
 }
 
-export function ThemeToggle({ withLabel = false }: { withLabel?: boolean }) {
+function useTheme() {
   const [choice, setChoice] = useState<ThemeChoice>("system");
   const [dark, setDark] = useState(false);
   useEffect(() => {
@@ -44,33 +54,54 @@ export function ThemeToggle({ withLabel = false }: { withLabel?: boolean }) {
     mq.addEventListener("change", onChange);
     return () => mq.removeEventListener("change", onChange);
   }, []);
-  const next = () => {
-    // Cycle: system → the opposite of what system shows → back to system.
-    const order: ThemeChoice[] = dark ? ["system", "light", "dark"] : ["system", "dark", "light"];
-    const n = order[(order.indexOf(choice) + 1) % order.length]!;
-    applyTheme(n);
-    setChoice(n);
-    setDark(effectiveDark(n));
+  const set = (c: ThemeChoice) => {
+    applyTheme(c);
+    setChoice(c);
+    setDark(effectiveDark(c));
   };
-  const Icon = choice === "system" ? Monitor : dark ? Moon : Sun;
-  const label = choice === "system" ? "System theme" : dark ? "Dark theme" : "Light theme";
+  return { choice, dark, set };
+}
+
+/** One click switches between light and dark; the label says which you'll get. */
+export function ThemeToggle({ withLabel = false }: { withLabel?: boolean }) {
+  const { dark, set } = useTheme();
+  const label = dark ? "Switch to light theme" : "Switch to dark theme";
+  const Icon = dark ? Sun : Moon;
   if (withLabel) {
     return (
-      <button className="btn btn-ghost btn-sm" onClick={next} aria-label={`${label}. Switch theme`}>
-        <Icon size={16} /> {label}
+      <button className="btn btn-ghost btn-sm" onClick={() => set(dark ? "light" : "dark")}>
+        <Icon size={17} aria-hidden /> {dark ? "Light theme" : "Dark theme"}
       </button>
     );
   }
   return (
-    <button className="icon-btn" onClick={next} aria-label={`${label}. Switch theme`} title={label}>
+    <button className="icon-btn" onClick={() => set(dark ? "light" : "dark")} aria-label={label} title={label}>
       <Icon size={18} />
     </button>
+  );
+}
+
+/** Explicit Light / Dark / Match device choice, for settings screens. */
+export function ThemePicker() {
+  const { choice, set } = useTheme();
+  return (
+    <Segmented<ThemeChoice>
+      label="Theme"
+      value={choice}
+      onChange={set}
+      options={[
+        { value: "light", label: "Light" },
+        { value: "dark", label: "Dark" },
+        { value: "system", label: "Match device" },
+      ]}
+    />
   );
 }
 
 export function Modal({ title, subtitle, onClose, children, footer, wide }: { title: string; subtitle?: ReactNode; onClose: () => void; children: ReactNode; footer?: ReactNode; wide?: boolean }) {
   const ref = useRef<HTMLDivElement>(null);
   useEffect(() => {
+    const opener = document.activeElement as HTMLElement | null;
     const onKey = (e: KeyboardEvent) => {
       if (e.key !== "Escape") return;
       // Only the top-most modal closes.
@@ -84,17 +115,18 @@ export function Modal({ title, subtitle, onClose, children, footer, wide }: { ti
     return () => {
       document.removeEventListener("keydown", onKey);
       document.body.style.overflow = prev;
+      opener?.focus?.();
     };
   }, [onClose]);
   return (
     <div className="modal-scrim" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div ref={ref} className={cls("modal glass", wide && "wide")} role="dialog" aria-modal="true" aria-label={title}>
+      <div ref={ref} className={cls("modal", wide && "wide")} role="dialog" aria-modal="true" aria-label={title}>
         <div className="modal-head">
           <div>
-            <h3>{title}</h3>
-            {subtitle && <p className="muted" style={{ fontSize: 14, marginTop: 4 }}>{subtitle}</p>}
+            <h2>{title}</h2>
+            {subtitle && <p className="muted" style={{ marginTop: 6 }}>{subtitle}</p>}
           </div>
-          <button className="icon-btn modal-x" onClick={onClose} aria-label="Close">
+          <button className="icon-btn modal-x" onClick={onClose} aria-label="Close dialog">
             <X size={18} />
           </button>
         </div>
@@ -110,9 +142,9 @@ export function Toasts() {
   return (
     <div className="toasts" role="status" aria-live="polite">
       {items.map((t) => (
-        <div key={t.id} className={cls("toast glass", t.tone)}>
+        <div key={t.id} className={cls("toast", t.tone)}>
           {t.tone === "success" ? <CheckCircle2 size={18} /> : t.tone === "error" ? <AlertTriangle size={18} /> : <Info size={18} />}
-          {t.text}
+          <span>{t.text}</span>
         </div>
       ))}
     </div>
@@ -123,32 +155,35 @@ export function Empty({ icon: Icon, title, body, action }: { icon: LucideIcon; t
   return (
     <div className="empty">
       <span className="tile-ic grey">
-        <Icon size={24} />
+        <Icon size={26} />
       </span>
-      <b style={{ color: "var(--ink)" }}>{title}</b>
-      {body && <p style={{ maxWidth: 380, fontSize: 14 }}>{body}</p>}
-      {action}
+      <b>{title}</b>
+      {body && <p>{body}</p>}
+      {action && <div style={{ marginTop: 4 }}>{action}</div>}
     </div>
   );
 }
 
-export function Loading({ rows = 3 }: { rows?: number }) {
+export function Loading({ rows = 3, label = "Loading" }: { rows?: number; label?: string }) {
   return (
-    <div className="stack" aria-busy="true" aria-label="Loading">
+    <div className="stack" role="status" aria-busy="true" aria-label={label}>
       {Array.from({ length: rows }, (_, i) => (
-        <div key={i} className="skeleton" style={{ height: 56 }} />
+        <div key={i} className="skeleton" style={{ height: 64 }} />
       ))}
+      <span className="sr-only">{label}…</span>
     </div>
   );
 }
 
 export function ErrorNote({ message, onRetry }: { message: string; onRetry?: () => void }) {
   return (
-    <div className="alert alert-red row-between">
-      <span>{message}</span>
+    <div className="alert alert-red row-between wrap" role="alert">
+      <span className="row" style={{ gap: 10 }}>
+        <AlertTriangle size={18} /> <span>{message}</span>
+      </span>
       {onRetry && (
         <button className="btn btn-sm btn-ghost" onClick={onRetry}>
-          Retry
+          <RotateCcw size={15} aria-hidden /> Try again
         </button>
       )}
     </div>
@@ -176,13 +211,13 @@ const statusTones: Record<string, [Tone, string]> = {
   cancelled: ["grey", "Cancelled"],
   active: ["green", "Active"],
   vacated: ["grey", "Vacated"],
-  invited: ["amber", "Invited"],
+  invited: ["amber", "Invite sent"],
   accepted: ["green", "Accepted"],
-  payment_due: ["amber", "Payment due"],
+  payment_due: ["amber", "Not activated"],
   grace: ["amber", "Grace period"],
   past_due: ["red", "Past due"],
   suspended: ["red", "Suspended"],
-  inactive: ["grey", "Hidden"],
+  inactive: ["grey", "Hidden from Explore"],
   due: ["amber", "Due"],
   not_started: ["grey", "Not started"],
   submitted: ["amber", "In review"],
@@ -198,8 +233,8 @@ export function Kpi({ icon: Icon, label, value, hint, tone }: { icon: LucideIcon
   return (
     <div className="glass kpi">
       <div className="label">
-        <span className={cls("tile-ic", tone)} style={{ width: 30, height: 30, borderRadius: 9 }}>
-          <Icon size={16} />
+        <span className={cls("tile-ic", tone)} style={{ width: 32, height: 32, borderRadius: 9 }} aria-hidden>
+          <Icon size={17} />
         </span>
         {label}
       </div>
@@ -209,19 +244,41 @@ export function Kpi({ icon: Icon, label, value, hint, tone }: { icon: LucideIcon
   );
 }
 
-export function Field({ label, hint, children, full }: { label: string; hint?: ReactNode; children: ReactNode; full?: boolean }) {
+/** A labelled control. The label stays visible above the input; hints and
+ *  errors sit right under it. */
+export function Field({ label, hint, error, required, children, full }: { label: string; hint?: ReactNode; error?: string | null; required?: boolean; children: ReactNode; full?: boolean }) {
   return (
     <label className={cls("field", full && "full")}>
-      <span>{label}</span>
+      <span className="field-label">
+        {label}
+        {required && <span className="req">Required</span>}
+      </span>
       {children}
-      {hint && <small>{hint}</small>}
+      {error ? (
+        <span className="field-error" role="alert">
+          {error}
+        </span>
+      ) : (
+        hint && <span className="field-hint">{hint}</span>
+      )}
     </label>
   );
 }
 
-export function Segmented<T extends string>({ value, onChange, options }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode }[] }) {
+/** A labelled group of non-input controls (chips, choice cards). */
+export function FieldGroup({ label, hint, children, full }: { label: string; hint?: ReactNode; children: ReactNode; full?: boolean }) {
   return (
-    <div className="seg" role="tablist">
+    <div className={cls("field", full && "full")} role="group" aria-label={label}>
+      <span className="field-label">{label}</span>
+      {children}
+      {hint && <span className="field-hint">{hint}</span>}
+    </div>
+  );
+}
+
+export function Segmented<T extends string>({ value, onChange, options, label }: { value: T; onChange: (v: T) => void; options: { value: T; label: ReactNode }[]; label?: string }) {
+  return (
+    <div className="seg" role="tablist" aria-label={label}>
       {options.map((o) => (
         <button key={o.value} role="tab" aria-selected={value === o.value} onClick={() => onChange(o.value)}>
           {o.label}
@@ -235,7 +292,7 @@ export function Segmented<T extends string>({ value, onChange, options }: { valu
 export function useReveal() {
   useEffect(() => {
     const els = document.querySelectorAll(".reveal:not(.in)");
-    if (!("IntersectionObserver" in window)) {
+    if (!("IntersectionObserver" in window) || window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
       els.forEach((e) => e.classList.add("in"));
       return;
     }
@@ -248,7 +305,7 @@ export function useReveal() {
           }
         }
       },
-      { threshold: 0.12, rootMargin: "0px 0px -40px 0px" },
+      { threshold: 0.08, rootMargin: "0px 0px -40px 0px" },
     );
     els.forEach((e) => io.observe(e));
     return () => io.disconnect();
@@ -271,8 +328,23 @@ export function Confirm({ title, body, confirmLabel, danger, onConfirm, onClose,
         </>
       }
     >
-      {body && <p className="muted">{body}</p>}
-      {children}
+      <div className="stack">
+        {body && <p className="muted">{body}</p>}
+        {children}
+      </div>
     </Modal>
+  );
+}
+
+/** A labelled search box with a leading icon. */
+export function SearchField({ label, value, onChange, placeholder }: { label: string; value: string; onChange: (v: string) => void; placeholder?: string }) {
+  return (
+    <label className="field">
+      <span className="field-label">{label}</span>
+      <span style={{ position: "relative", display: "block" }}>
+        <Search size={17} aria-hidden style={{ position: "absolute", left: 14, top: 15, color: "var(--ink-faint)" }} />
+        <input className="input" type="search" value={value} onChange={(e) => onChange(e.target.value)} placeholder={placeholder} style={{ paddingLeft: 42 }} />
+      </span>
+    </label>
   );
 }

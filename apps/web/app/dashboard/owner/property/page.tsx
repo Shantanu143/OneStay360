@@ -37,22 +37,22 @@ function Layout({ p, tenants, canAdd, onAdd }: { p: Property; tenants: Tenant[];
         <h2>Floor plan</h2>
         <div className="legend">
           <span>
-            <i style={{ background: "var(--tint-green)" }} />
+            <i className="swatch free" aria-hidden />
             Free{canAdd ? " (click to add tenant)" : ""}
           </span>
           <span>
-            <i style={{ background: "var(--tint-amber)" }} />
+            <i className="swatch held" aria-hidden />
             Held
           </span>
           <span>
-            <i style={{ background: "var(--tint-grey)" }} />
+            <i className="swatch taken" aria-hidden />
             Occupied
           </span>
         </div>
       </div>
       {floors.map(([floor, rooms]) => (
         <div key={floor} className="floor">
-          <h4>{floor === 0 ? "Ground floor" : `Floor ${floor}`}</h4>
+          <h3>{floor === 0 ? "Ground floor" : `Floor ${floor}`}</h3>
           <div className="rooms" style={{ gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))" }}>
             {rooms.map((r) => (
               <div key={r.number} className="room">
@@ -60,12 +60,12 @@ function Layout({ p, tenants, canAdd, onAdd }: { p: Property; tenants: Tenant[];
                   <span>Room {r.number}</span>
                   <span className="row" style={{ gap: 4 }}>
                     {r.ac && <Badge tone="blue">AC</Badge>}
-                    <span className="faint" style={{ fontSize: 12 }}>
+                    <span className="faint" style={{ fontSize: 14 }}>
                       {money(r.rentPerBed)}
                     </span>
                   </span>
                 </div>
-                <div className="faint" style={{ fontSize: 12, marginBottom: 8 }}>
+                <div className="faint" style={{ fontSize: 14, marginBottom: 8 }}>
                   {sharingLabel(r.sharing)}
                   {r.attachedBath ? " · attached bath" : ""}
                 </div>
@@ -75,7 +75,7 @@ function Layout({ p, tenants, canAdd, onAdd }: { p: Property; tenants: Tenant[];
                     const isHeld = held.has(`${r.number}/${b.number}`);
                     if (t) {
                       return (
-                        <Link key={b.number} href={`/dashboard/owner/tenant/?id=${t.id}`} className="row" style={{ gap: 8, fontSize: 13 }}>
+                        <Link key={b.number} href={`/dashboard/owner/tenant/?id=${t.id}`} className="row" style={{ gap: 8, fontSize: 14 }}>
                           <span className="bed taken">{b.number}</span>
                           <span style={{ overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{t.name}</span>
                         </Link>
@@ -85,7 +85,7 @@ function Layout({ p, tenants, canAdd, onAdd }: { p: Property; tenants: Tenant[];
                       <button
                         key={b.number}
                         className="row"
-                        style={{ gap: 8, fontSize: 13, border: 0, background: "none", padding: 0, textAlign: "left", cursor: canAdd && !isHeld ? "pointer" : "default" }}
+                        style={{ gap: 8, fontSize: 14, border: 0, background: "none", padding: 0, textAlign: "left", cursor: canAdd && !isHeld ? "pointer" : "default" }}
                         disabled={!canAdd || isHeld}
                         onClick={() => onAdd(r.number, b.number, r.rentPerBed)}
                       >
@@ -123,16 +123,16 @@ function QrTab({ p }: { p: Property }) {
       <div className="stack">
         <h2 className="h3">Scan to view &amp; join {p.name}</h2>
         <p className="muted">Print this at your gate or reception. Visitors see rooms, prices, amenities and rules, and can send a join request that lands in Join requests.</p>
-        <code style={{ fontSize: 13, padding: 10, borderRadius: 10, background: "var(--tint-grey)", overflowWrap: "anywhere" }}>{url}</code>
+        <code style={{ fontSize: 14, padding: 10, borderRadius: 10, background: "var(--tint-grey)", overflowWrap: "anywhere" }}>{url}</code>
         <div className="row wrap">
           <a className="btn btn-primary" href={img} download={`${p.name.replace(/\s+/g, "-")}-qr.png`}>
-            <Download size={16} /> Download PNG
+            <Download size={16} aria-hidden /> Download PNG
           </a>
           <button className="btn btn-ghost" onClick={() => navigator.clipboard?.writeText(url).then(() => toast("Link copied", "success"))}>
-            <Copy size={16} /> Copy link
+            <Copy size={16} aria-hidden /> Copy link
           </button>
           <Link className="btn btn-ghost" href={`/pg/?id=${encodeURIComponent(p.id)}`} target="_blank">
-            <Eye size={16} /> Preview page
+            <Eye size={16} aria-hidden /> Preview page
           </Link>
         </div>
         {p.billingStatus !== "paid" && <div className="alert alert-amber">This property isn&apos;t activated yet, so its page isn&apos;t public. Activate it under Billing.</div>}
@@ -148,7 +148,7 @@ export default function PropertyPage() {
   const [tab, setTab] = useState<Tab>("overview");
   const [addAt, setAddAt] = useState<{ room: string; bed: string; rent: number } | null>(null);
   const { busy, run } = useAction();
-  const { data, loading } = useQuery(
+  const { data, loading, error, reload } = useQuery(
     async (b) => {
       if (!id) return null;
       const property = await b.getProperty(id);
@@ -171,14 +171,14 @@ export default function PropertyPage() {
 
   if (loading || id === null) {
     return (
-      <Page title="Property">
+      <Page error={error} onRetry={reload} title="Property">
         <Loading />
       </Page>
     );
   }
   if (!data) {
     return (
-      <Page title="Property">
+      <Page error={error} onRetry={reload} title="Property">
         <div className="glass card">
           <Empty icon={Building2} title="Property not found" body="It may have been removed, or you don't have access." action={<Link href="/dashboard/owner/properties/" className="btn btn-ghost">Back to properties</Link>} />
         </div>
@@ -194,21 +194,21 @@ export default function PropertyPage() {
   const openReq = requests.filter((r) => !["confirmed", "rejected"].includes(r.status));
 
   return (
-    <Page
+    <Page error={error} onRetry={reload}
       title={p.name}
       sub={
         <span className="row" style={{ gap: 6 }}>
-          <MapPin size={13} /> {p.city} · {genderLabel(p.gender)}
+          <MapPin size={13} aria-hidden /> {p.city} · {genderLabel(p.gender)}
         </span>
       }
       actions={
         <>
-          <Link href="/dashboard/owner/properties/" className="btn btn-ghost btn-sm hide-sm">
-            <ArrowLeft size={16} /> All
+          <Link href="/dashboard/owner/properties/" className="btn btn-ghost btn-sm">
+            <ArrowLeft size={16} aria-hidden /> All properties
           </Link>
           {can.canEditProperties && (
             <Link href={`/dashboard/owner/property-form/?id=${p.id}`} className="btn btn-primary btn-sm">
-              <Pencil size={15} /> Edit
+              <Pencil size={15} aria-hidden /> Edit property
             </Link>
           )}
         </>
@@ -298,7 +298,7 @@ export default function PropertyPage() {
                 <div className="chips">
                   {can.canManageTenants && (
                     <button className="btn btn-soft" onClick={() => setTab("layout")}>
-                      <UserPlus size={16} /> Add tenant to a bed
+                      <UserPlus size={16} aria-hidden /> Add tenant to a bed
                     </button>
                   )}
                   {can.canEditProperties && (
@@ -308,7 +308,7 @@ export default function PropertyPage() {
                   )}
                   {can.canViewBilling && p.billingStatus !== "paid" && (
                     <Link href={`/dashboard/owner/billing/?checkout=${p.id}`} className="btn btn-primary">
-                      <Receipt size={16} /> Activate property
+                      <Receipt size={16} aria-hidden /> Activate property
                     </Link>
                   )}
                 </div>

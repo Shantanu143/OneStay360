@@ -2,17 +2,28 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
-import { ArrowRight, Briefcase, Home } from "lucide-react";
+import { Briefcase, Home } from "lucide-react";
 import { AuthShell, nextPath } from "@/components/auth-shell";
-import { Field } from "@/components/ui";
+import { Field, FieldGroup } from "@/components/ui";
 import { useBackend } from "@/lib/hooks";
+
+type Form = { name: string; email: string; phone: string; password: string };
+
+function validate(f: Form): Partial<Record<keyof Form, string>> {
+  return {
+    name: f.name.trim().length < 2 ? "Enter your full name." : undefined,
+    email: !/^\S+@\S+\.\S+$/.test(f.email.trim()) ? "Enter a valid email, like name@example.com." : undefined,
+    phone: f.phone.replace(/\D/g, "").slice(-10).length !== 10 ? "Enter a 10-digit mobile number." : undefined,
+    password: f.password.length < 6 ? "Use at least 6 characters." : undefined,
+  };
+}
 
 export default function SignUpPage() {
   const backend = useBackend();
   const router = useRouter();
   const [kind, setKind] = useState<"business" | "tenant">("business");
-  const [form, setForm] = useState({ name: "", email: "", phone: "", password: "" });
-  const [agree, setAgree] = useState(true);
+  const [form, setForm] = useState<Form>({ name: "", email: "", phone: "", password: "" });
+  const [errors, setErrors] = useState<Partial<Record<keyof Form, string>>>({});
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -21,14 +32,16 @@ export default function SignUpPage() {
     if (k === "tenant" || k === "business") setKind(k);
   }, []);
 
-  const set = (k: keyof typeof form) => (e: React.ChangeEvent<HTMLInputElement>) => setForm((f) => ({ ...f, [k]: e.target.value }));
+  const set = (k: keyof Form) => (e: React.ChangeEvent<HTMLInputElement>) => {
+    setForm((f) => ({ ...f, [k]: e.target.value }));
+    if (errors[k]) setErrors((x) => ({ ...x, [k]: undefined }));
+  };
 
   const submit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!agree) {
-      setError("Please accept the terms to continue.");
-      return;
-    }
+    const errs = validate(form);
+    setErrors(errs);
+    if (Object.values(errs).some(Boolean)) return;
     setBusy(true);
     setError(null);
     try {
@@ -42,47 +55,49 @@ export default function SignUpPage() {
 
   return (
     <AuthShell>
-      <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em" }}>Create your account</h1>
-      <p className="muted" style={{ marginTop: 6, marginBottom: 20 }}>
-        It takes less than a minute.
+      <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2 }}>Create your account</h1>
+      <p className="muted" style={{ marginTop: 8, marginBottom: 28 }}>
+        Free to start. It takes about a minute.
       </p>
-      <div className="role-pick" role="radiogroup" aria-label="Account type" style={{ marginBottom: 18 }}>
-        <button type="button" role="radio" aria-pressed={kind === "business"} aria-checked={kind === "business"} onClick={() => setKind("business")}>
-          <Briefcase size={20} color="var(--brand)" />
-          <b>I own or manage a PG</b>
-          <small>Properties, tenants, rent</small>
-        </button>
-        <button type="button" role="radio" aria-pressed={kind === "tenant"} aria-checked={kind === "tenant"} onClick={() => setKind("tenant")}>
-          <Home size={20} color="var(--brand)" />
-          <b>I&apos;m a tenant</b>
-          <small>Find a PG, pay rent</small>
-        </button>
-      </div>
-      <form className="stack" onSubmit={submit}>
-        <Field label="Full name">
-          <input className="input" required autoComplete="name" value={form.name} onChange={set("name")} placeholder="Your name" />
+      <form className="stack" style={{ gap: 20 }} onSubmit={submit} noValidate>
+        <FieldGroup label="I want to">
+          <div className="role-pick" role="radiogroup" aria-label="Account type">
+            <button type="button" role="radio" aria-checked={kind === "business"} onClick={() => setKind("business")}>
+              <Briefcase size={20} color="var(--brand-text)" aria-hidden />
+              <b>Manage a PG</b>
+              <small>Properties, tenants and rent</small>
+            </button>
+            <button type="button" role="radio" aria-checked={kind === "tenant"} onClick={() => setKind("tenant")}>
+              <Home size={20} color="var(--brand-text)" aria-hidden />
+              <b>Find or live in a PG</b>
+              <small>Join a PG and pay rent</small>
+            </button>
+          </div>
+        </FieldGroup>
+        <Field label="Full name" required error={errors.name}>
+          <input className="input" autoComplete="name" aria-invalid={!!errors.name} value={form.name} onChange={set("name")} placeholder="e.g. Asha Rao" />
         </Field>
-        <Field label="Email">
-          <input className="input" type="email" required autoComplete="email" value={form.email} onChange={set("email")} placeholder="you@example.com" />
+        <Field label="Email address" required error={errors.email}>
+          <input className="input" type="email" autoComplete="email" aria-invalid={!!errors.email} value={form.email} onChange={set("email")} placeholder="you@example.com" />
         </Field>
-        <Field label="Mobile number" hint={kind === "tenant" ? "Owners invite you by this number." : "Team invites are matched to this number."}>
-          <input className="input" type="tel" required inputMode="numeric" autoComplete="tel" value={form.phone} onChange={set("phone")} placeholder="98765 43210" />
+        <Field label="Mobile number" required error={errors.phone} hint={kind === "tenant" ? "Owners invite you to a bed using this number." : "Team invitations are matched to this number."}>
+          <input className="input" type="tel" inputMode="numeric" autoComplete="tel" aria-invalid={!!errors.phone} value={form.phone} onChange={set("phone")} placeholder="98765 43210" />
         </Field>
-        <Field label="Password" hint="At least 6 characters.">
-          <input className="input" type="password" required minLength={6} autoComplete="new-password" value={form.password} onChange={set("password")} placeholder="••••••••" />
+        <Field label="Password" required error={errors.password} hint="At least 6 characters.">
+          <input className="input" type="password" autoComplete="new-password" aria-invalid={!!errors.password} value={form.password} onChange={set("password")} />
         </Field>
-        <label className="check" style={{ fontSize: 13 }}>
-          <input type="checkbox" checked={agree} onChange={(e) => setAgree(e.target.checked)} />
-          <span className="muted">I agree to the Terms of Service and Privacy Policy.</span>
-        </label>
-        {error && <div className="alert alert-red">{error}</div>}
-        <button className="btn btn-primary btn-block btn-lg" disabled={busy}>
-          {busy ? "Creating account…" : kind === "business" ? "Create owner account" : "Create tenant account"} <ArrowRight size={18} />
+        {error && (
+          <div className="alert alert-red" role="alert">
+            {error}
+          </div>
+        )}
+        <button className="btn btn-primary btn-block btn-lg" disabled={busy} aria-busy={busy}>
+          {busy ? "Creating your account…" : kind === "business" ? "Create owner account" : "Create tenant account"}
         </button>
       </form>
-      <p className="muted" style={{ marginTop: 20, fontSize: 14, textAlign: "center" }}>
+      <p className="muted" style={{ marginTop: 28, textAlign: "center" }}>
         Already have an account?{" "}
-        <Link href="/signin/" style={{ color: "var(--brand)", fontWeight: 650 }}>
+        <Link href="/signin/" className="text-link">
           Sign in
         </Link>
       </p>

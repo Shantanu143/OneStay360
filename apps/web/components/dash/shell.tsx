@@ -25,7 +25,7 @@ import {
   Wrench,
   type LucideIcon,
 } from "lucide-react";
-import { Brand, ThemeToggle } from "../ui";
+import { Brand, ErrorNote, ThemeToggle } from "../ui";
 import { useBackend, useQuery } from "@/lib/hooks";
 import { cls, initials } from "@/lib/format";
 import { permissions } from "@/lib/permissions";
@@ -144,7 +144,7 @@ export function Shell({ account, children }: { account: Account; children: React
   return (
     <ShellCtx.Provider value={{ openNav: () => setOpen(true), account }}>
       <div className="app">
-        <aside className={cls("sidebar", open && "open")} aria-label="Dashboard navigation">
+        <aside id="dash-nav" className={cls("sidebar", open && "open")} aria-label="Dashboard navigation">
           <Brand href={home} />
           {groups.map((g) => (
             <div key={g.title}>
@@ -153,41 +153,59 @@ export function Shell({ account, children }: { account: Account; children: React
                 const Icon = it.icon;
                 return (
                   <Link key={it.href} href={it.href} className={cls("side-link", isActive(it.href) && "active")} aria-current={isActive(it.href) ? "page" : undefined}>
-                    <Icon size={18} />
+                    <Icon size={19} aria-hidden />
                     {it.label}
-                    {!!it.count && <span className="count">{it.count > 99 ? "99+" : it.count}</span>}
+                    {!!it.count && (
+                      <span className="count" aria-label={`${it.count} need attention`}>
+                        {it.count > 99 ? "99+" : it.count}
+                      </span>
+                    )}
                   </Link>
                 );
               })}
             </div>
           ))}
-          <div className="glass user-chip" style={{ marginTop: "auto" }}>
-            <span className="avatar">{initials(account.name)}</span>
-            <div style={{ minWidth: 0, flex: 1 }}>
-              <div style={{ fontWeight: 650, fontSize: 14, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.name}</div>
-              <div className="faint" style={{ fontSize: 12, textTransform: "capitalize" }}>
-                {account.kind === "tenant" ? "Tenant" : account.role ?? "Owner"}
+          <div className="sidebar-foot">
+            <ThemeToggle withLabel />
+            <div className="user-chip">
+              <span className="avatar" aria-hidden>
+                {initials(account.name)}
+              </span>
+              <div style={{ minWidth: 0, flex: 1 }}>
+                <div style={{ fontWeight: 650, fontSize: 15, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{account.name}</div>
+                <div className="muted" style={{ fontSize: 14 }}>
+                  {account.kind === "tenant" ? "Tenant" : account.role === "manager" ? "Manager" : account.role === "staff" ? "Staff" : "Owner"}
+                </div>
               </div>
             </div>
-            <button className="icon-btn" style={{ width: 34, height: 34 }} aria-label="Sign out" title="Sign out" onClick={() => backend.signOut().then(() => (window.location.href = "/"))}>
-              <LogOut size={16} />
+            <button className="btn btn-ghost btn-sm" onClick={() => backend.signOut().then(() => (window.location.href = "/"))}>
+              <LogOut size={16} aria-hidden /> Sign out
             </button>
           </div>
         </aside>
-        <div className={cls("scrim", open && "open")} onClick={() => setOpen(false)} />
+        <div className={cls("scrim", open && "open")} onClick={() => setOpen(false)} aria-hidden />
         <div className="main">
           {backend.mode === "demo" && (
-            <div className="demo-banner">
+            <section className="demo-banner" aria-label="Demo mode notice">
               <b>Demo mode.</b>
-              <span className="hide-sm">Data lives in this browser. Sign in as other demo accounts to see both sides of a flow.</span>
-              <span className="hide-sm-inverse">Sample data, saved in this browser.</span>
+              <span className="hide-sm">Sample data, saved only in this browser. Sign in as other demo accounts to see both sides of a flow.</span>
+              <span className="show-sm">Sample data, saved in this browser.</span>
               {backend.resetDemo && (
-                <button className="btn btn-sm" style={{ height: 26, background: "transparent", border: "1px solid currentColor", color: "inherit", marginLeft: "auto" }} onClick={() => backend.resetDemo!().then(() => (window.location.href = "/signin/"))}>
-                  <RotateCcw size={13} /> Reset demo
+                <button className="btn btn-sm btn-text" style={{ marginLeft: "auto", color: "inherit", minHeight: 32 }} onClick={() => backend.resetDemo!().then(() => (window.location.href = "/signin/"))}>
+                  <RotateCcw size={15} aria-hidden /> Reset demo data
                 </button>
               )}
-            </div>
+            </section>
           )}
+          <header className="mobile-bar">
+            <button className="icon-btn" onClick={() => setOpen(true)} aria-label="Open navigation" aria-expanded={open} aria-controls="dash-nav">
+              <Menu size={20} />
+            </button>
+            <Brand href={home} />
+            <span className="spacer" />
+            <ThemeToggle />
+          </header>
+          <TableLabels />
           {children}
         </div>
       </div>
@@ -195,24 +213,45 @@ export function Shell({ account, children }: { account: Account; children: React
   );
 }
 
-export function Page({ title, sub, actions, children }: { title: ReactNode; sub?: ReactNode; actions?: ReactNode; children: ReactNode }) {
-  const { openNav } = useShell();
+/** Copies each table's column headings onto its cells (data-label), so
+ *  tables can stack into labelled cards on phones. */
+function TableLabels() {
+  useEffect(() => {
+    const label = () => {
+      document.querySelectorAll<HTMLTableElement>("table.table").forEach((t) => {
+        const heads = [...t.querySelectorAll("thead th")].map((th) => th.textContent?.trim() ?? "");
+        t.querySelectorAll("tbody tr").forEach((tr) =>
+          [...tr.children].forEach((td, i) => {
+            if (td.getAttribute("data-label") !== (heads[i] ?? "")) td.setAttribute("data-label", heads[i] ?? "");
+          }),
+        );
+      });
+    };
+    label();
+    const mo = new MutationObserver(label);
+    mo.observe(document.body, { childList: true, subtree: true });
+    return () => mo.disconnect();
+  }, []);
+  return null;
+}
+
+/** A dashboard screen: one clear heading, a short description and the
+ *  screen's main actions, then the content. Shows an error state with a
+ *  retry instead of an endless spinner when its data fails to load. */
+export function Page({ title, sub, actions, error, onRetry, children }: { title: string; sub?: ReactNode; actions?: ReactNode; error?: string | null; onRetry?: () => void; children: ReactNode }) {
+  useEffect(() => {
+    document.title = `${title} | OneStay360`;
+  }, [title]);
   return (
-    <>
-      <header className="topbar">
-        <button className="icon-btn menu-btn" onClick={openNav} aria-label="Open menu">
-          <Menu size={18} />
-        </button>
-        <div style={{ minWidth: 0, flex: 1 }}>
+    <main id="main" className="content">
+      <div className="page-head">
+        <div style={{ minWidth: 0 }}>
           <h1>{title}</h1>
-          {sub && <div className="sub">{sub}</div>}
+          {sub && <p className="sub">{sub}</p>}
         </div>
-        <div className="row" style={{ gap: 8 }}>
-          {actions}
-          <ThemeToggle />
-        </div>
-      </header>
-      <div className="content">{children}</div>
-    </>
+        {actions && <div className="page-actions">{actions}</div>}
+      </div>
+      {error ? <ErrorNote message={`We couldn't load this page. ${error}`} onRetry={onRetry} /> : children}
+    </main>
   );
 }

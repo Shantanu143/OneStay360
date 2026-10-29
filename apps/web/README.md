@@ -37,6 +37,21 @@ The app currently runs on `DemoBackend` (`lib/backend/demo/`): a seeded workspac
 
 Connecting the live `onestay360-1` project means adding a `FirebaseBackend` that implements the same interface with the Firebase JS SDK (Auth, Firestore, callable functions, and App Check with reCAPTCHA for web) and returning it from `lib/backend/index.ts`.
 
+## SEO and configuration
+
+Set these at build time:
+
+| Variable | Purpose |
+| --- | --- |
+| `NEXT_PUBLIC_SITE_URL` | Production origin used for canonical URLs, the sitemap, robots.txt and Open Graph tags. Defaults to `https://app.onestay360.brandedpatil.in`. |
+| `NEXT_PUBLIC_CONTACT_EMAIL` | Optional. When set, the footer and pricing show a contact email. |
+
+Public pages (`/`, `/features/business/`, `/features/tenant/`, `/signup/`) have their own title, description, canonical URL and Open Graph/Twitter card (`public/og.png`). The home page carries Organization, WebSite, SoftwareApplication (with prices) and FAQPage structured data; feature pages carry breadcrumbs. `robots.txt` and `sitemap.xml` are generated at build. Sign-in, the public PG page and the whole dashboard are `noindex`.
+
+## Design rules
+
+The UI follows a written set of rules: 16px body text and labels, 14px minimum supporting text, a 4/8/16/24/32/48/64 spacing scale, one 30px page heading per screen with its main actions beside it, labels above every field with inline errors, descriptive button labels, explicit loading/empty/error states, statuses shown as text (not colour alone), tables that stack into labelled cards on phones, and reduced-motion support. `axe-core` reports no WCAG 2 A/AA or best-practice violations on the public pages and dashboards in light or dark theme.
+
 ## Deploy
 
 `out/` is plain static files (`trailingSlash: true`, ids passed as `?id=` query params), so any static host works. The repo's `firebase.json` hosting target currently serves `hosting/app-links`; to host this site on Firebase, add a separate hosting target pointing at `apps/web/out`.

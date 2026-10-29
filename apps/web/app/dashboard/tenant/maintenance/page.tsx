@@ -10,18 +10,18 @@ import { ago, date } from "@/lib/format";
 import type { MaintenanceCategory } from "@/lib/types";
 
 export default function TenantMaintenancePage() {
-  const { data, loading } = useQuery(async (b) => ({ stay: await b.getStay(), list: await b.listMyMaintenance() }));
+  const { data, loading, error, reload } = useQuery(async (b) => ({ stay: await b.getStay(), list: await b.listMyMaintenance() }));
   const { busy, run } = useAction();
   const [raising, setRaising] = useState(false);
   const [form, setForm] = useState({ category: "plumbing" as MaintenanceCategory, title: "", description: "", urgent: false });
   return (
-    <Page
+    <Page error={error} onRetry={reload}
       title="Maintenance"
       sub={data?.stay ? `${data.stay.property.name} · Room ${data.stay.tenant.roomNumber}` : undefined}
       actions={
         data?.stay && (
           <button className="btn btn-primary btn-sm" onClick={() => setRaising(true)}>
-            <Plus size={16} /> Raise request
+            <Plus size={16} aria-hidden /> Raise request
           </button>
         )
       }
@@ -34,7 +34,7 @@ export default function TenantMaintenancePage() {
         </div>
       ) : !data?.list.length ? (
         <div className="glass card">
-          <Empty icon={Wrench} title="Nothing broken?" body="If something needs fixing, raise a request. Your owner is notified and you'll see every update here." action={<button className="btn btn-primary" onClick={() => setRaising(true)}><Plus size={16} /> Raise request</button>} />
+          <Empty icon={Wrench} title="Nothing broken?" body="If something needs fixing, raise a request. Your owner is notified and you'll see every update here." action={<button className="btn btn-primary" onClick={() => setRaising(true)}><Plus size={16} aria-hidden /> Raise request</button>} />
         </div>
       ) : (
         <div className="grid-2">
@@ -46,7 +46,7 @@ export default function TenantMaintenancePage() {
                   {m.urgent && <Badge tone="red">Urgent</Badge>}
                   <Badge tone="grey">{categoryLabels[m.category]}</Badge>
                 </div>
-                <span className="faint" style={{ fontSize: 12 }}>
+                <span className="faint" style={{ fontSize: 14 }}>
                   {ago(m.createdAt)}
                 </span>
               </div>
@@ -54,7 +54,7 @@ export default function TenantMaintenancePage() {
               {m.description && <p className="muted" style={{ fontSize: 14 }}>{m.description}</p>}
               {m.ownerNote && <div className="alert alert-blue">Owner: {m.ownerNote}</div>}
               <div className="row-between">
-                <span className="faint" style={{ fontSize: 12.5 }}>
+                <span className="faint" style={{ fontSize: 14 }}>
                   Updated {date(m.updatedAt)}
                 </span>
                 {m.status === "open" && (
@@ -88,14 +88,14 @@ export default function TenantMaintenancePage() {
                   })
                 }
               >
-                Submit
+                Send to owner
               </button>
             </>
           }
         >
           <div className="stack">
-            <div className="field">
-              <span>Category</span>
+            <div className="field" role="group" aria-label="Category">
+              <span className="field-label">Category</span>
               <div className="chips">
                 {(Object.keys(categoryLabels) as MaintenanceCategory[]).map((c) => (
                   <button key={c} type="button" className="chip" aria-pressed={form.category === c} onClick={() => setForm({ ...form, category: c })}>

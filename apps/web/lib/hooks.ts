@@ -99,6 +99,9 @@ export function useAction() {
   const run = useCallback(
     async <T,>(fn: (b: Backend) => Promise<T>, success?: string): Promise<{ ok: true; value: T } | { ok: false; value?: undefined }> => {
       setBusy(true);
+      // The button that started the action shows a spinner until it settles.
+      const trigger = typeof document !== "undefined" && document.activeElement instanceof HTMLButtonElement ? document.activeElement : null;
+      trigger?.setAttribute("aria-busy", "true");
       try {
         const value = await fn(getBackend());
         if (success) toast(success, "success");
@@ -107,6 +110,7 @@ export function useAction() {
         toast(e instanceof Error ? e.message : String(e), "error");
         return { ok: false };
       } finally {
+        trigger?.removeAttribute("aria-busy");
         setBusy(false);
       }
     },

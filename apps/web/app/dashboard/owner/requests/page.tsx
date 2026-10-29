@@ -60,14 +60,14 @@ function BillForm({ r, property, methods, mode, onDone }: { r: EnrollmentRequest
   return (
     <div className="stack-lg">
       <div>
-        <b style={{ fontSize: 14 }}>1. Assign a bed</b>
-        <p className="faint" style={{ fontSize: 13, margin: "2px 0 10px" }}>
+        <h3 style={{ fontSize: 17, fontWeight: 700 }}>1. Assign a bed</h3>
+        <p className="faint" style={{ fontSize: 14, margin: "2px 0 10px" }}>
           Wants: {r.sharing || "any sharing"}
         </p>
         <BedPicker property={property} value={bed && { room: bed.room, bed: bed.bed }} onChange={setBed} held={held} />
       </div>
       <div>
-        <b style={{ fontSize: 14 }}>2. First bill</b>
+        <h3 style={{ fontSize: 17, fontWeight: 700 }}>2. First bill</h3>
         <div className="form-grid" style={{ marginTop: 10 }}>
           <Field label="Monthly rent (₹)">
             <input className="input" type="number" value={terms.rent} onChange={(e) => setTerms({ ...terms, rent: +e.target.value })} />
@@ -85,7 +85,7 @@ function BillForm({ r, property, methods, mode, onDone }: { r: EnrollmentRequest
       </div>
       {mode === "bill" && (
         <div>
-          <b style={{ fontSize: 14 }}>3. How should they pay?</b>
+          <h3 style={{ fontSize: 17, fontWeight: 700 }}>3. How should they pay?</h3>
           <div className="chips" style={{ margin: "10px 0" }}>
             {(["upi", "bank", "cash"] as const).map((m) => (
               <button key={m} type="button" className="chip" aria-pressed={payMode === m} onClick={() => setPayMode(m)}>
@@ -121,11 +121,11 @@ function BillForm({ r, property, methods, mode, onDone }: { r: EnrollmentRequest
         <button className="btn btn-primary" disabled={busy || !bed} onClick={submit}>
           {mode === "approve" ? (
             <>
-              <Check size={16} /> Approve &amp; reserve bed
+              <Check size={16} aria-hidden /> Approve &amp; reserve bed
             </>
           ) : (
             <>
-              <Send size={16} /> Send bill
+              <Send size={16} aria-hidden /> Send bill
             </>
           )}
         </button>
@@ -195,17 +195,17 @@ function RequestDetail({ r, onClose }: { r: EnrollmentRequest; onClose: () => vo
                   <p className="muted">Pick a bed and send the first bill in one go, or just reserve the bed and bill later.</p>
                   <div className="row wrap">
                     <button className="btn btn-primary" onClick={() => setMode("bill")}>
-                      <Send size={16} /> Approve &amp; send bill
+                      <Send size={16} aria-hidden /> Approve &amp; send bill
                     </button>
                     <button className="btn btn-ghost" onClick={() => setMode("approve")}>
-                      <Check size={16} /> Approve only
+                      <Check size={16} aria-hidden /> Approve only
                     </button>
                   </div>
                 </>
               )}
               {r.status === "approved" && (
                 <button className="btn btn-primary" onClick={() => setMode("bill")}>
-                  <Send size={16} /> Send first bill
+                  <Send size={16} aria-hidden /> Send first bill
                 </button>
               )}
               {r.status === "bill_sent" && (
@@ -216,7 +216,7 @@ function RequestDetail({ r, onClose }: { r: EnrollmentRequest; onClose: () => vo
                   <div className="row wrap">
                     {r.paymentMode === "cash" && (
                       <button className="btn btn-primary" disabled={busy} onClick={() => run((b) => b.confirmRequestPayment(r.id), `${r.tenantName} is now a tenant`).then((x) => x.ok && onClose())}>
-                        <Check size={16} /> Cash received — confirm
+                        <Check size={16} aria-hidden /> Cash received — confirm
                       </button>
                     )}
                     <button className="btn btn-ghost" onClick={() => setMode("bill")}>
@@ -232,7 +232,7 @@ function RequestDetail({ r, onClose }: { r: EnrollmentRequest; onClose: () => vo
                   </div>
                   <div className="row wrap">
                     <button className="btn btn-primary" disabled={busy} onClick={() => run((b) => b.confirmRequestPayment(r.id), `${r.tenantName} is now a tenant`).then((x) => x.ok && onClose())}>
-                      <Check size={16} /> Confirm payment &amp; move in
+                      <Check size={16} aria-hidden /> Confirm payment &amp; move in
                     </button>
                     <button className="btn btn-danger" onClick={() => setReject("payment")}>
                       <X size={16} /> Payment not received
@@ -251,7 +251,7 @@ function RequestDetail({ r, onClose }: { r: EnrollmentRequest; onClose: () => vo
                 </button>
               )}
               <a className="btn btn-ghost" href={`tel:+91${r.tenantPhone}`} style={{ alignSelf: "flex-start" }}>
-                <Phone size={16} /> Call {r.tenantName.split(" ")[0]}
+                <Phone size={16} aria-hidden /> Call {r.tenantName.split(" ")[0]}
               </a>
             </>
           )}
@@ -286,7 +286,7 @@ function RequestDetail({ r, onClose }: { r: EnrollmentRequest; onClose: () => vo
 export default function RequestsPage() {
   const [filter, setFilter] = useState<Filter>("open");
   const [selected, setSelected] = useState<string | null>(null);
-  const { data, loading } = useQuery((b) => b.listRequests());
+  const { data, loading, error, reload } = useQuery((b) => b.listRequests());
   useEffect(() => {
     const id = new URLSearchParams(window.location.search).get("id");
     if (id) setSelected(id);
@@ -296,7 +296,7 @@ export default function RequestsPage() {
   const counts = { open: data?.filter((r) => !["confirmed", "rejected"].includes(r.status)).length ?? 0 };
 
   return (
-    <Page title="Join requests" sub="Tenants who found you on Explore or scanned your QR">
+    <Page error={error} onRetry={reload} title="Join requests" sub="Tenants who found you on Explore or scanned your QR">
       <Segmented<Filter>
         value={filter}
         onChange={setFilter}
@@ -324,7 +324,7 @@ export default function RequestsPage() {
                     {r.roomNumber ? ` · Room ${r.roomNumber}-${r.bedNumber}` : ""}
                   </div>
                 </div>
-                <span className="faint hide-sm" style={{ fontSize: 12 }}>
+                <span className="faint hide-sm" style={{ fontSize: 14 }}>
                   {ago(r.updatedAt)}
                 </span>
                 <StatusBadge status={r.status} />

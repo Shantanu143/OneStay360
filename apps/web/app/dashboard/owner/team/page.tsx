@@ -17,14 +17,14 @@ const roleInfo = {
 export default function TeamPage() {
   const { account } = useShell();
   const { busy, run } = useAction();
-  const { data, loading } = useQuery(async (b) => ({ members: await b.listMembers(), properties: await b.listProperties() }));
+  const { data, loading, error, reload } = useQuery(async (b) => ({ members: await b.listMembers(), properties: await b.listProperties() }));
   const [editing, setEditing] = useState<Member | "new" | null>(null);
   const [removing, setRemoving] = useState<Member | null>(null);
   const [form, setForm] = useState({ name: "", phone: "", email: "", role: "manager" as "manager" | "staff", propertyIds: [] as string[] });
 
   if (!permissions(account.role).canInviteMembers) {
     return (
-      <Page title="Team">
+      <Page error={error} onRetry={reload} title="Team">
         <div className="alert alert-amber">Team management is owner-only.</div>
       </Page>
     );
@@ -40,12 +40,12 @@ export default function TeamPage() {
   const propName = (id: string) => data?.properties.find((p) => p.id === id)?.name ?? id;
 
   return (
-    <Page
+    <Page error={error} onRetry={reload}
       title="Team"
       sub="Owner, managers and staff"
       actions={
         <button className="btn btn-primary btn-sm" onClick={() => open("new")}>
-          <UserPlus size={16} /> Invite
+          <UserPlus size={16} aria-hidden /> Invite a team member
         </button>
       }
     >
@@ -61,7 +61,7 @@ export default function TeamPage() {
             </span>
             <div>
               <b>{r}</b>
-              <p className="muted" style={{ fontSize: 13 }}>
+              <p className="muted" style={{ fontSize: 14 }}>
                 {d}
               </p>
             </div>
@@ -99,11 +99,11 @@ export default function TeamPage() {
                 {m.status === "invited" && <StatusBadge status="invited" />}
                 {m.role !== "owner" && (
                   <div className="row" style={{ gap: 6 }}>
-                    <button className="icon-btn" aria-label={`Edit ${m.name}`} onClick={() => open(m)}>
-                      <Pencil size={15} />
+                    <button className="btn btn-ghost btn-sm" onClick={() => open(m)} aria-label={`Change access for ${m.name}`}>
+                      <Pencil size={15} aria-hidden /> Change access
                     </button>
-                    <button className="icon-btn" aria-label={`Remove ${m.name}`} onClick={() => setRemoving(m)}>
-                      <Trash2 size={15} />
+                    <button className="btn btn-danger btn-sm" onClick={() => setRemoving(m)} aria-label={`Remove ${m.name}`}>
+                      <Trash2 size={15} aria-hidden /> Remove
                     </button>
                   </div>
                 )}
@@ -142,8 +142,8 @@ export default function TeamPage() {
                 </Field>
               </>
             )}
-            <div className="field full">
-              <span>Role</span>
+            <div className="field full" role="group" aria-label="Role">
+              <span className="field-label">Role</span>
               <div className="role-pick">
                 {(["manager", "staff"] as const).map((r) => (
                   <button key={r} type="button" aria-pressed={form.role === r} onClick={() => setForm({ ...form, role: r })}>
@@ -153,8 +153,8 @@ export default function TeamPage() {
                 ))}
               </div>
             </div>
-            <div className="field full">
-              <span>Property access</span>
+            <div className="field full" role="group" aria-label="Property access">
+              <span className="field-label">Property access</span>
               <div className="chips">
                 {data?.properties.map((p) => {
                   const on = form.propertyIds.includes(p.id);

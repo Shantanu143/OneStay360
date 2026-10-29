@@ -26,11 +26,11 @@ export function BedPicker({ property, value, onChange, held }: { property: Prope
               <div className="room" key={r.number}>
                 <div className="room-head">
                   <span>Room {r.number}</span>
-                  <span className="faint" style={{ fontSize: 12, fontWeight: 600 }}>
+                  <span className="faint" style={{ fontSize: 14, fontWeight: 600 }}>
                     {money(r.rentPerBed)}
                   </span>
                 </div>
-                <div className="faint" style={{ fontSize: 12, marginBottom: 8 }}>
+                <div className="faint" style={{ fontSize: 14, marginBottom: 8 }}>
                   {sharingLabel(r.sharing)}
                   {r.ac ? " · AC" : ""}
                 </div>
@@ -63,15 +63,15 @@ export function BedPicker({ property, value, onChange, held }: { property: Prope
       ))}
       <div className="legend">
         <span>
-          <i style={{ background: "var(--tint-green)" }} />
+          <i className="swatch free" aria-hidden />
           Free
         </span>
         <span>
-          <i style={{ background: "var(--tint-amber)" }} />
+          <i className="swatch held" aria-hidden />
           Held
         </span>
         <span>
-          <i style={{ background: "var(--tint-grey)" }} />
+          <i className="swatch taken" aria-hidden />
           Occupied
         </span>
       </div>
@@ -127,17 +127,22 @@ export function AddTenantModal({ onClose, propertyId: initialProperty, room: ini
   const moveIn = fromInputDate(terms.moveIn);
   const prorated = proratedRent(terms.rent, moveIn, terms.billingDay);
 
+  const [fieldErr, setFieldErr] = useState<Record<string, string | undefined>>({});
   const next = () => {
     setError(null);
-    if (step === 0 && !bed) return setError("Pick a free bed.");
+    if (step === 0 && !bed) return setError("Pick a free (green) bed to continue.");
+    const errs: Record<string, string | undefined> = {};
     if (step === 1) {
-      if (!t.name.trim()) return setError("Enter the tenant's name.");
-      if (t.phone.replace(/\D/g, "").length < 10) return setError("Enter a 10-digit mobile number.");
+      if (!t.name.trim()) errs.name = "Enter the tenant's full name.";
+      if (t.phone.replace(/\D/g, "").slice(-10).length !== 10) errs.phone = "Enter a 10-digit mobile number.";
+      if (t.email && !/^\S+@\S+\.\S+$/.test(t.email)) errs.email = "Enter a valid email or leave it empty.";
     }
     if (step === 2) {
-      if (terms.rent <= 0) return setError("Set the monthly rent.");
-      if (terms.billingDay < 1 || terms.billingDay > 28) return setError("Billing day must be 1–28.");
+      if (!(terms.rent > 0)) errs.rent = "Enter the monthly rent.";
+      if (!(terms.billingDay >= 1 && terms.billingDay <= 28)) errs.billingDay = "Choose a day from 1 to 28.";
     }
+    setFieldErr(errs);
+    if (Object.values(errs).some(Boolean)) return;
     setStep((s) => s + 1);
   };
 
@@ -177,7 +182,7 @@ export function AddTenantModal({ onClose, propertyId: initialProperty, room: ini
         <>
           {step > 0 && (
             <button className="btn btn-ghost" onClick={() => setStep((s) => s - 1)}>
-              <ArrowLeft size={16} /> Back
+              <ArrowLeft size={16} aria-hidden /> Back
             </button>
           )}
           <span className="spacer" />
@@ -226,14 +231,14 @@ export function AddTenantModal({ onClose, propertyId: initialProperty, room: ini
       )}
       {step === 1 && (
         <div className="form-grid">
-          <Field label="Full name" full>
-            <input className="input" value={t.name} onChange={(e) => setT({ ...t, name: e.target.value })} placeholder="Tenant's name" />
+          <Field label="Full name" full required error={fieldErr.name}>
+            <input className="input" aria-invalid={!!fieldErr.name} value={t.name} onChange={(e) => setT({ ...t, name: e.target.value })} placeholder="Tenant's name" />
           </Field>
-          <Field label="Mobile number" hint="The tenant signs in with this number to accept.">
-            <input className="input" inputMode="numeric" value={t.phone} onChange={(e) => setT({ ...t, phone: e.target.value })} placeholder="98765 43210" />
+          <Field label="Mobile number" required error={fieldErr.phone} hint="The tenant signs in with this number to accept.">
+            <input className="input" type="tel" inputMode="numeric" aria-invalid={!!fieldErr.phone} value={t.phone} onChange={(e) => setT({ ...t, phone: e.target.value })} placeholder="98765 43210" />
           </Field>
-          <Field label="Email (optional)">
-            <input className="input" type="email" value={t.email} onChange={(e) => setT({ ...t, email: e.target.value })} placeholder="name@example.com" />
+          <Field label="Email (optional)" error={fieldErr.email}>
+            <input className="input" type="email" aria-invalid={!!fieldErr.email} value={t.email} onChange={(e) => setT({ ...t, email: e.target.value })} placeholder="name@example.com" />
           </Field>
           <Field label="Gender">
             <select className="select" value={t.gender} onChange={(e) => setT({ ...t, gender: e.target.value as typeof t.gender })}>
@@ -243,7 +248,7 @@ export function AddTenantModal({ onClose, propertyId: initialProperty, room: ini
             </select>
           </Field>
           <div className="full">
-            <span style={{ fontSize: 13, fontWeight: 600, color: "var(--ink-soft)" }}>How should they join?</span>
+            <span className="field-label">How should they join?</span>
             <div className="role-pick" style={{ marginTop: 6 }}>
               <button type="button" aria-pressed={!direct} onClick={() => setDirect(false)}>
                 <b>Send an invitation</b>
@@ -259,7 +264,7 @@ export function AddTenantModal({ onClose, propertyId: initialProperty, room: ini
       )}
       {step === 2 && (
         <div className="form-grid">
-          <Field label="Monthly rent (₹)">
+          <Field label="Monthly rent (₹)" required error={fieldErr.rent}>
             <input className="input" type="number" min={0} value={terms.rent} onChange={(e) => setTerms({ ...terms, rent: +e.target.value })} />
           </Field>
           <Field label="Security deposit (₹)">
@@ -271,7 +276,7 @@ export function AddTenantModal({ onClose, propertyId: initialProperty, room: ini
           <Field label="Move-in date">
             <input className="input" type="date" value={terms.moveIn} onChange={(e) => setTerms({ ...terms, moveIn: e.target.value })} />
           </Field>
-          <Field label="Billing day of month" hint="Rent invoices are due on this day.">
+          <Field label="Billing day of month" required error={fieldErr.billingDay} hint="Rent invoices are due on this day each month (1–28).">
             <input className="input" type="number" min={1} max={28} value={terms.billingDay} onChange={(e) => setTerms({ ...terms, billingDay: +e.target.value })} />
           </Field>
           <Field label="Notice period (days)">
@@ -411,8 +416,8 @@ export function RecordPaymentModal({ onClose, tenantId: initialTenant }: { onClo
         <Field label="Amount (₹)">
           <input className="input" type="number" min={0} value={amount} onChange={(e) => setAmount(+e.target.value)} />
         </Field>
-        <div className="field full">
-          <span>Method</span>
+        <div className="field full" role="group" aria-label="Method">
+          <span className="field-label">Method</span>
           <div className="chips">
             {methods.map((m) => (
               <button key={m} type="button" className="chip" aria-pressed={method === m} onClick={() => setMethod(m)}>

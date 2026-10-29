@@ -14,24 +14,24 @@ const blankBank: Draft = { type: "bank", label: "Bank account", bankName: "", ac
 export default function CollectionsPage() {
   const { account } = useShell();
   const { busy, run } = useAction();
-  const { data, loading } = useQuery(async (b) => ({ methods: await b.listPayoutMethods(), business: await b.getBusiness() }));
+  const { data, loading, error, reload } = useQuery(async (b) => ({ methods: await b.listPayoutMethods(), business: await b.getBusiness() }));
   const [draft, setDraft] = useState<Draft | null>(null);
   const [removing, setRemoving] = useState<PayoutMethod | null>(null);
   if (!permissions(account.role).canEditPaymentMethods) {
     return (
-      <Page title="Payment methods">
+      <Page error={error} onRetry={reload} title="Payment methods">
         <div className="alert alert-amber">Only the owner can manage payment methods.</div>
       </Page>
     );
   }
   const business = data?.business;
   return (
-    <Page
+    <Page error={error} onRetry={reload}
       title="Payment methods"
       sub="Where tenants pay you"
       actions={
         <button className="btn btn-primary btn-sm" onClick={() => setDraft({ ...blankUpi })}>
-          <Plus size={16} /> Add method
+          <Plus size={16} aria-hidden /> Add method
         </button>
       }
     >
@@ -54,7 +54,7 @@ export default function CollectionsPage() {
         {loading ? (
           <Loading />
         ) : !data?.methods.length ? (
-          <Empty icon={Landmark} title="No payment methods yet" body="Add a UPI ID or bank account. It's shown on first bills and on the tenant's rent screen." action={<button className="btn btn-primary" onClick={() => setDraft({ ...blankUpi })}><Plus size={16} /> Add UPI ID</button>} />
+          <Empty icon={Landmark} title="No payment methods yet" body="Add a UPI ID or bank account. It's shown on first bills and on the tenant's rent screen." action={<button className="btn btn-primary" onClick={() => setDraft({ ...blankUpi })}><Plus size={16} aria-hidden /> Add UPI ID</button>} />
         ) : (
           <div className="list">
             {data.methods.map((m) => (
@@ -64,7 +64,7 @@ export default function CollectionsPage() {
                 </span>
                 <div className="grow" style={{ minWidth: 200 }}>
                   <div className="title">
-                    {m.label} {m.preferred && <Badge tone="green"><Star size={11} /> Preferred</Badge>} {!m.active && <Badge tone="grey">Inactive</Badge>}
+                    {m.label} {m.preferred && <Badge tone="green"><Star size={11} aria-hidden /> Preferred</Badge>} {!m.active && <Badge tone="grey">Inactive</Badge>}
                   </div>
                   <div className="meta">{m.type === "upi" ? m.upiId : `${m.bankName} · ${m.holder} · A/C ••••${m.accountNumber?.slice(-4)} · ${m.ifsc}`}</div>
                 </div>
@@ -73,11 +73,11 @@ export default function CollectionsPage() {
                     Make preferred
                   </button>
                 )}
-                <button className="icon-btn" aria-label="Edit" onClick={() => setDraft({ ...m })}>
-                  <Pencil size={15} />
+                <button className="btn btn-ghost btn-sm" onClick={() => setDraft({ ...m })}>
+                  <Pencil size={15} aria-hidden /> Edit
                 </button>
-                <button className="icon-btn" aria-label="Delete" onClick={() => setRemoving(m)}>
-                  <Trash2 size={15} />
+                <button className="btn btn-danger btn-sm" onClick={() => setRemoving(m)}>
+                  <Trash2 size={15} aria-hidden /> Delete
                 </button>
               </div>
             ))}
@@ -94,7 +94,7 @@ export default function CollectionsPage() {
                 Cancel
               </button>
               <button className="btn btn-primary" disabled={busy} onClick={() => run((b) => b.savePayoutMethod(draft), "Saved").then((r) => r.ok && setDraft(null))}>
-                Save
+                Save payment method
               </button>
             </>
           }

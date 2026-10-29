@@ -59,3 +59,6 @@ key.properties
 **/key.properties
 *.keystore
 *.jks
+
+# Release APKs (distribute manually, not via git)
+release/

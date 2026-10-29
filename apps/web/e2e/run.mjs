@@ -87,12 +87,41 @@ if (SHOTS) await mkdir(shotsDir, { recursive: true });
 console.log(`Serving ${root} at ${base}\n`);
 
 // ── Public site ──────────────────────────────────────────
-await step("landing renders hero, features, pricing and FAQ", async () => {
+await step("landing tells the three-chapter journey with real screenshots", async () => {
   await go("/");
   await expectText("PG management that runs itself");
-  for (const id of ["features", "how", "pricing", "faq"]) await page.locator(`#${id}`).waitFor();
-  await page.click('button[role="tab"]:has-text("Tenant app")');
-  await expectText("Community pinboard");
+  for (const id of ["journey", "pricing", "faq"]) await page.locator(`#${id}`).waitFor();
+  for (const t of ["Set up once. See every bed, live.", "without the calls", "Rent that collects itself."]) await expectText(t);
+  const shots = await page.locator("img.shot").count();
+  if (shots < 10) throw new Error(`expected screenshot images, found ${shots}`);
+  const broken = await page.evaluate(async () => {
+    const imgs = [...document.querySelectorAll("img.shot-light")];
+    await Promise.all(imgs.map((i) => (i.loading = "eager", i.decode().catch(() => null))));
+    return imgs.filter((i) => !i.naturalWidth).map((i) => i.src);
+  });
+  if (broken.length) throw new Error(`broken screenshots: ${broken.join(", ")}`);
+});
+await step("sign-in has no sample-data shortcut and sends each role home", async () => {
+  await signOut();
+  await go("/signin/");
+  if (await page.getByText("sample data", { exact: false }).count()) throw new Error("sample-data option still shown");
+  await signIn("rahul@onestay.demo");
+  if (!page.url().includes("/dashboard/tenant/")) throw new Error(`tenant landed on ${page.url()}`);
+  await signOut();
+  await signIn("vikram@onestay.demo");
+  if (!page.url().includes("/dashboard/owner/")) throw new Error(`manager landed on ${page.url()}`);
+  await signOut();
+});
+await step("sign-in and sign-up fit one screen without scrolling", async () => {
+  for (const [w, h] of [[1366, 768], [1440, 900], [390, 844]]) {
+    await page.setViewportSize({ width: w, height: h });
+    for (const path of ["/signin/", "/signup/"]) {
+      await go(path);
+      const over = await page.evaluate(() => document.documentElement.scrollHeight - window.innerHeight);
+      if (over > 1) throw new Error(`${path} at ${w}x${h} scrolls by ${over}px`);
+    }
+  }
+  await page.setViewportSize({ width: 1360, height: 900 });
 });
 await step("theme toggle switches to dark and persists", async () => {
   await go("/");

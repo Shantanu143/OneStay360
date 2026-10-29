@@ -2,15 +2,15 @@
 // /features/business and /features/tenant: every feature with why it
 // matters, a use case, what's included and a link into the live demo.
 import Link from "next/link";
-import { ArrowRight, CheckCircle2, Lightbulb, PlayCircle, Quote } from "lucide-react";
-import { OwnerPhonePreview, SiteFooter, SiteNav, TenantPhonePreview } from "./site";
+import { ArrowRight, CheckCircle2, Lightbulb, Quote } from "lucide-react";
+import { SiteFooter, SiteNav } from "./site";
+import { BrowserFrame, PhoneFrame } from "./shots";
 import { useReveal } from "./ui";
 import { businessFeatures, tenantFeatures } from "@/lib/content";
 
 export function FeaturePage({ kind }: { kind: "business" | "tenant" }) {
   useReveal();
   const features = kind === "business" ? businessFeatures : tenantFeatures;
-  const demo = kind === "business" ? "owner" : "tenant";
   return (
     <>
       <SiteNav />
@@ -39,8 +39,8 @@ export function FeaturePage({ kind }: { kind: "business" | "tenant" }) {
                 <Link href={`/signup/?kind=${kind}`} className="btn btn-primary btn-lg">
                   {kind === "business" ? "Start as an owner" : "Join as a tenant"} <ArrowRight size={18} aria-hidden />
                 </Link>
-                <Link href={`/signin/?demo=${demo}`} className="btn btn-ghost btn-lg">
-                  <PlayCircle size={18} aria-hidden /> Try the live demo
+                <Link href="/#journey" className="btn btn-ghost btn-lg">
+                  See how it works
                 </Link>
               </div>
               <nav className="chips" style={{ marginTop: 32 }} aria-label="Jump to a feature">
@@ -51,7 +51,13 @@ export function FeaturePage({ kind }: { kind: "business" | "tenant" }) {
                 ))}
               </nav>
             </div>
-            <div>{kind === "business" ? <OwnerPhonePreview /> : <TenantPhonePreview />}</div>
+            <div style={{ display: "flex", justifyContent: "center" }}>
+              {kind === "business" ? (
+                <BrowserFrame name="owner-layout" url="onestay360 · Sunrise Residency" eager alt="Owner floor plan of Sunrise Residency with each bed marked free, held or occupied, and tenant names." />
+              ) : (
+                <PhoneFrame name="tenant-home" eager alt="Tenant app home on a phone: Room 101, Bed A at Sunrise Residency with rent all paid." />
+              )}
+            </div>
           </div>
         </section>
 
@@ -98,9 +104,6 @@ export function FeaturePage({ kind }: { kind: "business" | "tenant" }) {
                         </h3>
                         <p>{f.useCase}</p>
                       </div>
-                      <Link href={`/signin/?demo=${demo}&next=${encodeURIComponent(f.href)}`} className="btn btn-ghost" style={{ alignSelf: "flex-start" }} aria-label={`Try ${f.title.toLowerCase()} in the demo`}>
-                        <PlayCircle size={16} aria-hidden /> Try it in the demo
-                      </Link>
                     </div>
                   </div>
                 </article>

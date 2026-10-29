@@ -2,9 +2,9 @@
 
 Marketing site, sign in / sign up, and full owner and tenant dashboards for OneStay360, in one Next.js 16 app exported as static files.
 
-- **Landing** (`/`): hero with a dashboard preview, every Business and Tenant app feature (what it does, why it matters, a use case), how it works, who it's for, pricing, FAQ.
+- **Landing** (`/`): one story in three chapters — list your PG, fill a bed, collect rent — each step labelled Owner / Tenant / Automatic and shown with real screenshots of the app; then pricing and FAQ.
 - **Feature deep-dives**: `/features/business/` and `/features/tenant/`, each feature linking straight into the demo.
-- **Auth**: `/signin/` and `/signup/` (owner or tenant), with one-click demo accounts.
+- **Auth**: `/signin/` and `/signup/` fit one screen. Sign in with email and password; the account's role decides where you land (owners, managers and staff → `/dashboard/owner/`, tenants → `/dashboard/tenant/`).
 - **Owner dashboard** (`/dashboard/owner/…`): home (collections, occupancy, needs attention, activity), properties (stepped add/edit, floor plan, tenants, payments, requests, QR), tenants (invite wizard or direct add, edit, vacate), join requests (assign bed → first bill → confirm payment), rent & payments (verify UPI/cash, dues, record, CSV), reports, payment methods (UPI/bank, online toggle), billing (per-bed activation, promo codes), maintenance, team (manager/staff, per-property access), notifications, profile & KYC.
 - **Tenant dashboard** (`/dashboard/tenant/…`): home, explore (city, gender, search, favourites), PG page and join request, request tracker with first-bill payment, invitations (accept/decline), my stay, rent (online, UPI with UTR, cash; history), maintenance, pinboard, notifications, profile.
 - **Public PG page** (`/pg/?id=…`): what a property's QR code opens.
@@ -23,11 +23,13 @@ npm run test:e2e     # after build: serves ./out and drives every flow in Chromi
 
 `SHOTS=1 npm run test:e2e` also saves desktop and phone screenshots of every route to `e2e/shots/`.
 
+`npm run screenshots` (after a build) re-captures the product screenshots in `public/shots/` — light and dark — that the landing and auth pages use. Run it whenever the dashboard UI changes.
+
 ## Data: demo backend
 
 Screens talk only to the `Backend` contract in `lib/backend/api.ts`. Each method names the Firestore path or callable Cloud Function it corresponds to (`submitEnrollmentRequest`, `verifyRentPayment`, `createTenantInvitation`, `vacateTenant`, `createBusinessInvitation`, `createCheckoutQuote`, …).
 
-The app currently runs on `DemoBackend` (`lib/backend/demo/`): a seeded workspace stored in the browser's localStorage that reproduces the server-side behaviour. A confirmed join request creates the tenant, occupies the bed and raises the first invoice; verifying a UPI payment closes its invoice; beds are held while a request or invitation is open; and so on. Sign in as different demo accounts in the same browser to see both sides of a flow. "Reset demo" in the dashboard banner restores the seed.
+The app currently runs on `DemoBackend` (`lib/backend/demo/`): a seeded workspace stored in the browser's localStorage that reproduces the server-side behaviour. A confirmed join request creates the tenant, occupies the bed and raises the first invoice; verifying a UPI payment closes its invoice; beds are held while a request or invitation is open; and so on. Sign in as different demo accounts in the same browser to see both sides of a flow. "Reset demo data" in the dashboard banner restores the seed. The sign-in page itself has no demo shortcuts; use these logins:
 
 | Demo account | Email | Password |
 | --- | --- | --- |

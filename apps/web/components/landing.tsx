@@ -1,258 +1,164 @@
 "use client";
+// The landing page tells one story: a PG stay from listing to monthly rent,
+// in three chapters, each shown with real screenshots of the product.
 import Link from "next/link";
-import { useState } from "react";
-import { ArrowRight, Briefcase, Building, Building2, Check, CheckCircle2, GraduationCap, PlayCircle, UserCog, Users } from "lucide-react";
-import { DashboardPreview, OwnerPhonePreview, SiteFooter, SiteNav, TenantPhonePreview } from "./site";
+import { ArrowDown, ArrowRight, Check } from "lucide-react";
+import { SiteFooter, SiteNav } from "./site";
+import { BrowserFrame, PhoneFrame } from "./shots";
 import { useReveal } from "./ui";
-import { businessFeatures, faqs, flows, tenantFeatures, trust, type Feature } from "@/lib/content";
+import { faqs } from "@/lib/content";
 import { site } from "@/lib/site";
 
-function FeatureCard({ f, kind }: { f: Feature; kind: "business" | "tenant" }) {
-  const Icon = f.icon;
+type Who = "you" | "tenant" | "auto";
+const whoLabel: Record<Who, string> = { you: "Owner", tenant: "Tenant", auto: "Automatic" };
+
+function Flow({ steps }: { steps: { who: Who; title: string; body: string }[] }) {
   return (
-    <article className="glass feature-card reveal">
-      <span className="feature-ic" aria-hidden>
-        <Icon size={22} />
-      </span>
-      <h3 className="h3">{f.title}</h3>
-      <p>{f.summary}</p>
-      <p className="usecase">
-        <b>Example: </b>
-        {f.useCase}
-      </p>
-      <Link href={`/features/${kind}/#${f.id}`} className="text-link" style={{ fontSize: 15 }}>
-        Read more about {f.title.toLowerCase()}
-      </Link>
+    <ol className="flow">
+      {steps.map((s) => (
+        <li key={s.title}>
+          <span className={`badge who who-${s.who}`}>{whoLabel[s.who]}</span>
+          <div>
+            <b>{s.title}</b>
+            <span className="what">{s.body}</span>
+          </div>
+        </li>
+      ))}
+    </ol>
+  );
+}
+
+function Chapter({ n, kicker, title, promise, steps, visual, flip }: { n: number; kicker: string; title: string; promise: string; steps: { who: Who; title: string; body: string }[]; visual: React.ReactNode; flip?: boolean }) {
+  return (
+    <article className={`chapter reveal ${flip ? "flip" : ""}`} aria-labelledby={`ch-${n}`}>
+      <div>
+        <p className="chapter-num">
+          <b aria-hidden>{n}</b> {kicker}
+        </p>
+        <h3 id={`ch-${n}`}>{title}</h3>
+        <p className="promise">{promise}</p>
+        <Flow steps={steps} />
+      </div>
+      <div className="chapter-visual">{visual}</div>
     </article>
   );
 }
 
-const personas = [
-  { icon: Building, title: "Single-PG owners", body: "Replace the notebook and WhatsApp reminders. See every bed, collect rent on time and answer requests from your phone or laptop." },
-  { icon: Building2, title: "Multi-property operators", body: "One dashboard across PGs and cities, managers who only see what they run, and reports that compare properties." },
-  { icon: UserCog, title: "Managers and staff", body: "Handle join requests, verify payments and close maintenance tickets for the properties you're assigned — nothing more." },
-  { icon: GraduationCap, title: "Students and professionals", body: "Find a verified PG, see real prices and rules, join in a few taps and keep proof of every rent payment." },
-];
-
 export function Landing() {
-  const [tab, setTab] = useState<"business" | "tenant">("business");
   useReveal();
-  const list = tab === "business" ? businessFeatures : tenantFeatures;
-
   return (
     <>
       <SiteNav />
       <main id="main">
+        {/* ── Hero ─────────────────────────────────────── */}
         <section className="hero" aria-labelledby="hero-title">
           <div className="container">
-            <Link href="/signin/?demo=owner" className="pill glass">
-              <span className="badge badge-green">New</span>
-              Owner and tenant dashboards are now on the web <ArrowRight size={15} aria-hidden />
-            </Link>
+            <a href="#journey" className="pill glass">
+              <span className="badge badge-green">For PG owners and tenants</span>
+              See how a stay works, start to finish <ArrowDown size={15} aria-hidden />
+            </a>
             <h1 className="h1" id="hero-title">
               PG management that runs itself,
               <br className="hide-sm" /> <span className="accent">and an app your tenants will like</span>
             </h1>
-            <p className="lead">
-              OneStay360 connects PG owners, their teams and their tenants. Track rooms and beds, onboard tenants, collect rent by UPI, cash or online, and handle maintenance — in one place.
-            </p>
+            <p className="lead">Fill beds, collect rent and fix issues from one screen. Your tenants get an app to join, pay and ask for help — and every step updates both sides.</p>
             <div className="hero-ctas">
               <Link href="/signup/" className="btn btn-primary btn-lg">
                 Create a free account <ArrowRight size={18} aria-hidden />
               </Link>
-              <Link href="/signin/?demo=owner" className="btn btn-ghost btn-lg">
-                <PlayCircle size={18} aria-hidden /> Try the owner demo
-              </Link>
+              <a href="#journey" className="btn btn-ghost btn-lg">
+                See how it works
+              </a>
             </div>
             <p className="faint small" style={{ marginTop: 16 }}>
-              Free for tenants. Owners pay per bed, per active property. No setup fee.
+              Free for tenants. Owners pay ₹30 per bed a month for active properties.
             </p>
 
-            <div className="hero-stage">
-              <div className="hero-frame glass">
-                <DashboardPreview />
-              </div>
-            </div>
-
-            <div className="facts" role="list" aria-label="OneStay360 at a glance">
-              <div role="listitem">
-                <b>2 apps</b>
-                <span>Business and Tenant, one platform</span>
-              </div>
-              <div role="listitem">
-                <b>3 ways</b>
-                <span>to collect rent: online, UPI, cash</span>
-              </div>
-              <div role="listitem">
-                <b>Every bed</b>
-                <span>tracked across all your properties</span>
-              </div>
-              <div role="listitem">
-                <b>₹30</b>
-                <span>per bed per month for owners</span>
-              </div>
+            <div className="hero-visual">
+              <BrowserFrame name="owner-home" url="onestay360 · Owner dashboard" alt="Owner dashboard: ₹1,59,500 collected this month, 59% occupancy, 17 active tenants, a six-month collections chart and a list of items that need attention." eager />
+              <PhoneFrame name="tenant-home" alt="Tenant app home on a phone: Room 101, Bed A at Sunrise Residency with rent all paid, and shortcuts to stay, rent, maintenance and pinboard." eager />
             </div>
           </div>
         </section>
 
-        <section className="section" id="features" aria-labelledby="features-title">
-          <div className="container">
-            <div className="section-head reveal">
-              <p className="eyebrow">Features</p>
-              <h2 className="h2" id="features-title">
-                Two apps for every step of a stay
-              </h2>
-              <p className="lead">The Business app runs your PG. The Tenant app gives residents one place for rent, requests and their housemates. Pick an app to see what it does.</p>
-              <div className="tabs" role="tablist" aria-label="Choose an app" style={{ marginTop: 28 }}>
-                <button role="tab" aria-selected={tab === "business"} onClick={() => setTab("business")}>
-                  <Briefcase size={17} aria-hidden /> Business app
-                </button>
-                <button role="tab" aria-selected={tab === "tenant"} onClick={() => setTab("tenant")}>
-                  <Users size={17} aria-hidden /> Tenant app
-                </button>
-              </div>
-            </div>
-            <div className="grid-3" key={tab} role="tabpanel">
-              {list.map((f) => (
-                <FeatureCard key={f.id} f={f} kind={tab} />
-              ))}
-            </div>
-            <div style={{ textAlign: "center", marginTop: 40 }}>
-              <Link href={tab === "business" ? "/features/business/" : "/features/tenant/"} className="btn btn-ghost">
-                See every {tab === "business" ? "owner" : "tenant"} feature in detail <ArrowRight size={16} aria-hidden />
-              </Link>
-            </div>
-          </div>
-        </section>
-
-        <section className="section section-tight" aria-label="App highlights">
-          <div className="container" style={{ display: "flex", flexDirection: "column", gap: 96 }}>
-            <div className="split">
-              <div className="reveal">
-                <p className="eyebrow">For owners and teams</p>
-                <h2 className="h2" style={{ marginTop: 12 }}>
-                  From join request to confirmed bed in minutes
-                </h2>
-                <p className="lead" style={{ marginTop: 16 }}>
-                  A tenant finds you on Explore or scans the QR code at your gate. You pick a free bed and send an itemised first bill. When their payment is confirmed, they become a tenant, the bed is marked occupied and their first invoice is ready.
-                </p>
-                <ul className="ticks">
-                  {["Beds are held while a request is open, so nothing is double-booked", "First bills by UPI, bank transfer or cash", "Reject a payment with a reason; the tenant pays again", "Managers handle it all for the properties you assign"].map((t) => (
-                    <li key={t}>
-                      <CheckCircle2 size={20} aria-hidden /> {t}
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/features/business/" className="btn btn-primary" style={{ marginTop: 32 }}>
-                  Explore the Business app <ArrowRight size={16} aria-hidden />
-                </Link>
-              </div>
-              <div className="reveal">
-                <OwnerPhonePreview />
-              </div>
-            </div>
-            <div className="split reverse">
-              <div className="reveal">
-                <p className="eyebrow">For tenants</p>
-                <h2 className="h2" style={{ marginTop: 12 }}>
-                  Your stay, rent and requests in one place
-                </h2>
-                <p className="lead" style={{ marginTop: 16 }}>
-                  Find a verified PG and join in a few taps. Then keep everything about your stay together: rent with receipts, maintenance with status updates, and a pinboard to meet the people you live with.
-                </p>
-                <ul className="ticks">
-                  {["Pay online, or report UPI and cash with proof", "Follow maintenance from open to resolved", "Accept an owner's invitation with all terms in writing", "Pinboard notes for food runs, rides and lost & found"].map((t) => (
-                    <li key={t}>
-                      <CheckCircle2 size={20} aria-hidden /> {t}
-                    </li>
-                  ))}
-                </ul>
-                <Link href="/features/tenant/" className="btn btn-primary" style={{ marginTop: 32 }}>
-                  Explore the Tenant app <ArrowRight size={16} aria-hidden />
-                </Link>
-              </div>
-              <div className="reveal">
-                <TenantPhonePreview />
-              </div>
-            </div>
-          </div>
-        </section>
-
-        <section className="section" id="how" aria-labelledby="how-title">
+        {/* ── The journey: three features, one story ──── */}
+        <section className="section" id="journey" aria-labelledby="journey-title">
           <div className="container">
             <div className="section-head reveal">
               <p className="eyebrow">How it works</p>
-              <h2 className="h2" id="how-title">
-                The whole tenant lifecycle, connected
+              <h2 className="h2" id="journey-title">
+                One stay, from empty bed to monthly rent
               </h2>
-              <p className="lead">Every action on one side updates the other, so owners and tenants always see the same information.</p>
+              <p className="lead">Follow a real stay through OneStay360. Each chapter shows who does what — and what the app does for you.</p>
             </div>
-            <ol className="steps" style={{ listStyle: "none" }}>
-              {flows.map((f, i) => {
-                const Icon = f.icon;
-                return (
-                  <li key={f.title} className="glass step reveal">
-                    <span className="feature-ic" aria-hidden>
-                      <Icon size={22} />
-                    </span>
-                    <span className="step-num">Step {i + 1}</span>
-                    <h3 className="h3" style={{ fontSize: 18 }}>
-                      {f.title}
-                    </h3>
-                    <p className="muted">{f.body}</p>
-                  </li>
-                );
-              })}
-            </ol>
-          </div>
-        </section>
 
-        <section className="section section-tight" id="use-cases" aria-labelledby="who-title">
-          <div className="container">
-            <div className="section-head reveal">
-              <p className="eyebrow">Who it&apos;s for</p>
-              <h2 className="h2" id="who-title">
-                Built for everyone under the roof
-              </h2>
-            </div>
-            <div className="grid-4">
-              {personas.map((p) => {
-                const Icon = p.icon;
-                return (
-                  <div key={p.title} className="glass feature-card reveal">
-                    <span className="feature-ic" aria-hidden>
-                      <Icon size={22} />
-                    </span>
-                    <h3 className="h3" style={{ fontSize: 18 }}>
-                      {p.title}
-                    </h3>
-                    <p>{p.body}</p>
-                  </div>
-                );
-              })}
-            </div>
-            <div className="grid-3" style={{ marginTop: 64 }}>
-              {trust.map((t) => {
-                const Icon = t.icon;
-                return (
-                  <div key={t.title} className="row reveal" style={{ alignItems: "flex-start", gap: 16 }}>
-                    <span className="tile-ic" aria-hidden>
-                      <Icon size={20} />
-                    </span>
-                    <div>
-                      <h3 style={{ fontSize: 17, fontWeight: 700 }}>{t.title}</h3>
-                      <p className="muted" style={{ marginTop: 4 }}>
-                        {t.body}
-                      </p>
+            <div className="journey">
+              <Chapter
+                n={1}
+                kicker="List your PG"
+                title="Set up once. See every bed, live."
+                promise="Describe your PG in a short, guided form. From then on, one floor plan shows which beds are free, held for someone or taken."
+                steps={[
+                  { who: "you", title: "Add rooms, beds and rent", body: "Floor by floor, with sharing, AC, deposit, food and house rules." },
+                  { who: "auto", title: "Your floor plan stays current", body: "Beds turn taken when a tenant moves in and free again when they leave." },
+                  { who: "you", title: "Go live", body: "Activate the property to appear on Explore, and print its QR code for your gate." },
+                ]}
+                visual={<BrowserFrame name="owner-layout" url="onestay360 · Sunrise Residency" alt="Floor plan of Sunrise Residency: rooms with each bed marked free, held for a request or occupied, with tenant names." />}
+              />
+
+              <Chapter
+                n={2}
+                flip
+                kicker="Fill a bed"
+                title="From “Is a bed free?” to moved in — without the calls."
+                promise="Tenants find you, ask for a bed and pay the first bill in the app. You stay in control of who gets which bed."
+                steps={[
+                  { who: "tenant", title: "Finds your PG and asks to join", body: "Real rooms, prices, food and rules — then a request with a move-in date." },
+                  { who: "you", title: "Pick a bed and send the first bill", body: "Rent, deposit and maintenance in one bill, payable by UPI, bank or cash." },
+                  { who: "tenant", title: "Pays and shares the payment ID", body: "You confirm it, and they're a tenant — bed taken, first invoice ready." },
+                ]}
+                visual={
+                  <>
+                    <div className="crop pad-left">
+                      <BrowserFrame name="owner-approve" url="onestay360 · Join request" alt="Owner approving Priya Desai's request: choosing bed C in Room 302 on a floor plan and sending a ₹27,000 first bill by UPI." />
                     </div>
-                  </div>
-                );
-              })}
+                    <PhoneFrame className="float-left" name="tenant-explore" alt="Tenant browsing verified PGs on Explore, with rent from ₹9,500 and free beds shown on each card." />
+                  </>
+                }
+              />
+
+              <Chapter
+                n={3}
+                kicker="Collect rent"
+                title="Rent that collects itself."
+                promise="Every tenant gets an invoice on their billing day. They pay from their phone; you see it the moment it lands."
+                steps={[
+                  { who: "auto", title: "Invoices go out every month", body: "On each tenant's billing day, with overdue ones flagged for you." },
+                  { who: "tenant", title: "Pays online, by UPI or in cash", body: "Online payments close the invoice by themselves." },
+                  { who: "you", title: "Confirm UPI and cash in one tap", body: "Match the payment ID, tap Confirm — your collections update instantly." },
+                ]}
+                visual={
+                  <>
+                    <BrowserFrame name="owner-payments" url="onestay360 · Rent & payments" alt="Rent and payments page: ₹ received this month, one UPI payment waiting to be confirmed with its UTR, and overdue amounts." />
+                    <PhoneFrame className="float-right" name="tenant-pay" alt="Tenant paying October rent of ₹14,000 on a phone, choosing between online, UPI and cash." />
+                  </>
+                }
+              />
+            </div>
+
+            <div className="next-up reveal">
+              <Link href="/features/business/" className="btn btn-ghost">
+                Everything owners get <ArrowRight size={16} aria-hidden />
+              </Link>
+              <Link href="/features/tenant/" className="btn btn-ghost">
+                Everything tenants get <ArrowRight size={16} aria-hidden />
+              </Link>
             </div>
           </div>
         </section>
 
-        <section className="section" id="pricing" aria-labelledby="pricing-title">
+        {/* ── Pricing ──────────────────────────────────── */}
+        <section className="section section-tight" id="pricing" aria-labelledby="pricing-title">
           <div className="container">
             <div className="section-head reveal">
               <p className="eyebrow">Pricing</p>
@@ -306,13 +212,6 @@ export function Landing() {
                     Custom
                   </div>
                   <p className="muted">For 500+ beds across cities, with help moving your properties in.</p>
-                  <ul className="ticks" style={{ marginTop: 0 }}>
-                    {["Volume per-bed pricing", "Bulk property onboarding", "Priority support"].map((t) => (
-                      <li key={t}>
-                        <Check size={18} aria-hidden /> {t}
-                      </li>
-                    ))}
-                  </ul>
                   <a href={`mailto:${site.contactEmail}`} className="btn btn-ghost btn-block" style={{ marginTop: "auto" }}>
                     Email our team
                   </a>
@@ -322,6 +221,7 @@ export function Landing() {
           </div>
         </section>
 
+        {/* ── FAQ ──────────────────────────────────────── */}
         <section className="section section-tight" id="faq" aria-labelledby="faq-title">
           <div className="container" style={{ maxWidth: 820 }}>
             <div className="section-head reveal">
@@ -348,14 +248,14 @@ export function Landing() {
                 Ready to run a calmer PG?
               </h2>
               <p className="lead" style={{ maxWidth: 560, margin: "16px auto 0" }}>
-                Create your account in a minute, or walk through a fully loaded demo as an owner or a tenant.
+                Create your account in a minute. Sign in once and OneStay360 takes owners to their business and tenants to their stay.
               </p>
               <div className="hero-ctas">
-                <Link href="/signup/" className="btn btn-lg btn-light">
-                  Create a free account <ArrowRight size={18} aria-hidden />
+                <Link href="/signup/?kind=business" className="btn btn-lg btn-light">
+                  I own a PG <ArrowRight size={18} aria-hidden />
                 </Link>
-                <Link href="/signin/?demo=tenant" className="btn btn-lg btn-outline">
-                  Try the tenant demo
+                <Link href="/signup/?kind=tenant" className="btn btn-lg btn-outline">
+                  I&apos;m looking for a PG
                 </Link>
               </div>
             </div>
@@ -366,3 +266,4 @@ export function Landing() {
     </>
   );
 }
+

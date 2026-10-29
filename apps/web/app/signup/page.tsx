@@ -3,7 +3,7 @@ import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, type FormEvent } from "react";
 import { Briefcase, Home } from "lucide-react";
-import { AuthShell, nextPath } from "@/components/auth-shell";
+import { AuthShell, homeFor } from "@/components/auth-shell";
 import { Field, FieldGroup } from "@/components/ui";
 import { useBackend } from "@/lib/hooks";
 
@@ -45,8 +45,8 @@ export default function SignUpPage() {
     setBusy(true);
     setError(null);
     try {
-      await backend.signUp({ kind, ...form });
-      router.replace(nextPath());
+      const account = await backend.signUp({ kind, ...form });
+      router.replace(homeFor(account));
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
@@ -54,23 +54,17 @@ export default function SignUpPage() {
   };
 
   return (
-    <AuthShell>
-      <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2 }}>Create your account</h1>
-      <p className="muted" style={{ marginTop: 8, marginBottom: 28 }}>
-        Free to start. It takes about a minute.
-      </p>
-      <form className="stack" style={{ gap: 20 }} onSubmit={submit} noValidate>
-        <FieldGroup label="I want to">
-          <div className="role-pick" role="radiogroup" aria-label="Account type">
+    <AuthShell aside={{ title: kind === "business" ? "Run your PG from one screen." : "Find a PG. Pay rent. Done.", body: kind === "business" ? "Beds, tenants, rent and maintenance in one place. Free to set up." : "Join a verified PG, pay rent with proof and raise requests — always free for tenants." }}>
+      <h1 className="auth-title">Create your account</h1>
+      <p className="muted auth-sub">Free to start. Takes about a minute.</p>
+      <form className="auth-form" onSubmit={submit} noValidate>
+        <FieldGroup label="I am">
+          <div className="seg seg-block" role="radiogroup" aria-label="Account type">
             <button type="button" role="radio" aria-checked={kind === "business"} onClick={() => setKind("business")}>
-              <Briefcase size={20} color="var(--brand-text)" aria-hidden />
-              <b>Manage a PG</b>
-              <small>Properties, tenants and rent</small>
+              <Briefcase size={17} aria-hidden /> A PG owner
             </button>
             <button type="button" role="radio" aria-checked={kind === "tenant"} onClick={() => setKind("tenant")}>
-              <Home size={20} color="var(--brand-text)" aria-hidden />
-              <b>Find or live in a PG</b>
-              <small>Join a PG and pay rent</small>
+              <Home size={17} aria-hidden /> A tenant
             </button>
           </div>
         </FieldGroup>
@@ -80,11 +74,11 @@ export default function SignUpPage() {
         <Field label="Email address" required error={errors.email}>
           <input className="input" type="email" autoComplete="email" aria-invalid={!!errors.email} value={form.email} onChange={set("email")} placeholder="you@example.com" />
         </Field>
-        <Field label="Mobile number" required error={errors.phone} hint={kind === "tenant" ? "Owners invite you to a bed using this number." : "Team invitations are matched to this number."}>
+        <Field label="Mobile number" required error={errors.phone}>
           <input className="input" type="tel" inputMode="numeric" autoComplete="tel" aria-invalid={!!errors.phone} value={form.phone} onChange={set("phone")} placeholder="98765 43210" />
         </Field>
-        <Field label="Password" required error={errors.password} hint="At least 6 characters.">
-          <input className="input" type="password" autoComplete="new-password" aria-invalid={!!errors.password} value={form.password} onChange={set("password")} />
+        <Field label="Password" required error={errors.password}>
+          <input className="input" type="password" autoComplete="new-password" aria-invalid={!!errors.password} value={form.password} onChange={set("password")} placeholder="At least 6 characters" />
         </Field>
         {error && (
           <div className="alert alert-red" role="alert">
@@ -95,7 +89,7 @@ export default function SignUpPage() {
           {busy ? "Creating your account…" : kind === "business" ? "Create owner account" : "Create tenant account"}
         </button>
       </form>
-      <p className="muted" style={{ marginTop: 28, textAlign: "center" }}>
+      <p className="muted auth-foot">
         Already have an account?{" "}
         <Link href="/signin/" className="text-link">
           Sign in

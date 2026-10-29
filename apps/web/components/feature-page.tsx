@@ -14,19 +14,19 @@ export function FeaturePage({ kind }: { kind: "business" | "tenant" }) {
   return (
     <>
       <SiteNav />
-      <main>
-        <section className="hero" style={{ paddingBottom: 24 }}>
+      <main id="main">
+        <section className="hero" style={{ paddingBottom: 16 }}>
           <div className="container split" style={{ textAlign: "left" }}>
             <div>
-              <span className="eyebrow">{kind === "business" ? "OneStay360 Business" : "OneStay360 Tenant"}</span>
-              <h1 className="h1" style={{ marginTop: 12, fontSize: "clamp(34px, 5vw, 56px)" }}>
+              <p className="eyebrow">{kind === "business" ? "OneStay360 Business app" : "OneStay360 Tenant app"}</p>
+              <h1 className="h1" style={{ marginTop: 12, fontSize: "clamp(34px, 4.6vw, 54px)" }}>
                 {kind === "business" ? (
                   <>
-                    Every tool to <span className="gradient-text">run your PG</span>
+                    Every tool to <span className="accent">run your PG</span>
                   </>
                 ) : (
                   <>
-                    A better way to <span className="gradient-text">live in a PG</span>
+                    A better way to <span className="accent">live in a PG</span>
                   </>
                 )}
               </h1>
@@ -37,13 +37,13 @@ export function FeaturePage({ kind }: { kind: "business" | "tenant" }) {
               </p>
               <div className="hero-ctas" style={{ justifyContent: "flex-start" }}>
                 <Link href={`/signup/?kind=${kind}`} className="btn btn-primary btn-lg">
-                  Get started <ArrowRight size={18} />
+                  {kind === "business" ? "Start as an owner" : "Join as a tenant"} <ArrowRight size={18} aria-hidden />
                 </Link>
                 <Link href={`/signin/?demo=${demo}`} className="btn btn-ghost btn-lg">
-                  <PlayCircle size={18} /> Live demo
+                  <PlayCircle size={18} aria-hidden /> Try the live demo
                 </Link>
               </div>
-              <nav className="chips" style={{ marginTop: 28 }} aria-label="Features on this page">
+              <nav className="chips" style={{ marginTop: 32 }} aria-label="Jump to a feature">
                 {features.map((f) => (
                   <a key={f.id} href={`#${f.id}`} className="chip">
                     {f.title}
@@ -55,51 +55,51 @@ export function FeaturePage({ kind }: { kind: "business" | "tenant" }) {
           </div>
         </section>
 
-        <section className="section" style={{ paddingTop: 40 }}>
-          <div className="container stack-lg">
+        <section className="section" style={{ paddingTop: 48 }} aria-label="Features">
+          <div className="container stack-lg" style={{ gap: 32 }}>
             {features.map((f, i) => {
               const Icon = f.icon;
               return (
-                <article key={f.id} id={f.id} className="glass reveal" style={{ padding: "clamp(22px, 4vw, 40px)", scrollMarginTop: 96 }}>
+                <article key={f.id} id={f.id} className="glass reveal" style={{ padding: "clamp(24px, 4vw, 48px)", scrollMarginTop: 104 }}>
                   <div className="split" style={{ alignItems: "start", gap: 32 }}>
                     <div>
                       <div className="row" style={{ gap: 14 }}>
-                        <span className="feature-ic">
+                        <span className="feature-ic" aria-hidden>
                           <Icon size={22} />
                         </span>
-                        <span className="faint" style={{ fontWeight: 700, fontSize: 13 }}>
-                          {String(i + 1).padStart(2, "0")} / {String(features.length).padStart(2, "0")}
+                        <span className="muted" style={{ fontWeight: 600, fontSize: 14 }}>
+                          Feature {i + 1} of {features.length}
                         </span>
                       </div>
-                      <h2 className="h2" style={{ fontSize: "clamp(24px, 3vw, 32px)", marginTop: 16 }}>
+                      <h2 className="h2" style={{ fontSize: "clamp(24px, 2.8vw, 30px)", marginTop: 16 }}>
                         {f.title}
                       </h2>
-                      <p className="lead" style={{ marginTop: 10, fontSize: 17 }}>
+                      <p className="lead" style={{ marginTop: 12, fontSize: 17 }}>
                         {f.summary}
                       </p>
                       <ul className="ticks">
                         {f.points.map((p) => (
                           <li key={p}>
-                            <CheckCircle2 size={20} /> {p}
+                            <CheckCircle2 size={20} aria-hidden /> {p}
                           </li>
                         ))}
                       </ul>
                     </div>
                     <div className="stack">
-                      <div className="alert alert-green" style={{ padding: 18, borderRadius: 18 }}>
-                        <div className="row" style={{ fontWeight: 700, marginBottom: 6 }}>
-                          <Lightbulb size={18} /> Why it matters
-                        </div>
-                        <p style={{ color: "var(--ink)" }}>{f.why}</p>
+                      <div style={{ padding: 20, borderRadius: 16, background: "var(--tint-green)" }}>
+                        <h3 className="row" style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, color: "var(--tint-green-ink)" }}>
+                          <Lightbulb size={18} aria-hidden /> Why it matters
+                        </h3>
+                        <p>{f.why}</p>
                       </div>
-                      <div className="alert alert-blue" style={{ padding: 18, borderRadius: 18 }}>
-                        <div className="row" style={{ fontWeight: 700, marginBottom: 6 }}>
-                          <Quote size={18} /> Use case
-                        </div>
-                        <p style={{ color: "var(--ink)" }}>{f.useCase}</p>
+                      <div style={{ padding: 20, borderRadius: 16, background: "var(--tint-blue)" }}>
+                        <h3 className="row" style={{ fontWeight: 700, fontSize: 16, marginBottom: 8, color: "var(--tint-blue-ink)" }}>
+                          <Quote size={18} aria-hidden /> Example
+                        </h3>
+                        <p>{f.useCase}</p>
                       </div>
-                      <Link href={`/signin/?demo=${demo}&next=${encodeURIComponent(f.href)}`} className="btn btn-ghost" style={{ alignSelf: "flex-start" }}>
-                        <PlayCircle size={16} /> Try it in the demo
+                      <Link href={`/signin/?demo=${demo}&next=${encodeURIComponent(f.href)}`} className="btn btn-ghost" style={{ alignSelf: "flex-start" }} aria-label={`Try ${f.title.toLowerCase()} in the demo`}>
+                        <PlayCircle size={16} aria-hidden /> Try it in the demo
                       </Link>
                     </div>
                   </div>
@@ -109,16 +109,16 @@ export function FeaturePage({ kind }: { kind: "business" | "tenant" }) {
           </div>
         </section>
 
-        <section className="section" style={{ paddingTop: 0 }}>
+        <section className="section section-tight">
           <div className="container">
             <div className="cta-band">
               <h2 className="h2">{kind === "business" ? "Bring your first property online today" : "Find your next home"}</h2>
               <div className="hero-ctas">
-                <Link href={`/signup/?kind=${kind}`} className="btn btn-lg" style={{ background: "#fff", color: "#0a6c58" }}>
-                  Create account <ArrowRight size={18} />
+                <Link href={`/signup/?kind=${kind}`} className="btn btn-lg btn-light">
+                  Create a free account <ArrowRight size={18} aria-hidden />
                 </Link>
-                <Link href={kind === "business" ? "/features/tenant/" : "/features/business/"} className="btn btn-ghost btn-lg">
-                  {kind === "business" ? "See the tenant app" : "Are you an owner?"}
+                <Link href={kind === "business" ? "/features/tenant/" : "/features/business/"} className="btn btn-outline btn-lg">
+                  {kind === "business" ? "See the Tenant app" : "Run a PG? See the Business app"}
                 </Link>
               </div>
             </div>

@@ -44,6 +44,7 @@ export default function PropertyFormPage() {
   const [d, setD] = useState<PropertyDraft>(blank);
   const [step, setStep] = useState(0);
   const [error, setError] = useState<string | null>(null);
+  const [fieldErr, setFieldErr] = useState<Record<string, string | undefined>>({});
   const [gen, setGen] = useState({ floor: 2, count: 4, sharing: 2, rent: 9000, ac: false });
 
   useEffect(() => {
@@ -79,9 +80,13 @@ export default function PropertyFormPage() {
 
   const validate = () => {
     if (step === 0) {
-      if (!d.name.trim()) return "Give the property a name.";
-      if (!d.address.trim()) return "Add the street address.";
-      if (d.pincode && !/^\d{6}$/.test(d.pincode)) return "Pincode has 6 digits.";
+      const errs = {
+        name: d.name.trim() ? undefined : "Give the property a name tenants will recognise.",
+        address: d.address.trim() ? undefined : "Add the street address.",
+        pincode: d.pincode && !/^\d{6}$/.test(d.pincode) ? "A pincode has 6 digits." : undefined,
+      };
+      setFieldErr(errs);
+      if (Object.values(errs).some(Boolean)) return "Fix the highlighted fields to continue.";
     }
     if (step === 1) {
       if (!d.rooms.length) return "Add at least one room.";
@@ -122,18 +127,13 @@ export default function PropertyFormPage() {
       }
     >
       <div className="glass card">
-        <div className="stepper" aria-hidden>
+        <nav className="chips" style={{ marginBottom: 32 }} aria-label="Form steps">
           {steps.map((s, i) => (
-            <span key={s} className={i <= step ? "done" : ""} />
-          ))}
-        </div>
-        <div className="chips" style={{ marginBottom: 18 }}>
-          {steps.map((s, i) => (
-            <button key={s} className="chip" aria-pressed={i === step} onClick={() => (i < step ? setStep(i) : undefined)} disabled={i > step}>
+            <button key={s} className="chip" aria-pressed={i === step} aria-current={i === step ? "step" : undefined} onClick={() => (i < step ? setStep(i) : undefined)} disabled={i > step}>
               {i < step && <Check size={14} />} {s}
             </button>
           ))}
-        </div>
+        </nav>
         {error && (
           <div className="alert alert-red" style={{ marginBottom: 14 }}>
             {error}
@@ -142,11 +142,11 @@ export default function PropertyFormPage() {
 
         {step === 0 && (
           <div className="form-grid">
-            <Field label="Property name" full>
-              <input className="input" value={d.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Sunrise Residency" />
+            <Field label="Property name" full required error={fieldErr.name}>
+              <input className="input" aria-invalid={!!fieldErr.name} value={d.name} onChange={(e) => set("name", e.target.value)} placeholder="e.g. Sunrise Residency" />
             </Field>
-            <div className="field full">
-              <span>Who is it for?</span>
+            <div className="field full" role="group" aria-label="Who is it for?">
+              <span className="field-label">Who is it for?</span>
               <div className="chips">
                 {(["male", "female", "coed"] as const).map((g) => (
                   <button key={g} type="button" className="chip" aria-pressed={d.gender === g} onClick={() => set("gender", g)}>
@@ -162,11 +162,11 @@ export default function PropertyFormPage() {
                 ))}
               </select>
             </Field>
-            <Field label="Pincode">
-              <input className="input" inputMode="numeric" value={d.pincode} onChange={(e) => set("pincode", e.target.value)} placeholder="560034" />
+            <Field label="Pincode" error={fieldErr.pincode}>
+              <input className="input" inputMode="numeric" aria-invalid={!!fieldErr.pincode} value={d.pincode} onChange={(e) => set("pincode", e.target.value)} placeholder="560034" />
             </Field>
-            <Field label="Street address" full>
-              <input className="input" value={d.address} onChange={(e) => set("address", e.target.value)} placeholder="Building, street, area" />
+            <Field label="Street address" full required error={fieldErr.address}>
+              <input className="input" aria-invalid={!!fieldErr.address} value={d.address} onChange={(e) => set("address", e.target.value)} placeholder="Building, street, area" />
             </Field>
             <Field label="Landmark">
               <input className="input" value={d.landmarks} onChange={(e) => set("landmarks", e.target.value)} placeholder="Near…" />
@@ -183,7 +183,7 @@ export default function PropertyFormPage() {
         {step === 1 && (
           <div className="stack">
             <div className="glass card-tight" style={{ background: "var(--tint-grey)" }}>
-              <b style={{ fontSize: 14 }}>Quick add a floor</b>
+              <h3 style={{ fontSize: 17, fontWeight: 700 }}>Quick add a floor</h3>
               <div className="row wrap" style={{ marginTop: 10, alignItems: "flex-end" }}>
                 <Field label="Floor">
                   <input className="input" type="number" min={0} value={gen.floor} onChange={(e) => setGen({ ...gen, floor: +e.target.value })} style={{ width: 90 }} />
@@ -207,7 +207,7 @@ export default function PropertyFormPage() {
                   <input type="checkbox" checked={gen.ac} onChange={(e) => setGen({ ...gen, ac: e.target.checked })} /> AC
                 </label>
                 <button type="button" className="btn btn-soft" onClick={addGenerated}>
-                  <Plus size={16} /> Add rooms
+                  <Plus size={16} aria-hidden /> Add rooms
                 </button>
               </div>
             </div>
@@ -253,10 +253,10 @@ export default function PropertyFormPage() {
                       </td>
                       <td>
                         <div className="row" style={{ gap: 4 }}>
-                          <button type="button" className="icon-btn" style={{ width: 34, height: 34 }} aria-label="Duplicate room" onClick={() => set("rooms", [...d.rooms.slice(0, i + 1), { ...r, number: `${r.number}-copy` }, ...d.rooms.slice(i + 1)])}>
+                          <button type="button" className="icon-btn" style={{ width: 40, height: 40 }} aria-label={`Duplicate room ${r.number}`} title="Duplicate room" onClick={() => set("rooms", [...d.rooms.slice(0, i + 1), { ...r, number: `${r.number}-copy` }, ...d.rooms.slice(i + 1)])}>
                             <Copy size={15} />
                           </button>
-                          <button type="button" className="icon-btn" style={{ width: 34, height: 34 }} aria-label="Remove room" onClick={() => set("rooms", d.rooms.filter((_, j) => j !== i))}>
+                          <button type="button" className="icon-btn" style={{ width: 40, height: 40 }} aria-label={`Remove room ${r.number}`} title="Remove room" onClick={() => set("rooms", d.rooms.filter((_, j) => j !== i))}>
                             <Trash2 size={15} />
                           </button>
                         </div>
@@ -268,7 +268,7 @@ export default function PropertyFormPage() {
             </div>
             <div className="row-between wrap">
               <button type="button" className="btn btn-ghost" onClick={() => set("rooms", [...d.rooms, { number: "", floor: d.rooms.at(-1)?.floor ?? 1, sharing: 2, ac: false, attachedBath: true, rentPerBed: d.rooms.at(-1)?.rentPerBed ?? 9000, beds: [] }])}>
-                <Plus size={16} /> Add a room
+                <Plus size={16} aria-hidden /> Add a room
               </button>
               <span className="muted">
                 {d.rooms.length} rooms · <b>{beds} beds</b>
@@ -280,8 +280,8 @@ export default function PropertyFormPage() {
 
         {step === 2 && (
           <div className="stack-lg">
-            <div className="field">
-              <span>Amenities</span>
+            <div className="field" role="group" aria-label="Amenities">
+              <span className="field-label">Amenities</span>
               <div className="chips">
                 {amenityOptions.map((a) => {
                   const on = d.amenities.includes(a);
@@ -298,8 +298,8 @@ export default function PropertyFormPage() {
             </label>
             {d.food.included && (
               <div className="form-grid">
-                <div className="field full">
-                  <span>Meals served</span>
+                <div className="field full" role="group" aria-label="Meals served">
+                  <span className="field-label">Meals served</span>
                   <div className="chips">
                     {mealOptions.map((m) => {
                       const on = d.food.meals.includes(m);
@@ -336,8 +336,8 @@ export default function PropertyFormPage() {
             <Field label="Gate closes at">
               <input className="input" type="time" value={d.rules.gateClosesAt} onChange={(e) => set("rules", { ...d.rules, gateClosesAt: e.target.value })} />
             </Field>
-            <div className="field">
-              <span>House rules</span>
+            <div className="field" role="group" aria-label="House rules">
+              <span className="field-label">House rules</span>
               <label className="check">
                 <input type="checkbox" checked={d.rules.visitorsAllowed} onChange={(e) => set("rules", { ...d.rules, visitorsAllowed: e.target.checked })} /> Visitors allowed
               </label>
@@ -397,7 +397,7 @@ export default function PropertyFormPage() {
         <div className="modal-foot">
           {step > 0 && (
             <button className="btn btn-ghost" onClick={() => setStep((s) => s - 1)}>
-              <ArrowLeft size={16} /> Back
+              <ArrowLeft size={16} aria-hidden /> Back
             </button>
           )}
           <span className="spacer" />
@@ -407,7 +407,7 @@ export default function PropertyFormPage() {
             </button>
           ) : (
             <button className="btn btn-primary" onClick={save} disabled={busy}>
-              <Check size={16} /> {id ? "Save changes" : "Create property"}
+              <Check size={16} aria-hidden /> {id ? "Save changes" : "Create property"}
             </button>
           )}
         </div>

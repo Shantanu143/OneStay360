@@ -17,7 +17,7 @@ export default function TenantDetailPage() {
   const [modal, setModal] = useState<"pay" | "edit" | "vacate" | null>(null);
   const { busy, run } = useAction();
   useEffect(() => setId(new URLSearchParams(window.location.search).get("id")), []);
-  const { data, loading } = useQuery(
+  const { data, loading, error, reload } = useQuery(
     async (b) => {
       if (!id) return null;
       const tenant = await b.getTenant(id);
@@ -32,14 +32,14 @@ export default function TenantDetailPage() {
 
   if (loading || !id) {
     return (
-      <Page title="Tenant">
+      <Page error={error} onRetry={reload} title="Tenant">
         <Loading />
       </Page>
     );
   }
   if (!data) {
     return (
-      <Page title="Tenant">
+      <Page error={error} onRetry={reload} title="Tenant">
         <div className="glass card">
           <Empty icon={Users} title="Tenant not found" action={<Link href="/dashboard/owner/tenants/" className="btn btn-ghost">Back to tenants</Link>} />
         </div>
@@ -52,12 +52,12 @@ export default function TenantDetailPage() {
   const paidTotal = payments.filter((p) => p.status === "paid").reduce((s, p) => s + p.amount, 0);
 
   return (
-    <Page
+    <Page error={error} onRetry={reload}
       title={t.name}
       sub={`${t.id} · ${t.propertyName}`}
       actions={
         <Link href="/dashboard/owner/tenants/" className="btn btn-ghost btn-sm">
-          <ArrowLeft size={16} /> <span className="hide-sm">Tenants</span>
+          <ArrowLeft size={16} aria-hidden /> All tenants
         </Link>
       }
     >
@@ -75,10 +75,10 @@ export default function TenantDetailPage() {
           </div>
           <div className="row wrap" style={{ gap: 8 }}>
             <a className="btn btn-ghost btn-sm" href={`tel:+91${t.phone}`}>
-              <Phone size={15} /> Call
+              <Phone size={15} aria-hidden /> Call
             </a>
             <a className="btn btn-ghost btn-sm" href={`https://wa.me/91${t.phone}`} target="_blank" rel="noreferrer">
-              <MessageCircle size={15} /> WhatsApp
+              <MessageCircle size={15} aria-hidden /> WhatsApp
             </a>
             {t.status === "active" && can.canManageTenants && (
               <button
@@ -88,7 +88,7 @@ export default function TenantDetailPage() {
                   setModal("edit");
                 }}
               >
-                <Pencil size={15} /> Edit
+                <Pencil size={15} aria-hidden /> Edit details
               </button>
             )}
           </div>
@@ -122,7 +122,7 @@ export default function TenantDetailPage() {
           </dl>
           {t.status === "active" && can.canVacateTenants && (
             <button className="btn btn-danger" onClick={() => setModal("vacate")}>
-              <LogOut size={16} /> Vacate tenant
+              <LogOut size={16} aria-hidden /> Vacate tenant
             </button>
           )}
         </div>
@@ -146,7 +146,7 @@ export default function TenantDetailPage() {
               <h2>Rent invoices</h2>
               {t.status === "active" && can.canVerifyPayments && (
                 <button className="btn btn-primary btn-sm" onClick={() => setModal("pay")}>
-                  <Wallet size={15} /> Record payment
+                  <Wallet size={15} aria-hidden /> Record payment
                 </button>
               )}
             </div>
@@ -237,7 +237,7 @@ export default function TenantDetailPage() {
                 Cancel
               </button>
               <button className="btn btn-primary" disabled={busy} onClick={() => run((b) => b.updateTenant(t.id, edit), "Tenant updated").then((r) => r.ok && setModal(null))}>
-                Save
+                Save changes
               </button>
             </>
           }

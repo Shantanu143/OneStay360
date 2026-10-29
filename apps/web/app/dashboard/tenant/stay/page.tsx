@@ -8,17 +8,17 @@ import { useQuery } from "@/lib/hooks";
 import { date, money, sharingLabel } from "@/lib/format";
 
 export default function StayPage() {
-  const { data: stay, loading } = useQuery((b) => b.getStay());
+  const { data: stay, loading, error, reload } = useQuery((b) => b.getStay());
   if (loading) {
     return (
-      <Page title="My stay">
+      <Page error={error} onRetry={reload} title="My stay">
         <Loading rows={3} />
       </Page>
     );
   }
   if (!stay) {
     return (
-      <Page title="My stay">
+      <Page error={error} onRetry={reload} title="My stay">
         <div className="glass card">
           <Empty icon={Building2} title="No active stay" body="Join a PG from Explore, or accept an invitation from your owner." action={<Link href="/dashboard/tenant/explore/" className="btn btn-primary">Explore PGs</Link>} />
         </div>
@@ -27,7 +27,7 @@ export default function StayPage() {
   }
   const { tenant: t, property: p, room } = stay;
   return (
-    <Page title="My stay" sub={`${p.name} · since ${date(t.moveIn)}`}>
+    <Page error={error} onRetry={reload} title="My stay" sub={`${p.name} · since ${date(t.moveIn)}`}>
       <div className="glass" style={{ overflow: "hidden", padding: 0 }}>
         <Cover p={p} height={160} />
         <div className="card row-between wrap">
@@ -36,15 +36,15 @@ export default function StayPage() {
               Room {t.roomNumber} · Bed {t.bedNumber}
             </h2>
             <div className="muted row" style={{ gap: 6 }}>
-              <MapPin size={15} /> {p.address}, {p.city} {p.pincode}
+              <MapPin size={15} aria-hidden /> {p.address}, {p.city} {p.pincode}
             </div>
           </div>
           <div className="row wrap">
             <a className="btn btn-ghost" href={`tel:+91${p.businessPhone}`}>
-              <Phone size={16} /> Call {p.businessName}
+              <Phone size={16} aria-hidden /> Call {p.businessName}
             </a>
             <a className="btn btn-ghost" href={`https://wa.me/91${p.businessPhone}`} target="_blank" rel="noreferrer">
-              <MessageCircle size={16} /> WhatsApp
+              <MessageCircle size={16} aria-hidden /> WhatsApp
             </a>
           </div>
         </div>
@@ -98,7 +98,7 @@ export default function StayPage() {
         <div className="chips">
           {p.amenities.map((a) => (
             <Badge key={a} tone="green">
-              <Check size={12} /> {a}
+              <Check size={12} aria-hidden /> {a}
             </Badge>
           ))}
         </div>

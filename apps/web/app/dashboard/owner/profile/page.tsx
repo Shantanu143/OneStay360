@@ -12,7 +12,7 @@ export default function OwnerProfilePage() {
   const { account } = useShell();
   const isOwner = permissions(account.role).canViewBilling;
   const { busy, run } = useAction();
-  const { data: business, loading } = useQuery((b) => b.getBusiness());
+  const { data: business, loading, error, reload } = useQuery((b) => b.getBusiness());
   const [biz, setBiz] = useState({ name: "", phone: "", email: "", city: "", address: "" });
   const [kyc, setKyc] = useState({ legalName: "", pan: "", gstin: "", aadhaarLast4: "" });
   useEffect(() => {
@@ -23,7 +23,7 @@ export default function OwnerProfilePage() {
   }, [business]);
 
   return (
-    <Page title="Profile & KYC" sub="Your account and business details">
+    <Page error={error} onRetry={reload} title="Profile & KYC" sub="Your account and business details">
       <AccountCard />
       {loading ? (
         <Loading />
@@ -37,7 +37,7 @@ export default function OwnerProfilePage() {
                 </span>
                 <div>
                   <h2 className="h3">{business.name}</h2>
-                  <div className="faint" style={{ fontSize: 13 }}>
+                  <div className="faint" style={{ fontSize: 14 }}>
                     {business.id} · you are {account.role}
                   </div>
                 </div>
@@ -73,7 +73,7 @@ export default function OwnerProfilePage() {
                   </span>
                   <div>
                     <h2 className="h3">KYC</h2>
-                    <div className="faint" style={{ fontSize: 13 }}>
+                    <div className="faint" style={{ fontSize: 14 }}>
                       Needed for online rent collection
                     </div>
                   </div>
@@ -81,7 +81,7 @@ export default function OwnerProfilePage() {
                 <StatusBadge status={business.kycStatus} />
               </div>
               {business.kyc && (
-                <p className="muted" style={{ fontSize: 13 }}>
+                <p className="muted" style={{ fontSize: 14 }}>
                   Submitted {date(business.kyc.submittedAt)}
                 </p>
               )}

@@ -3,7 +3,7 @@ import { useState } from "react";
 import { BarChart3, BedDouble, Download, IndianRupee, TrendingUp } from "lucide-react";
 import { Page } from "@/components/dash/shell";
 import { Bars, bedStats, Donut, Progress } from "@/components/dash/widgets";
-import { Kpi, Loading, Segmented } from "@/components/ui";
+import { Field, Kpi, Loading, Segmented } from "@/components/ui";
 import { useQuery } from "@/lib/hooks";
 import { money, monthShort, periodOf } from "@/lib/format";
 import { downloadCsv } from "@/lib/csv";
@@ -13,13 +13,13 @@ const methodColors: Record<string, string> = { Online: "#0e7c66", UPI: "#5dd6b3"
 export default function ReportsPage() {
   const [range, setRange] = useState<"6" | "12">("6");
   const [property, setProperty] = useState("all");
-  const { data, loading } = useQuery(async (b) => {
+  const { data, loading, error, reload } = useQuery(async (b) => {
     const [properties, invoices, payments, tenants] = await Promise.all([b.listProperties(), b.listInvoices(), b.listPayments({ status: "paid" }), b.listTenants()]);
     return { properties, invoices, payments, tenants };
   });
   if (loading || !data) {
     return (
-      <Page title="Reports">
+      <Page error={error} onRetry={reload} title="Reports">
         <Loading rows={4} />
       </Page>
     );
@@ -52,17 +52,18 @@ export default function ReportsPage() {
   };
 
   return (
-    <Page
+    <Page error={error} onRetry={reload}
       title="Reports"
       sub="Collections, occupancy and payment mix"
       actions={
         <button className="btn btn-ghost btn-sm" onClick={exportDues}>
-          <Download size={15} /> <span className="hide-sm">Export</span>
+          <Download size={15} aria-hidden /> Export CSV
         </button>
       }
     >
-      <div className="row-between wrap">
+      <div className="filters" style={{ justifyContent: "space-between" }}>
         <Segmented<"6" | "12">
+          label="Time range"
           value={range}
           onChange={setRange}
           options={[
@@ -70,7 +71,8 @@ export default function ReportsPage() {
             { value: "12", label: "12 months" },
           ]}
         />
-        <select className="select" value={property} onChange={(e) => setProperty(e.target.value)} style={{ width: 220 }} aria-label="Property">
+        <Field label="Property">
+        <select className="select" value={property} onChange={(e) => setProperty(e.target.value)} style={{ minWidth: 220 }}>
           <option value="all">All properties</option>
           {data.properties.map((p) => (
             <option key={p.id} value={p.id}>
@@ -78,6 +80,7 @@ export default function ReportsPage() {
             </option>
           ))}
         </select>
+        </Field>
       </div>
       <div className="grid-4">
         <Kpi icon={IndianRupee} label="Collected" value={money(totalCollected)} hint={`last ${n} months`} />
@@ -97,7 +100,7 @@ export default function ReportsPage() {
             <h2>Payment methods</h2>
           </div>
           {methodTotals.size ? (
-            <Donut parts={[...methodTotals.entries()].map(([label, value]) => ({ label, value, color: methodColors[label] ?? "#999" }))} center={<span style={{ fontSize: 13 }}>{money(totalCollected)}</span>} />
+            <Donut parts={[...methodTotals.entries()].map(([label, value]) => ({ label, value, color: methodColors[label] ?? "#999" }))} center={<span style={{ fontSize: 14 }}>{money(totalCollected)}</span>} />
           ) : (
             <p className="muted">No payments in this period.</p>
           )}
@@ -117,7 +120,7 @@ export default function ReportsPage() {
                       {s.occupied}/{s.total} · {s.pct}%
                     </span>
                   </div>
-                  <Progress value={s.pct} />
+                  <Progress value={s.pct} label={`${p.name} occupancy`} />
                 </div>
               );
             })}
@@ -153,7 +156,7 @@ export default function ReportsPage() {
                     {money(c.total - c.value)}
                   </td>
                   <td style={{ minWidth: 140 }}>
-                    <Progress value={c.total ? (c.value / c.total) * 100 : 0} />
+                    <Progress value={c.total ? (c.value / c.total) * 100 : 0} label={`Collection rate for ${c.period}`} />
                   </td>
                 </tr>
               ))}

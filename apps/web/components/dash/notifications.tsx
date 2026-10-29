@@ -21,7 +21,7 @@ export function NotificationsPage() {
       actions={
         unread > 0 && (
           <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => run((b) => b.markNotificationsRead())}>
-            <CheckCheck size={15} /> Mark all read
+            <CheckCheck size={15} aria-hidden /> Mark all read
           </button>
         )
       }
@@ -48,7 +48,7 @@ export function NotificationsPage() {
                       {n.body}
                     </div>
                   </div>
-                  <span className="faint" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                  <span className="faint" style={{ fontSize: 14, whiteSpace: "nowrap" }}>
                     {ago(n.createdAt)}
                   </span>
                   {!n.read && <span style={{ width: 8, height: 8, borderRadius: 4, background: "var(--brand)", flex: "none" }} aria-label="Unread" />}

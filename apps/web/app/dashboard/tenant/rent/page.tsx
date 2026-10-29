@@ -34,7 +34,7 @@ function PayModal({ inv, settings, onClose }: { inv: RentInvoice; settings: { on
           </button>
           {mode === "online" && !checkout ? (
             <button className="btn btn-primary" onClick={() => setCheckout(true)}>
-              <CreditCard size={16} /> Continue to pay {money(inv.amount)}
+              <CreditCard size={16} aria-hidden /> Continue to pay {money(inv.amount)}
             </button>
           ) : (
             <button className="btn btn-primary" disabled={busy} onClick={submit}>
@@ -47,14 +47,14 @@ function PayModal({ inv, settings, onClose }: { inv: RentInvoice; settings: { on
       <div className="chips" style={{ marginBottom: 16 }}>
         {settings.onlineEnabled && (
           <button className="chip" aria-pressed={mode === "online"} onClick={() => setMode("online")}>
-            <CreditCard size={14} /> Pay online
+            <CreditCard size={14} aria-hidden /> Pay online
           </button>
         )}
         <button className="chip" aria-pressed={mode === "UPI"} onClick={() => setMode("UPI")}>
-          <Smartphone size={14} /> UPI
+          <Smartphone size={14} aria-hidden /> UPI
         </button>
         <button className="chip" aria-pressed={mode === "Cash"} onClick={() => setMode("Cash")}>
-          <Banknote size={14} /> Cash
+          <Banknote size={14} aria-hidden /> Cash
         </button>
       </div>
       {mode === "online" ? (
@@ -68,7 +68,7 @@ function PayModal({ inv, settings, onClose }: { inv: RentInvoice; settings: { on
           {settings.upiId ? (
             <div className="glass card-tight row-between">
               <div>
-                <div className="faint" style={{ fontSize: 12 }}>
+                <div className="faint" style={{ fontSize: 14 }}>
                   Pay to
                 </div>
                 <b>{settings.upiId}</b>
@@ -110,14 +110,14 @@ function PayModal({ inv, settings, onClose }: { inv: RentInvoice; settings: { on
 
 export default function RentPage() {
   const [paying, setPaying] = useState<RentInvoice | null>(null);
-  const { data, loading } = useQuery(async (b) => {
+  const { data, loading, error, reload } = useQuery(async (b) => {
     const stay = await b.getStay();
     const [invoices, payments, settings] = await Promise.all([b.listMyInvoices(), b.listMyPayments(), stay ? b.paymentSettings(stay.tenant.businessId) : Promise.resolve({ onlineEnabled: false })]);
     return { stay, invoices, payments, settings };
   });
   if (loading || !data) {
     return (
-      <Page title="Rent & payments">
+      <Page error={error} onRetry={reload} title="Rent & payments">
         <Loading rows={4} />
       </Page>
     );
@@ -126,7 +126,7 @@ export default function RentPage() {
   const open = invoices.filter((i) => i.status !== "paid").sort((a, b) => a.dueDate - b.dueDate);
   const pendingFor = (inv: RentInvoice) => payments.find((p) => p.status === "pending" && (p.invoiceId === inv.id || p.month === inv.month));
   return (
-    <Page title="Rent & payments" sub={stay ? `${money(stay.tenant.monthlyRent)} / month · due on day ${stay.tenant.billingDay}` : undefined}>
+    <Page error={error} onRetry={reload} title="Rent & payments" sub={stay ? `${money(stay.tenant.monthlyRent)} / month · due on day ${stay.tenant.billingDay}` : undefined}>
       {!stay && payments.length === 0 ? (
         <div className="glass card">
           <Empty icon={Wallet} title="No rent yet" body="Once you have a stay, your monthly invoices appear here." action={<Link href="/dashboard/tenant/explore/" className="btn btn-primary">Explore PGs</Link>} />
@@ -158,7 +158,7 @@ export default function RentPage() {
                       {pending ? <span className="badge badge-amber">{pending.method} payment awaiting confirmation</span> : <StatusBadge status={i.status} />}
                       {!pending && (
                         <button className="btn btn-primary btn-sm" onClick={() => setPaying(i)}>
-                          Pay
+                          Pay {money(i.amount)}
                         </button>
                       )}
                     </div>
@@ -198,7 +198,7 @@ export default function RentPage() {
                         </td>
                         <td>
                           <StatusBadge status={p.status} />
-                          {p.rejectionReason && <div className="faint" style={{ fontSize: 12, whiteSpace: "normal" }}>{p.rejectionReason}</div>}
+                          {p.rejectionReason && <div className="faint" style={{ fontSize: 14, whiteSpace: "normal" }}>{p.rejectionReason}</div>}
                         </td>
                       </tr>
                     ))}

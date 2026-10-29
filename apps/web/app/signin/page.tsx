@@ -2,7 +2,7 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, useState, type FormEvent } from "react";
-import { ArrowRight, Briefcase, Eye, EyeOff, Home, UserCog } from "lucide-react";
+import { Briefcase, Eye, EyeOff, Home, UserCog } from "lucide-react";
 import { AuthShell, nextPath } from "@/components/auth-shell";
 import { Field } from "@/components/ui";
 import { useBackend } from "@/lib/hooks";
@@ -49,51 +49,62 @@ export default function SignInPage() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
 
+  const [fieldErr, setFieldErr] = useState<{ email?: string; password?: string }>({});
   const submit = (e: FormEvent) => {
     e.preventDefault();
+    const errs = {
+      email: !email.trim() ? "Enter your email address." : !/^\S+@\S+\.\S+$/.test(email.trim()) ? "Enter a valid email, like name@example.com." : undefined,
+      password: !password ? "Enter your password." : undefined,
+    };
+    setFieldErr(errs);
+    if (errs.email || errs.password) return;
     void go(email, password);
   };
 
   return (
     <AuthShell>
-      <h1 style={{ fontSize: 26, fontWeight: 800, letterSpacing: "-0.02em" }}>Welcome back</h1>
-      <p className="muted" style={{ marginTop: 6, marginBottom: 22 }}>
-        Sign in to your OneStay360 account.
+      <h1 style={{ fontSize: 30, fontWeight: 800, letterSpacing: "-0.02em", lineHeight: 1.2 }}>Welcome back</h1>
+      <p className="muted" style={{ marginTop: 8, marginBottom: 28 }}>
+        Sign in to manage your PG or your stay.
       </p>
-      <form className="stack" onSubmit={submit}>
-        <Field label="Email">
-          <input className="input" type="email" autoComplete="email" required value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
+      <form className="stack" style={{ gap: 20 }} onSubmit={submit} noValidate>
+        <Field label="Email address" required error={fieldErr.email}>
+          <input className="input" type="email" autoComplete="email" required aria-invalid={!!fieldErr.email} value={email} onChange={(e) => setEmail(e.target.value)} placeholder="you@example.com" />
         </Field>
-        <Field label="Password">
+        <Field label="Password" required error={fieldErr.password}>
           <div style={{ position: "relative" }}>
-            <input className="input" type={show ? "text" : "password"} autoComplete="current-password" required value={password} onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" style={{ paddingRight: 44 }} />
-            <button type="button" onClick={() => setShow((s) => !s)} aria-label={show ? "Hide password" : "Show password"} style={{ position: "absolute", right: 6, top: 6, width: 32, height: 32, border: 0, background: "none", color: "var(--ink-soft)" }}>
+            <input className="input" type={show ? "text" : "password"} autoComplete="current-password" required aria-invalid={!!fieldErr.password} value={password} onChange={(e) => setPassword(e.target.value)} style={{ paddingRight: 52 }} />
+            <button type="button" onClick={() => setShow((s) => !s)} aria-label={show ? "Hide password" : "Show password"} aria-pressed={show} style={{ position: "absolute", right: 4, top: 3, width: 40, height: 40, border: 0, borderRadius: 10, background: "none", color: "var(--ink-soft)", display: "grid", placeItems: "center" }}>
               {show ? <EyeOff size={18} /> : <Eye size={18} />}
             </button>
           </div>
         </Field>
-        {error && <div className="alert alert-red">{error}</div>}
-        <button className="btn btn-primary btn-block btn-lg" disabled={busy}>
-          {busy ? "Signing in…" : "Sign in"} <ArrowRight size={18} />
+        {error && (
+          <div className="alert alert-red" role="alert">
+            {error}
+          </div>
+        )}
+        <button className="btn btn-primary btn-block btn-lg" disabled={busy} aria-busy={busy}>
+          {busy ? "Signing in…" : "Sign in"}
         </button>
       </form>
 
       {backend.mode === "demo" && (
         <>
-          <div className="or" style={{ margin: "22px 0 12px" }}>
-            or explore a demo account
+          <div className="or" style={{ margin: "28px 0 16px" }}>
+            or explore with sample data
           </div>
-          <div className="stack" style={{ gap: 8 }}>
+          <div className="stack" style={{ gap: 10 }}>
             {demos.map((d) => {
               const Icon = d.icon;
               return (
-                <button key={d.key} className="btn btn-ghost btn-block" style={{ justifyContent: "flex-start", height: 52 }} disabled={busy} onClick={() => go(d.email, DEMO_PASSWORD)} data-demo={d.key}>
-                  <span className="tile-ic" style={{ width: 32, height: 32, borderRadius: 10 }}>
+                <button key={d.key} className="btn btn-ghost btn-block" style={{ justifyContent: "flex-start", minHeight: 60, gap: 14 }} disabled={busy} onClick={() => go(d.email, DEMO_PASSWORD)} data-demo={d.key}>
+                  <span className="tile-ic" style={{ width: 36, height: 36, borderRadius: 10 }} aria-hidden>
                     <Icon size={16} />
                   </span>
                   <span style={{ textAlign: "left" }}>
-                    {d.label}
-                    <span className="faint" style={{ display: "block", fontSize: 12, fontWeight: 500 }}>
+                    Explore as {d.label.toLowerCase()}
+                    <span className="muted" style={{ display: "block", fontSize: 14, fontWeight: 500 }}>
                       {d.sub}
                     </span>
                   </span>
@@ -101,14 +112,14 @@ export default function SignInPage() {
               );
             })}
           </div>
-          <p className="faint" style={{ fontSize: 12, marginTop: 12 }}>
-            Demo accounts use the password <code>{DEMO_PASSWORD}</code>. Data stays in this browser.
+          <p className="muted small" style={{ marginTop: 16 }}>
+            Demo accounts use the password <code>{DEMO_PASSWORD}</code>. Sample data stays in this browser.
           </p>
         </>
       )}
-      <p className="muted" style={{ marginTop: 20, fontSize: 14, textAlign: "center" }}>
+      <p className="muted" style={{ marginTop: 28, textAlign: "center" }}>
         New to OneStay360?{" "}
-        <Link href="/signup/" style={{ color: "var(--brand)", fontWeight: 650 }}>
+        <Link href="/signup/" className="text-link">
           Create an account
         </Link>
       </p>

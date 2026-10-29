@@ -13,14 +13,14 @@ export default function TenantPgPage() {
   const router = useRouter();
   const [id, setId] = useState<string | null>(null);
   useEffect(() => setId(new URLSearchParams(window.location.search).get("id")), []);
-  const { data, loading } = useQuery((b) => (id ? b.getPublicProperty(id) : Promise.resolve(null)), [id]);
+  const { data, loading, error, reload } = useQuery((b) => (id ? b.getPublicProperty(id) : Promise.resolve(null)), [id]);
   return (
-    <Page
+    <Page error={error} onRetry={reload}
       title={data?.name ?? "PG"}
       sub={data ? `${data.city} · by ${data.businessName}` : undefined}
       actions={
         <Link href="/dashboard/tenant/explore/" className="btn btn-ghost btn-sm">
-          <ArrowLeft size={16} /> Explore
+          <ArrowLeft size={16} aria-hidden /> Explore
         </Link>
       }
     >

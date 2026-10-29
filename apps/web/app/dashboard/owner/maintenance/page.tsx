@@ -15,7 +15,7 @@ export default function MaintenancePage() {
   const [acting, setActing] = useState<{ m: MaintenanceRequest; to: MaintenanceStatus } | null>(null);
   const [note, setNote] = useState("");
   const { busy, run } = useAction();
-  const { data, loading } = useQuery((b) => b.listMaintenance());
+  const { data, loading, error, reload } = useQuery((b) => b.listMaintenance());
   const list = (data ?? [])
     .filter((m) => (filter === "active" ? m.status === "open" || m.status === "in_progress" : filter === "resolved" ? m.status === "resolved" || m.status === "cancelled" : true))
     .sort((a, b) => Number(b.urgent && b.status === "open") - Number(a.urgent && a.status === "open") || b.createdAt - a.createdAt);
@@ -24,7 +24,7 @@ export default function MaintenancePage() {
   const resolved = data?.filter((m) => m.status === "resolved").length ?? 0;
 
   return (
-    <Page title="Maintenance" sub="Issues raised by your tenants">
+    <Page error={error} onRetry={reload} title="Maintenance" sub="Issues raised by your tenants">
       <div className="grid-3">
         <Kpi icon={Wrench} label="Open" value={open} hint={`${data?.filter((m) => m.status === "open" && m.urgent).length ?? 0} urgent`} tone={open ? "amber" : undefined} />
         <Kpi icon={PlayCircle} label="In progress" value={progress} tone="blue" />
@@ -55,31 +55,31 @@ export default function MaintenancePage() {
                   {m.urgent && <Badge tone="red">Urgent</Badge>}
                   <Badge tone="grey">{categoryLabels[m.category]}</Badge>
                 </div>
-                <span className="faint" style={{ fontSize: 12 }}>
+                <span className="faint" style={{ fontSize: 14 }}>
                   {ago(m.createdAt)}
                 </span>
               </div>
               <b style={{ fontSize: 16 }}>{m.title}</b>
               {m.description && <p className="muted" style={{ fontSize: 14 }}>{m.description}</p>}
-              <div className="faint" style={{ fontSize: 13 }}>
+              <div className="faint" style={{ fontSize: 14 }}>
                 {m.tenantName} · {m.propertyName} · Room {m.roomNumber}-{m.bedNumber}
               </div>
               {m.ownerNote && <div className="alert alert-blue">Note: {m.ownerNote}</div>}
               <div className="row wrap" style={{ gap: 8, marginTop: 4 }}>
                 {m.status === "open" && (
                   <button className="btn btn-soft btn-sm" onClick={() => { setNote(m.ownerNote ?? ""); setActing({ m, to: "in_progress" }); }}>
-                    <PlayCircle size={15} /> Start work
+                    <PlayCircle size={15} aria-hidden /> Start work
                   </button>
                 )}
                 {(m.status === "open" || m.status === "in_progress") && (
                   <button className="btn btn-primary btn-sm" onClick={() => { setNote(m.ownerNote ?? ""); setActing({ m, to: "resolved" }); }}>
-                    <CheckCircle2 size={15} /> Mark resolved
+                    <CheckCircle2 size={15} aria-hidden /> Mark resolved
                   </button>
                 )}
                 <a className="btn btn-ghost btn-sm" href={`tel:+91${m.tenantPhone}`}>
-                  <Phone size={15} /> Call
+                  <Phone size={15} aria-hidden /> Call
                 </a>
-                {m.status === "resolved" && <span className="faint" style={{ fontSize: 12.5 }}>Resolved {date(m.updatedAt)}</span>}
+                {m.status === "resolved" && <span className="faint" style={{ fontSize: 14 }}>Resolved {date(m.updatedAt)}</span>}
               </div>
             </div>
           ))}

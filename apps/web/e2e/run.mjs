@@ -63,7 +63,7 @@ const signIn = async (email, password = "demo1234") => {
   await page.fill('input[autocomplete="current-password"]', password);
   await page.click('button:has-text("Sign in")');
   await page.waitForURL(/\/dashboard\//);
-  await page.locator(".topbar h1").waitFor();
+  await page.locator(".page-head h1").waitFor();
 };
 const signOut = async () => {
   await page.evaluate(() => localStorage.removeItem("onestay360.demo.session"));
@@ -77,7 +77,7 @@ const signUp = async ({ kind, name, email, phone }) => {
   await page.fill('input[autocomplete="new-password"]', "secret123");
   await page.click("form button.btn-primary");
   await page.waitForURL(/\/dashboard\//);
-  await page.locator(".topbar h1").waitFor();
+  await page.locator(".page-head h1").waitFor();
 };
 const expectText = async (text, scope = page) => {
   await scope.getByText(text, { exact: false }).first().waitFor({ timeout: 5000 });
@@ -89,7 +89,7 @@ console.log(`Serving ${root} at ${base}\n`);
 // ── Public site ──────────────────────────────────────────
 await step("landing renders hero, features, pricing and FAQ", async () => {
   await go("/");
-  await expectText("Run your PG on");
+  await expectText("PG management that runs itself");
   for (const id of ["features", "how", "pricing", "faq"]) await page.locator(`#${id}`).waitFor();
   await page.click('button[role="tab"]:has-text("Tenant app")');
   await expectText("Community pinboard");
@@ -202,7 +202,7 @@ await step("tenant raises maintenance; owner starts and resolves it", async () =
   await go("/dashboard/tenant/maintenance/");
   await page.click('button:has-text("Raise request")');
   await modal().locator('input[placeholder="e.g. Fan not working"]').fill("Geyser not heating");
-  await modal().locator('button:has-text("Submit")').click();
+  await modal().locator('button:has-text("Send to owner")').click();
   await toast("Request sent");
   await signOut();
   await signIn("asha@onestay.demo");
@@ -234,7 +234,7 @@ await step("owner invites a tenant with the wizard; tenant accepts", async () =>
   await signOut();
   await signIn("asha@onestay.demo");
   await go("/dashboard/owner/tenants/");
-  await page.click('.topbar button:has-text("Add tenant")');
+  await page.click('.page-actions button:has-text("Add a tenant")');
   await modal().locator("button.bed.free").first().click();
   await modal().locator('button:has-text("Continue")').click();
   await modal().locator('input[placeholder="Tenant\'s name"]').fill("Invited Ira");
@@ -273,7 +273,7 @@ await step("owner adds a property with the stepped form and activates it with a 
 });
 await step("owner records a cash payment and exports CSV", async () => {
   await go("/dashboard/owner/payments/");
-  await page.click('.topbar button:has-text("Record")');
+  await page.click('.page-actions button:has-text("Record a payment")');
   await modal().locator('button:has-text("Record ₹")').click();
   await toast("Payment recorded");
   await page.click('button[role="tab"]:has-text("All payments")');
@@ -282,7 +282,7 @@ await step("owner records a cash payment and exports CSV", async () => {
 });
 await step("owner invites a staff member who signs up and joins", async () => {
   await go("/dashboard/owner/team/");
-  await page.click('.topbar button:has-text("Invite")');
+  await page.click('.page-actions button:has-text("Invite a team member")');
   await modal().locator("input").first().fill("Sam Staff");
   await modal().locator('input[placeholder="10-digit mobile"]').fill("9000033333");
   await modal().locator('button:has-text("staff")').click();
@@ -320,7 +320,7 @@ for (const [width, label] of [
     for (const r of routes) {
       await step(`${label} ${r} renders without overflow`, async () => {
         await go(r);
-        await page.locator(".topbar h1").waitFor();
+        await page.locator(".page-head h1").waitFor();
         await page.waitForTimeout(250);
         const overflow = await page.evaluate(() => document.documentElement.scrollWidth - window.innerWidth);
         if (overflow > 1) throw new Error(`horizontal overflow ${overflow}px`);

@@ -5,7 +5,7 @@ import { Heart, MapPin, Search, Star } from "lucide-react";
 import { Page, useShell } from "@/components/dash/shell";
 import { Cover, genderLabel, minRent } from "@/components/dash/widgets";
 import { freeBeds } from "@/components/property-view";
-import { Empty, Loading } from "@/components/ui";
+import { Empty, Field, Loading, SearchField } from "@/components/ui";
 import { useAction, useQuery } from "@/lib/hooks";
 import { money } from "@/lib/format";
 import type { Gender } from "@/lib/types";
@@ -19,24 +19,23 @@ export default function ExplorePage() {
   const [q, setQ] = useState("");
   const [favOnly, setFavOnly] = useState(false);
   const { run } = useAction();
-  const { data, loading } = useQuery((b) => b.explore({ city, gender, query: q }), [city, gender, q]);
+  const { data, loading, error, reload } = useQuery((b) => b.explore({ city, gender, query: q }), [city, gender, q]);
   const list = (data ?? []).filter((p) => !favOnly || account.favorites.includes(p.id));
 
   return (
-    <Page title="Explore PGs" sub="Verified PGs run on OneStay360">
-      <div className="row wrap" style={{ gap: 10 }}>
-        <div style={{ position: "relative", flex: "1 1 260px", maxWidth: 420 }}>
-          <Search size={16} style={{ position: "absolute", left: 14, top: 14, color: "var(--ink-faint)" }} />
-          <input className="input" placeholder="Area, PG name or amenity" value={q} onChange={(e) => setQ(e.target.value)} style={{ paddingLeft: 40 }} aria-label="Search PGs" />
-        </div>
-        <select className="select" style={{ width: 160 }} value={gender} onChange={(e) => setGender(e.target.value as Gender | "any")} aria-label="Who for">
+    <Page error={error} onRetry={reload} title="Explore PGs" sub="Verified PGs run on OneStay360">
+      <div className="filters">
+        <SearchField label="Search PGs" value={q} onChange={setQ} placeholder="Area, PG name or amenity" />
+        <Field label="Who is it for?">
+        <select className="select" value={gender} onChange={(e) => setGender(e.target.value as Gender | "any")}>
           <option value="any">Anyone</option>
           <option value="male">Men</option>
           <option value="female">Women</option>
           <option value="coed">Co-living</option>
         </select>
-        <button className="chip" aria-pressed={favOnly} onClick={() => setFavOnly((f) => !f)}>
-          <Heart size={14} /> Favourites
+        </Field>
+        <button className="chip" style={{ minHeight: 46 }} aria-pressed={favOnly} onClick={() => setFavOnly((f) => !f)}>
+          <Heart size={14} aria-hidden /> Favourites
         </button>
       </div>
       <div className="chips">
@@ -72,13 +71,13 @@ export default function ExplorePage() {
                   <div className="row-between">
                     <b style={{ fontSize: 16.5 }}>{p.name}</b>
                     {p.rating > 0 && (
-                      <span className="row" style={{ gap: 4, fontSize: 13, fontWeight: 650 }}>
+                      <span className="row" style={{ gap: 4, fontSize: 14, fontWeight: 650 }}>
                         <Star size={14} fill="#f5b301" color="#f5b301" /> {p.rating.toFixed(1)}
                       </span>
                     )}
                   </div>
-                  <span className="muted row" style={{ fontSize: 13.5, gap: 6 }}>
-                    <MapPin size={14} /> {p.landmarks || p.address}, {p.city}
+                  <span className="muted row" style={{ fontSize: 14, gap: 6 }}>
+                    <MapPin size={14} aria-hidden /> {p.landmarks || p.address}, {p.city}
                   </span>
                   <div className="chips" style={{ gap: 6 }}>
                     {p.amenities.slice(0, 3).map((a) => (
@@ -90,7 +89,7 @@ export default function ExplorePage() {
                   <div className="row-between" style={{ marginTop: "auto", paddingTop: 6 }}>
                     <span>
                       <b style={{ fontSize: 18 }}>{money(minRent(p))}</b>
-                      <span className="muted" style={{ fontSize: 13 }}>
+                      <span className="muted" style={{ fontSize: 14 }}>
                         {" "}
                         /mo onwards
                       </span>

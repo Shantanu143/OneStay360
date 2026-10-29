@@ -23,7 +23,7 @@ export default function PaymentsPage() {
   const [reason, setReason] = useState("");
   const [method, setMethod] = useState("all");
   const { busy, run } = useAction();
-  const { data, loading } = useQuery(async (b) => {
+  const { data, loading, error, reload } = useQuery(async (b) => {
     const [payments, invoices] = await Promise.all([b.listPayments(), b.listInvoices()]);
     return { payments, invoices };
   });
@@ -44,7 +44,7 @@ export default function PaymentsPage() {
   };
 
   return (
-    <Page
+    <Page error={error} onRetry={reload}
       title="Rent & payments"
       sub="Verify UPI and cash, chase dues, record what you received"
       actions={
@@ -58,10 +58,10 @@ export default function PaymentsPage() {
                 if (r.ok) toast(r.value ? `${r.value} invoice${r.value > 1 ? "s" : ""} generated` : "This month's invoices already exist", "success");
               }}
             >
-              <FileText size={15} /> Generate invoices
+              <FileText size={15} aria-hidden /> Generate invoices
             </button>
             <button className="btn btn-primary btn-sm" onClick={() => setRecordFor(null)}>
-              <Wallet size={15} /> Record
+              <Wallet size={15} aria-hidden /> Record a payment
             </button>
           </>
         )
@@ -106,7 +106,7 @@ export default function PaymentsPage() {
                         <X size={14} /> Reject
                       </button>
                       <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => run((b) => b.verifyPayment(p.id, "approve"), `${money(p.amount)} from ${p.tenantName} verified`)}>
-                        <Check size={14} /> Confirm
+                        <Check size={14} aria-hidden /> Confirm
                       </button>
                     </div>
                   ) : (
@@ -153,7 +153,7 @@ export default function PaymentsPage() {
                       <td>
                         {can.canVerifyPayments && (
                           <button className="btn btn-soft btn-sm" onClick={() => setRecordFor(i.tenantId)}>
-                            Record
+                            Record payment
                           </button>
                         )}
                       </td>
@@ -174,7 +174,7 @@ export default function PaymentsPage() {
                 ))}
               </div>
               <button className="btn btn-ghost btn-sm" onClick={exportCsv}>
-                <Download size={15} /> Export CSV
+                <Download size={15} aria-hidden /> Export CSV
               </button>
             </div>
             {history.length === 0 ? (

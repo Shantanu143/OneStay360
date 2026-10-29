@@ -8,7 +8,6 @@ import {
   Briefcase,
   Building2,
   ClipboardCheck,
-  FileText,
   IndianRupee,
   Plus,
   Receipt,
@@ -22,7 +21,7 @@ import { Page, useShell } from "@/components/dash/shell";
 import { AddTenantModal, RecordPaymentModal } from "@/components/dash/owner-forms";
 import { Bars, bedStats, Cover, Progress } from "@/components/dash/widgets";
 import { Empty, Field, Kpi, Loading, StatusBadge } from "@/components/ui";
-import { useAction, useQuery, useToast } from "@/lib/hooks";
+import { useAction, useQuery } from "@/lib/hooks";
 import { ago, money, monthShort, periodOf } from "@/lib/format";
 import { permissions } from "@/lib/permissions";
 
@@ -48,7 +47,7 @@ function SetupBusiness() {
                 <div className="meta">Access to {m.propertyIds.length} propert{m.propertyIds.length > 1 ? "ies" : "y"}</div>
               </div>
               <button className="btn btn-primary btn-sm" disabled={busy} onClick={() => run((b) => b.acceptTeamInvite(m.id), "You joined the team")}>
-                Accept
+                Accept and join
               </button>
             </div>
           ))}
@@ -114,7 +113,7 @@ function SetupBusiness() {
               </div>
             );
           })}
-          <p className="faint" style={{ fontSize: 13 }}>
+          <p className="faint" style={{ fontSize: 14 }}>
             Joining someone else&apos;s team? Ask the owner to invite {account.phone || account.email}; the invitation will appear here.
           </p>
         </div>
@@ -127,9 +126,7 @@ function OwnerHome() {
   const { account } = useShell();
   const can = permissions(account.role);
   const [modal, setModal] = useState<"tenant" | "payment" | null>(null);
-  const { busy, run } = useAction();
-  const toast = useToast();
-  const { data, loading } = useQuery(async (b) => {
+  const { data, loading, error, reload } = useQuery(async (b) => {
     const [business, properties, tenants, invoices, payments, requests, maintenance, activity] = await Promise.all([
       b.getBusiness(),
       b.listProperties(),
@@ -145,7 +142,7 @@ function OwnerHome() {
 
   if (loading || !data) {
     return (
-      <Page title="Home">
+      <Page error={error} onRetry={reload} title="Home">
         <Loading rows={4} />
       </Page>
     );
@@ -194,14 +191,23 @@ function OwnerHome() {
   const greeting = hour < 12 ? "Good morning" : hour < 17 ? "Good afternoon" : "Good evening";
 
   return (
-    <Page
+    <Page error={error} onRetry={reload}
       title={`${greeting}, ${account.name.split(" ")[0]}`}
-      sub={`${business?.name ?? ""} · ${properties.length} propert${properties.length === 1 ? "y" : "ies"} · ${account.role}`}
+      sub={`${business?.name ?? "Your business"} — here’s how your ${properties.length === 1 ? "property is" : `${properties.length} properties are`} doing today.`}
       actions={
-        can.canManageTenants && (
-          <button className="btn btn-primary btn-sm hide-sm" onClick={() => setModal("tenant")}>
-            <UserPlus size={16} /> Add tenant
-          </button>
+        properties.length > 0 && (
+          <>
+            {can.canVerifyPayments && (
+              <button className="btn btn-ghost" onClick={() => setModal("payment")}>
+                <Wallet size={17} aria-hidden /> Record a payment
+              </button>
+            )}
+            {can.canManageTenants && (
+              <button className="btn btn-primary" onClick={() => setModal("tenant")}>
+                <UserPlus size={17} aria-hidden /> Add a tenant
+              </button>
+            )}
+          </>
         )
       }
     >
@@ -214,7 +220,7 @@ function OwnerHome() {
             action={
               can.canEditProperties && (
                 <Link href="/dashboard/owner/property-form/" className="btn btn-primary">
-                  <Plus size={16} /> Add property
+                  <Plus size={16} aria-hidden /> Add property
                 </Link>
               )
             }
@@ -225,12 +231,12 @@ function OwnerHome() {
           <div className="grid-4">
             <div className="glass kpi kpi-hero" style={{ gridColumn: "span 2" }}>
               <div className="label">
-                <IndianRupee size={16} /> Collected in {new Date().toLocaleDateString("en-US", { month: "long" })}
+                <IndianRupee size={16} aria-hidden /> Collected in {new Date().toLocaleDateString("en-US", { month: "long" })}
               </div>
               <div className="value num" style={{ fontSize: 34 }}>
                 {money(collected)}
               </div>
-              <Progress value={expected ? (collected / expected) * 100 : 0} />
+              <Progress value={expected ? (collected / expected) * 100 : 0} label="Share of this month's rent collected" />
               <div className="hint">
                 {expected ? Math.round((collected / expected) * 100) : 0}% of {money(expected)} expected · {money(expected - collected)} to collect
               </div>
@@ -244,22 +250,22 @@ function OwnerHome() {
               <div className="section-title">
                 <h2>Collections</h2>
                 <Link href="/dashboard/owner/reports/" className="btn btn-ghost btn-sm">
-                  Reports <ArrowRight size={14} />
+                  Open reports <ArrowRight size={15} aria-hidden />
                 </Link>
               </div>
               <Bars data={chart} />
               <hr className="divider" style={{ margin: "16px 0" }} />
               <div className="grid-3" style={{ gap: 12 }}>
                 <div>
-                  <div className="faint" style={{ fontSize: 12.5 }}>6-month collected</div>
+                  <div className="faint" style={{ fontSize: 14 }}>6-month collected</div>
                   <b className="num">{money(chart.reduce((x, c) => x + c.value, 0))}</b>
                 </div>
                 <div>
-                  <div className="faint" style={{ fontSize: 12.5 }}>Collection rate</div>
+                  <div className="faint" style={{ fontSize: 14 }}>Collection rate</div>
                   <b className="num">{Math.round((chart.reduce((x, c) => x + c.value, 0) / Math.max(1, chart.reduce((x, c) => x + c.total, 0))) * 100)}%</b>
                 </div>
                 <div>
-                  <div className="faint" style={{ fontSize: 12.5 }}>Outstanding</div>
+                  <div className="faint" style={{ fontSize: 14 }}>Outstanding</div>
                   <b className="num" style={{ color: overdue.length ? "var(--tint-red-ink)" : undefined }}>{money(invoices.filter((i) => i.status !== "paid").reduce((x, i) => x + i.amount, 0))}</b>
                 </div>
               </div>
@@ -293,43 +299,12 @@ function OwnerHome() {
             </div>
           </div>
 
-          <div className="glass card">
-            <div className="section-title">
-              <h2>Quick actions</h2>
-            </div>
-            <div className="chips">
-              {can.canManageTenants && (
-                <button className="btn btn-soft" onClick={() => setModal("tenant")}>
-                  <UserPlus size={16} /> Add tenant
-                </button>
-              )}
-              {can.canVerifyPayments && (
-                <button className="btn btn-soft" onClick={() => setModal("payment")}>
-                  <Wallet size={16} /> Record payment
-                </button>
-              )}
-              {can.canVerifyPayments && (
-                <button className="btn btn-soft" disabled={busy} onClick={async () => {
-                    const r = await run((b) => b.generateInvoices());
-                    if (r.ok) toast(r.value ? `${r.value} invoice${r.value > 1 ? "s" : ""} generated` : "This month's invoices already exist", "success");
-                  }}>
-                  <FileText size={16} /> Generate this month&apos;s invoices
-                </button>
-              )}
-              {can.canEditProperties && (
-                <Link href="/dashboard/owner/property-form/" className="btn btn-soft">
-                  <Plus size={16} /> Add property
-                </Link>
-              )}
-            </div>
-          </div>
-
           <div className="grid-2">
             <div className="glass card">
               <div className="section-title">
                 <h2>Portfolio</h2>
                 <Link href="/dashboard/owner/properties/" className="btn btn-ghost btn-sm">
-                  All properties <ArrowRight size={14} />
+                  View all properties <ArrowRight size={15} aria-hidden />
                 </Link>
               </div>
               <div className="list">
@@ -348,7 +323,7 @@ function OwnerHome() {
                         <div className="meta" style={{ marginBottom: 6 }}>
                           {s.occupied}/{s.total} beds · {p.city}
                         </div>
-                        <Progress value={s.pct} />
+                        <Progress value={s.pct} label={`${p.name} occupancy`} />
                       </div>
                     </Link>
                   );
@@ -368,7 +343,7 @@ function OwnerHome() {
                       <div className="grow">
                         <div style={{ fontSize: 14 }}>{a.text}</div>
                       </div>
-                      <span className="faint" style={{ fontSize: 12, whiteSpace: "nowrap" }}>
+                      <span className="faint" style={{ fontSize: 14, whiteSpace: "nowrap" }}>
                         {ago(a.at)}
                       </span>
                     </div>
@@ -377,12 +352,6 @@ function OwnerHome() {
               )}
             </div>
           </div>
-          <p className="faint" style={{ fontSize: 13 }}>
-            {openMaint.length} open maintenance request{openMaint.length === 1 ? "" : "s"} ·{" "}
-            <Link href="/dashboard/owner/maintenance/" style={{ color: "var(--brand)" }}>
-              view queue
-            </Link>
-          </p>
         </>
       )}
       {modal === "tenant" && <AddTenantModal onClose={() => setModal(null)} />}

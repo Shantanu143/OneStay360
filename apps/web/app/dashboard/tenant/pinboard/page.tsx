@@ -11,14 +11,14 @@ import type { PinCategory } from "@/lib/types";
 
 export default function PinboardPage() {
   const { account } = useShell();
-  const { data, loading } = useQuery(async (b) => ({ stay: await b.getStay(), pins: await b.listPins() }));
+  const { data, loading, error, reload } = useQuery(async (b) => ({ stay: await b.getStay(), pins: await b.listPins() }));
   const { busy, run } = useAction();
   const [category, setCategory] = useState<PinCategory>("social");
   const [content, setContent] = useState("");
   const hoursLeft = (ms: number) => Math.max(0, Math.round((ms - Date.now()) / 3600_000));
 
   return (
-    <Page title="Pinboard" sub={data?.stay ? `Notes for residents of ${data.stay.property.name} · expire after 48 hours` : "Your PG's notice board"}>
+    <Page error={error} onRetry={reload} title="Pinboard" sub={data?.stay ? `Notes for residents of ${data.stay.property.name} · expire after 48 hours` : "Your PG's notice board"}>
       {loading ? (
         <Loading />
       ) : !data?.stay ? (
@@ -43,11 +43,11 @@ export default function PinboardPage() {
             </div>
             <textarea className="textarea" maxLength={280} value={content} onChange={(e) => setContent(e.target.value)} placeholder="Ordering dinner? Lost your keys? Need a ride? Tell your housemates…" aria-label="Note" />
             <div className="row-between">
-              <span className="faint" style={{ fontSize: 12 }}>
+              <span className="faint" style={{ fontSize: 14 }}>
                 {280 - content.length} characters left
               </span>
               <button className="btn btn-primary" disabled={busy || !content.trim()}>
-                <Send size={16} /> Pin it
+                <Send size={16} aria-hidden /> Pin it
               </button>
             </div>
           </form>
@@ -63,18 +63,18 @@ export default function PinboardPage() {
                     <span className="badge badge-green">
                       {pinCategories[p.category]?.emoji} {pinCategories[p.category]?.label}
                     </span>
-                    <span className="faint row" style={{ gap: 4, fontSize: 12 }}>
-                      <Clock size={12} /> {hoursLeft(p.expiresAt)}h left
+                    <span className="faint row" style={{ gap: 4, fontSize: 14 }}>
+                      <Clock size={12} aria-hidden /> {hoursLeft(p.expiresAt)}h left
                     </span>
                   </div>
                   <p style={{ fontSize: 15 }}>{p.content}</p>
                   <div className="row-between">
-                    <span className="faint" style={{ fontSize: 12.5 }}>
+                    <span className="faint" style={{ fontSize: 14 }}>
                       {p.authorName} · {ago(p.createdAt)}
                     </span>
                     {p.authorUid === account.uid && (
-                      <button className="icon-btn" style={{ width: 32, height: 32 }} aria-label="Delete note" disabled={busy} onClick={() => run((b) => b.deletePin(p.id), "Note removed")}>
-                        <Trash2 size={14} />
+                      <button className="btn btn-text btn-sm" aria-label="Delete note" disabled={busy} onClick={() => run((b) => b.deletePin(p.id), "Note removed")}>
+                        <Trash2 size={15} aria-hidden /> Delete
                       </button>
                     )}
                   </div>

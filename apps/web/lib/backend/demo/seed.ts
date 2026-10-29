@@ -47,7 +47,7 @@ export interface DemoState {
   promos: { code: string; percent: number }[];
 }
 
-export const STATE_VERSION = 1;
+export const STATE_VERSION = 2;
 export const DEMO_PASSWORD = "demo1234";
 export const DEMO_ACCOUNTS = {
   owner: "asha@onestay.demo",
@@ -242,7 +242,7 @@ export function buildSeed(now = Date.now()): DemoState {
           amount: t.monthlyRent,
           month: inv.month,
           method,
-          reference: method === "Cash" ? undefined : `UTR${(paidAt % 1e10).toString().padStart(10, "0")}`,
+          reference: method === "Cash" ? undefined : String(412000000000 + (paidAt % 1e9)).slice(0, 12),
           status: "paid",
           invoiceId: inv.id,
           source: method === "Online" ? "gateway" : method === "Cash" ? "owner" : "tenant",
@@ -262,7 +262,7 @@ export function buildSeed(now = Date.now()): DemoState {
             amount: t.monthlyRent,
             month: inv.month,
             method: "UPI",
-            reference: "UTR4419027731",
+            reference: "441902773112",
             status: "pending",
             invoiceId: inv.id,
             source: "tenant",
@@ -310,7 +310,7 @@ export function buildSeed(now = Date.now()): DemoState {
       businessId: "BUS0000001", propertyId: p1.id, propertyName: p1.name, moveIn: now + 2 * DAY,
       sharing: "Triple sharing", notes: "", status: "payment_submitted",
       roomNumber: "102", bedNumber: "C", monthlyRent: 9500, proratedRent: 0, deposit: 15000, maintenance: 1000, total: 25500,
-      paymentMode: "upi", ownerUpiId: "sunrisestays@okhdfc", transactionId: "UTR5528109934",
+      paymentMode: "upi", ownerUpiId: "sunrisestays@okhdfc", transactionId: "552810993421",
       createdAt: ago(4), updatedAt: ago(0.2),
     },
   ];
